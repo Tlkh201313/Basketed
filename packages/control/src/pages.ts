@@ -4,7 +4,8 @@ import { SCRIPT } from "./script.js";
 import { authPolicyFor, secretLabel, methodLabel, type ConnectMethod } from "./connections.js";
 
 /**
- * The panel's pages: Install, Connect stores, Approvals. Originally the two (§8 S6): Home/Install and Approvals.
+ * The panel's pages: Install, Connect stores, Approvals — originally just the
+ * first and last (§8 S6), joined by Connect stores in S14.
  *
  * Server-rendered from template literals. No Vite, no React, no build step —
  * §9 risk 2 says the UI always overruns, and the cut rule at T−4:15 says ship
@@ -27,6 +28,9 @@ function esc(s: unknown): string {
  * gets, and it deliberately goes through neither this function nor SCRIPT.
  */
 type Page = "home" | "connections" | "approvals";
+
+/** The spark mark used next to the "ed" wordmark, both here and in the rail. */
+const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2L13.9 8.1L20 10L13.9 11.9L12 18L10.1 11.9L4 10L10.1 8.1L12 2Z" fill="white"/><path d="M18.5 3.5L19.2 5.3L21 6L19.2 6.7L18.5 8.5L17.8 6.7L16 6L17.8 5.3L18.5 3.5Z" fill="white" opacity="0.95"/><path d="M6.2 14.2L7 16.5L9.3 17.3L7 18.1L6.2 20.4L5.4 18.1L3.1 17.3L5.4 16.5L6.2 14.2Z" fill="white" opacity="0.9"/></svg>`;
 
 /** Inline, so the panel needs no icon font, no sprite file and no network. */
 const ICON: Record<string, string> = {
@@ -56,6 +60,8 @@ function shell(title: string, active: Page, main: string, token: string): string
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <title>${esc(title)} · Basketed</title>
 <style>${STYLE}</style>
 <script>
@@ -67,7 +73,7 @@ function shell(title: string, active: Page, main: string, token: string): string
 <body>
 <div class="app">
   <aside class="rail">
-    <a class="mark" href="/">basket<span>ed</span><b>local</b></a>
+    <a class="mark" href="/"><span class="spark">${SPARK_SVG}</span>basket<em>ed</em><b>local</b></a>
     <nav>
       ${navItem("/", "Install", "home", active === "home")}
       ${navItem("/connections", "Connect stores", "plug", active === "connections")}
@@ -105,13 +111,15 @@ export function renderLocked(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
 <title>Locked · Basketed</title>
 <style>${STYLE}</style>
 </head>
 <body>
-<header class="top"><div class="wrap"><span class="mark">basket<span>ed</span></span></div></header>
-<main class="wrap">
-<h1>This panel is locked.</h1>
+<div class="app">
+<aside class="rail"><span class="mark"><span class="spark">${SPARK_SVG}</span>basket<em>ed</em></span></aside>
+<main class="sheet">
+<h1>This panel is <strong>locked.</strong></h1>
 <p class="lede">
   The approval surface is gated by a token minted when this server started and printed on its own
   console — the same surface the 6-digit approval code goes to, and one no agent can read.
@@ -127,6 +135,7 @@ export function renderLocked(): string {
   <span class="num">basket_purchase_confirm</span>.
 </p>
 </main>
+</div>
 </body>
 </html>`;
 }
@@ -170,7 +179,7 @@ export function renderHome(input: HomeInput): string {
     "Install",
     "home",
     `
-<h1>One basket. Many shops.<br>Nothing bought without you.</h1>
+<h1>One basket. Many shops.<br><strong>Nothing bought without you.</strong></h1>
 <p class="lede">
   Basketed gives any MCP agent real product search across many retailers, and a purchase step
   <strong>only a human can authorise</strong>. Your accounts and tokens stay on this machine —
@@ -243,6 +252,7 @@ ${copyBlock(input.endpoint)}`
 </div>
 
 <p class="tiny muted">${esc(input.summary)}</p>
+<div class="gemini-foot"><span class="spark-sm">${SPARK_SVG}</span> <span>Basketed control panel · local-only, token-gated</span></div>
 `,
     input.token,
   );
@@ -307,7 +317,7 @@ export function renderConnections(input: ConnectionsInput): string {
     "Connect stores",
     "connections",
     `
-<h1>Connect stores</h1>
+<h1>Connect <strong>stores</strong></h1>
 <p class="lede">
   A credential added here is sealed with AES-256-GCM under a key on this machine and handed to
   nothing but the request interceptor. <strong>No agent can read it back</strong> &mdash; there is no
@@ -435,7 +445,7 @@ export function renderApprovals(token: string): string {
     "Approvals",
     "approvals",
     `
-<h1>Approvals</h1>
+<h1><strong>Approvals</strong></h1>
 <p class="lede">
   Every purchase stops here. Type the exact total to authorise it — so what you confirm is the
   number, not the position of a button.

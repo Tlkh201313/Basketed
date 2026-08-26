@@ -88,8 +88,9 @@ document.addEventListener("click", async (e) => {
   try {
     await navigator.clipboard.writeText(code.textContent);
     const was = btn.textContent;
-    btn.textContent = "copied";
-    setTimeout(() => (btn.textContent = was), 1200);
+    btn.textContent = "copied ✓";
+    btn.classList.add("flash");
+    setTimeout(() => { btn.textContent = was; btn.classList.remove("flash"); }, 1400);
   } catch {
     // Clipboard is blocked outside a secure context in some browsers; select
     // the text instead so the copy is still one keystroke away.
