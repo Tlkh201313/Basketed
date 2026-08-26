@@ -241,6 +241,7 @@ small { color: var(--ink-3); }
 .card:hover { border-color: var(--rule); background: var(--surface-hover); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
 
+/* stamps — Gemini pills */
 .stamp {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--sans); font-size: 11px; font-weight: 600;
@@ -255,6 +256,7 @@ small { color: var(--ink-3); }
 .stamp.dead { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
 .stamp.unknown { color: var(--ink-3); }
 
+/* code blocks — Gemini dark surface with gradient top border */
 pre.copy {
   position: relative;
   font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
@@ -278,6 +280,7 @@ pre.copy button {
 pre.copy button:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); }
 pre.copy button.flash { background: var(--accent-grad-strong); color: #fff; border-color: transparent; }
 
+/* buttons — Gemini */
 button.act {
   font-family: var(--sans); font-size: 13.5px; font-weight: 500;
   border-radius: var(--radius-pill); padding: 9px 18px; cursor: pointer;

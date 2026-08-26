@@ -63,6 +63,7 @@ function shell(title: string, active: Page, main: string, token: string): string
 <meta name="color-scheme" content="light dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <title>${esc(title)} · Basketed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <style>${STYLE}</style>
 <script>
   // Before first paint: a stored choice wins, otherwise the OS decides. Here
@@ -134,6 +135,7 @@ export function renderLocked(): string {
   working for to open the panel, or use the 6-digit console code with
   <span class="num">basket_purchase_confirm</span>.
 </p>
+<div class="gemini-foot"><span class="spark-sm">${SPARK_SVG}</span> <span>Basketed · Gemini-inspired · local-only</span></div>
 </main>
 </div>
 </body>
