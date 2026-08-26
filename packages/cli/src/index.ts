@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -115,6 +116,18 @@ export async function main(argv: string[]): Promise<void> {
 
   const port = Number(value(argv, "port") ?? process.env["PORT"] ?? 8787);
   const origin = `http://127.0.0.1:${port}`;
+  /*
+   * The panel token. Minted per process, printed only on stderr, never on disk.
+   *
+   * Binding the approval surface to the browser's Origin header alone would
+   * bind nothing: every client we install into (Claude Code, Cursor, Codex) has
+   * a shell, and a local process can reach 127.0.0.1 and forge any header it
+   * likes. The one thing it cannot do is read this console -- the same reason
+   * the 6-digit approval code lives here. Per process, so it dies with the
+   * server and cannot be replayed against the next one.
+   */
+  const panelToken = randomBytes(32).toString("base64url");
+  const panelUrl = (path: string) => `${origin}${path}?t=${panelToken}`;
   const handler = createBasketedHttpHandler(runtime);
   const node = toNodeHandler(handler, origin);
 
@@ -132,7 +145,13 @@ export async function main(argv: string[]): Promise<void> {
       version: SERVER_INFO.version,
       redactionAlarms: () => runtime.redactor.alarms(),
     },
-    { root, binPath: resolve(root, "packages/cli/bin.js"), endpoint: `${origin}/mcp`, version: SERVER_INFO.version },
+    {
+      root,
+      binPath: resolve(root, "packages/cli/bin.js"),
+      endpoint: `${origin}/mcp`,
+      version: SERVER_INFO.version,
+      token: panelToken,
+    },
   );
 
   const server = createServer((req, res) => {
@@ -150,6 +169,17 @@ export async function main(argv: string[]): Promise<void> {
     };
 
     if (path === "/mcp") {
+      // DNS rebinding: a page on any site can resolve its own hostname to
+      // 127.0.0.1 and POST here from the victim's browser. Every such request
+      // carries an Origin, and it is never ours. An absent Origin is a real
+      // MCP client -- those are not browsers -- and is allowed through; what
+      // protects them is that /mcp has no route to an approval at all.
+      const reqOrigin = req.headers.origin;
+      if (reqOrigin && reqOrigin !== origin) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Cross-origin request refused." }));
+        return;
+      }
       node(req, res).catch(fail);
       return;
     }
@@ -171,12 +201,14 @@ export async function main(argv: string[]): Promise<void> {
     process.stderr.write(
       `[basketed] http · ${runtime.summary}` +
         `${runtime.policy.fastMode ? " · fast-mode (read-only tools only)" : ""}\n` +
-        `[basketed] panel         ${origin}/\n` +
-        `[basketed] approvals     ${origin}/approvals\n` +
+        `[basketed] panel         ${panelUrl("/")}\n` +
+        `[basketed] approvals     ${panelUrl("/approvals")}\n` +
         `[basketed] MCP endpoint  ${origin}/mcp\n` +
-        `[basketed] health        ${origin}/healthz\n`,
+        `[basketed] health        ${origin}/healthz\n` +
+        `[basketed] The panel links above carry a token good for this process only.\n` +
+        `[basketed] Approval lives behind it, on this console, where no agent can read it.\n`,
     );
-    if (flag(argv, "open")) openBrowser(origin);
+    if (flag(argv, "open")) openBrowser(panelUrl("/"));
   });
 }
 

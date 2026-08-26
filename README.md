@@ -43,13 +43,22 @@ properties are identical wherever the human clicked:
 
 | | How | Works on |
 |---|---|---|
-| **A — panel** | `/approvals`, itemised, **type the exact total** | always |
+| **A — panel** | `/approvals`, opened from the token link on the server's console; itemised, **type the exact total** | always |
 | **B — elicitation** | the client renders the dialog; the human answers | Claude Code, Cursor |
 | **C — console code** | a 6-digit code printed on the server's own stderr | **100% of clients** |
 
 Channel C is safe because the model has no read access to that surface. The only
 way an agent obtains the code is for a person to read it out — which is exactly
 the human act we want to require.
+
+Channel A rests on the same fact, not on the route split. Every client Basketed
+installs into has a shell, so "the agent speaks MCP and cannot reach `/api`" was
+never true on its own — a local process can call any port on 127.0.0.1 and forge
+any header. The panel is therefore behind a token minted per process and printed
+on that same console; `serve --http --open` opens the link for you. `/api` also
+refuses any request whose `Origin` is not exactly the panel's, and refuses a
+mutating request that sends none, which is what keeps a web page from driving the
+panel through your browser.
 
 **What does not exist, on purpose:** an `approve()` tool, an `approved: true`
 parameter, an override flag, or a `set_delivery_address` tool. Run `tools/list`

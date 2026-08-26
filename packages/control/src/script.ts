@@ -8,6 +8,20 @@
 export const SCRIPT = String.raw`
 const $ = (sel) => document.querySelector(sel);
 
+/*
+ * Every /api call goes through here so none can be written without the token.
+ * The cookie would usually carry it anyway, but the header is what makes the
+ * requirement explicit at the call site -- a fetch that forgets it fails loudly
+ * in development rather than silently relying on ambient credentials.
+ */
+const TOKEN = window.__BASKETED_TOKEN__ || "";
+function api(path, init) {
+  const opts = init || {};
+  return fetch(path, Object.assign({}, opts, {
+    headers: Object.assign({}, opts.headers || {}, { "x-basketed-token": TOKEN }),
+  }));
+}
+
 function money(m) {
   if (!m) return "";
   return m.value.toFixed(2) + " " + m.currency;
@@ -86,18 +100,18 @@ if (approvalsEl) {
   }
 
   async function refresh() {
-    const res = await fetch("/api/approvals");
+    const res = await api("/api/approvals");
     const data = await res.json();
     approvalsEl.innerHTML = data.approvals.length
       ? data.approvals.map(card).join("")
       : '<div class="empty">Nothing waiting. Ask your agent to prepare a cart.</div>';
 
-    const orders = await (await fetch("/api/orders")).json();
+    const orders = await (await api("/api/orders")).json();
     $("#orders").innerHTML = orders.orders.length
       ? orders.orders.map(order).join("")
       : '<div class="empty">No orders yet.</div>';
 
-    const state = await (await fetch("/api/state")).json();
+    const state = await (await api("/api/state")).json();
     const g = state.guardrails;
     $("#guardrails").innerHTML =
       'Caps: <span class="num">' + g.perOrderCap.toFixed(2) + " " + g.homeCurrency +
@@ -150,7 +164,7 @@ if (approvalsEl) {
 
     if (e.target.closest("[data-approve]")) {
       const typed = card.querySelector("[data-total]").value;
-      const res = await fetch("/api/approvals/" + encodeURIComponent(id) + "/approve", {
+      const res = await api("/api/approvals/" + encodeURIComponent(id) + "/approve", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ typed_total: typed }),
@@ -167,7 +181,7 @@ if (approvalsEl) {
     }
 
     if (e.target.closest("[data-reject]")) {
-      await fetch("/api/approvals/" + encodeURIComponent(id) + "/reject", { method: "POST" });
+      await api("/api/approvals/" + encodeURIComponent(id) + "/reject", { method: "POST" });
       refresh();
     }
   });
@@ -176,7 +190,7 @@ if (approvalsEl) {
     const btn = e.target.closest("[data-outcome]");
     if (!btn) return;
     const id = btn.closest("[data-order]").dataset.order;
-    await fetch("/api/orders/" + encodeURIComponent(id) + "/outcome", {
+    await api("/api/orders/" + encodeURIComponent(id) + "/outcome", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ state: btn.dataset.outcome }),

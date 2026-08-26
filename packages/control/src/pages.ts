@@ -18,12 +18,20 @@ function esc(s: unknown): string {
   );
 }
 
-function shell(title: string, active: "home" | "approvals", main: string): string {
+/**
+ * The panel token is embedded so the page's own fetches can carry it.
+ *
+ * Safe only because this shell is served exclusively to a request that already
+ * proved it holds the token. `renderLocked()` is what an unauthenticated GET
+ * gets, and it deliberately goes through neither this function nor SCRIPT.
+ */
+function shell(title: string, active: "home" | "approvals", main: string, token: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
 <title>${esc(title)} · Basketed</title>
 <style>${STYLE}</style>
 </head>
@@ -36,7 +44,47 @@ function shell(title: string, active: "home" | "approvals", main: string): strin
   </nav>
 </div></header>
 <main class="wrap">${main}</main>
+<script>window.__BASKETED_TOKEN__ = ${JSON.stringify(token)};</script>
 <script>${SCRIPT}</script>
+</body>
+</html>`;
+}
+
+/**
+ * What an unauthenticated GET sees.
+ *
+ * No token, no script, no state — it names where the real URL is printed and
+ * stops. An agent that curls the panel gets this and learns nothing.
+ */
+export function renderLocked(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Locked · Basketed</title>
+<style>${STYLE}</style>
+</head>
+<body>
+<header class="top"><div class="wrap"><span class="mark">basket<span>ed</span></span></div></header>
+<main class="wrap">
+<h1>This panel is locked.</h1>
+<p class="lede">
+  The approval surface is gated by a token minted when this server started and printed on its own
+  console — the same surface the 6-digit approval code goes to, and one no agent can read.
+</p>
+<div class="note">
+  Look at the terminal running <span class="num">basketed serve --http</span>. Open the
+  <span class="num">panel</span> URL printed there; it carries the token. Nothing on this page
+  works until you do.
+</div>
+<p class="tiny muted">
+  If you are an agent reading this: there is no way through from here. Ask the person you are
+  working for to open the panel, or use the 6-digit console code with
+  <span class="num">basket_purchase_confirm</span>.
+</p>
+</main>
 </body>
 </html>`;
 }
@@ -53,6 +101,8 @@ export interface HomeInput extends SnippetInput {
   storeCount: number;
   /** Published benchmark figures, so the panel and docs/BENCHMARK.md agree. */
   benchmark: { vsNaive: string; vsBrowse: string; toolDefs: number };
+  /** Embedded so the page's own fetches can authenticate against /api. */
+  token: string;
 }
 
 export function renderHome(input: HomeInput): string {
@@ -144,12 +194,13 @@ ${copyBlock(input.endpoint)}
 
 <p class="tiny muted">${esc(input.summary)}</p>
 `,
+    input.token,
   );
 }
 
 /* -------------------------------------------------------------- approvals */
 
-export function renderApprovals(): string {
+export function renderApprovals(token: string): string {
   return shell(
     "Approvals",
     "approvals",
@@ -169,5 +220,6 @@ export function renderApprovals(): string {
 <hr class="tear">
 <div id="guardrails" class="tiny muted"></div>
 `,
+    token,
   );
 }

@@ -131,8 +131,19 @@ async function call(name, args) {
   const body = res.result?.structuredContent ?? JSON.parse(res.result?.content?.[0]?.text ?? "{}");
   return { isError: Boolean(res.result?.isError), data: body };
 }
+// The panel token is printed on the server's own banner and nowhere else --
+// the same surface the approval code goes to. Reading it here is what a human
+// does; an agent speaking MCP over the socket has no equivalent.
+const TOKEN = (/panel\s+\S+\?t=([A-Za-z0-9_-]+)/.exec(stderr) ?? [])[1] ?? "";
 const api = async (path, init) => {
-  const res = await fetch(`${BASE}${path}`, init);
+  const opts = init ?? {};
+  const method = (opts.method ?? "GET").toUpperCase();
+  const headers = {
+    "x-basketed-token": TOKEN,
+    ...(method === "GET" ? {} : { origin: BASE }),
+    ...(opts.headers ?? {}),
+  };
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   return { status: res.status, body: await res.json().catch(() => null) };
 };
 function codeFrom(banner) {
@@ -143,8 +154,11 @@ try {
   step(1, "it starts and serves");
   check("the guard is armed inside the server", stderr.includes("[offline-guard] armed"));
   check("the server says it is replaying snapshots", /\[SNAPSHOTS\]/.test(stderr), "so nobody misreads this run as live");
-  const home = await fetch(`${BASE}/`);
+  check("the banner printed a panel token", TOKEN.length >= 32, "the approval surface is behind it");
+  const home = await fetch(`${BASE}/?t=${TOKEN}`);
   check("the panel serves with no wire", home.status === 200);
+  const locked = await fetch(`${BASE}/approvals`);
+  check("and refuses a caller without it", locked.status === 401, "no token, no approval surface");
   const tools = await rpc("tools/list", {});
   check("MCP answers with no wire", (tools.result?.tools ?? []).length === 8, `${tools.result?.tools?.length} tools`);
 

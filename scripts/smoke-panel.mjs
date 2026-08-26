@@ -49,6 +49,13 @@ await new Promise((res, rej) => {
   }, 100);
 });
 
+/*
+ * The panel token is printed on the banner and nowhere else. Reading it here is
+ * exactly the move a human makes: look at the server's own console. An agent
+ * speaking MCP over the socket has no equivalent.
+ */
+const TOKEN = (/panel\s+\S+\?t=([A-Za-z0-9_-]+)/.exec(stderr) ?? [])[1] ?? "";
+
 let rpcId = 1;
 async function rpc(method, params) {
   const res = await fetch(`${BASE}/mcp`, {
@@ -88,14 +95,59 @@ async function call(name, args) {
 }
 
 const api = async (path, init) => {
-  const res = await fetch(`${BASE}${path}`, init);
+  const opts = init ?? {};
+  const method = (opts.method ?? "GET").toUpperCase();
+  // Defaults first, so an explicit header in a negative test still wins.
+  const headers = {
+    "x-basketed-token": TOKEN,
+    ...(method === "GET" ? {} : { origin: BASE }),
+    ...(opts.headers ?? {}),
+  };
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   return { status: res.status, body: await res.json().catch(() => null) };
 };
 
 try {
+  console.log("\n── the approval surface is behind a token ───────────────────");
+
+  check("the banner printed a panel token", TOKEN.length >= 32, `${TOKEN.length} chars`);
+
+  // The whole point. Basketed installs into agents that have a shell, so the
+  // gate has to be something a local process cannot read -- not a header it
+  // can simply decline to send.
+  const bare = await fetch(`${BASE}/api/approvals`);
+  check("an unauthenticated GET /api is 401", bare.status === 401);
+
+  const bareApprove = await fetch(`${BASE}/api/approvals/whatever/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: BASE },
+    body: JSON.stringify({ typed_total: "1.00" }),
+  });
+  check("an unauthenticated approve is 401", bareApprove.status === 401);
+
+  const bareGuardrails = await fetch(`${BASE}/api/guardrails`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: BASE },
+    body: JSON.stringify({ per_order_cap: 999999 }),
+  });
+  check("an unauthenticated guardrail write is 401", bareGuardrails.status === 401);
+
+  // Every browser sends an Origin. Absent means the caller is not a browser,
+  // and a non-browser has to come through the token instead.
+  const noOrigin = await fetch(`${BASE}/api/approvals/whatever/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-basketed-token": TOKEN },
+    body: JSON.stringify({ typed_total: "1.00" }),
+  });
+  check("a mutating call with NO Origin is refused", noOrigin.status === 403);
+
+  const locked = await fetch(`${BASE}/approvals`);
+  const lockedHtml = await locked.text();
+  check("an unauthenticated panel page is locked", locked.status === 401);
+  check("the locked page leaks no token", !lockedHtml.includes(TOKEN));
   console.log("\n── panel serves ───────────────────────────────────────────────────");
 
-  const home = await fetch(`${BASE}/`);
+  const home = await fetch(`${BASE}/?t=${TOKEN}`);
   const html = await home.text();
   check("GET / serves the install page", home.status === 200 && html.includes("basket"));
   check("the page names the endpoint", html.includes(`${BASE}/mcp`));
@@ -107,7 +159,7 @@ try {
   check("the tool-definition overhead is a real number", /[\d,]+-token tool-definition/.test(html), (html.match(/([\d,]+)-token/) ?? [])[1]);
   check("a CSP is set on the approval surface", Boolean(home.headers.get("content-security-policy")));
 
-  const approvalsPage = await fetch(`${BASE}/approvals`);
+  const approvalsPage = await fetch(`${BASE}/approvals?t=${TOKEN}`);
   check("GET /approvals serves", approvalsPage.status === 200);
 
   const state = await api("/api/state");
@@ -191,6 +243,13 @@ try {
   // Only a HANDED_OFF order can be moved by a human. A simulated order is
   // already terminal and must not be promotable to a real-looking state.
   check("a simulated order cannot be talked into CONFIRMED", simOutcome.status === 409);
+
+  const mcpCrossOrigin = await fetch(`${BASE}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "http://evil.example" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 99, method: "tools/list", params: {} }),
+  });
+  check("a cross-origin POST to /mcp is refused", mcpCrossOrigin.status === 403);
 
   const missing = await fetch(`${BASE}/nope`);
   check("unknown routes 404", missing.status === 404);

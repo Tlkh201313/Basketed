@@ -96,9 +96,11 @@ What to point at, in order:
 Two ways, pick one and mention the other:
 
 - **Channel C** — read the code to the agent. Works in 100% of clients.
-- **Channel A** — `/approvals`. Itemised, five-minute countdown, and **you have
-  to type the exact total.** What you confirm is the number, not the position of
-  a button.
+- **Channel A** — `/approvals`, from the token link on the server's console.
+  Itemised, five-minute countdown, and **you have to type the exact total.**
+  What you confirm is the number, not the position of a button. Curl that URL
+  without the token and you get a locked page — the agent's shell is not a way
+  in.
 
 Then confirm. The order comes back **`HANDED_OFF`, `outcome: unknown`** —
 
