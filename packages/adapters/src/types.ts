@@ -12,10 +12,15 @@ import type {
  * The adapter seam (§4).
  *
  * Note what AdapterCtx does NOT carry: no token, no secret, no ability to
- * resolve an account handle. The vault applies auth as a request interceptor
- * on `http` before the adapter is ever handed it, so an adapter -- including a
- * future third-party one -- cannot read a credential even by accident. That is
- * the trust boundary from §2 expressed as a type.
+ * resolve an account handle. That is the trust boundary from §2 expressed as a
+ * type, and it holds today for the strongest possible reason: there is no
+ * credential anywhere to hand over. Neither shipped adapter authenticates as
+ * anybody.
+ *
+ * When there is one, the vault (designed, not built -- see `packages/vault`)
+ * applies auth as a request interceptor on `http` before the adapter is handed
+ * it, so an adapter -- including a future third-party one -- still cannot read
+ * a credential even by accident. The type is what keeps that option open.
  */
 export interface AdapterCtx {
   /** Pre-authenticated fetch. Auth is already applied; the adapter just calls it. */

@@ -474,3 +474,40 @@ describe("reject reports what it actually rejected", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+/* ------------------------------- the README is part of the surface (S12) */
+
+/**
+ * A claim in the README is a security claim. "Three approval channels, all
+ * converging on one function" was written next to a type with two values in it,
+ * and "tokens live only in the backend vault, AES-256-GCM" was written next to a
+ * package containing `export {}`. Both read as tested facts and neither was one.
+ *
+ * These tests do not check prose. They check that two files cannot disagree.
+ */
+describe("the README does not describe a build we do not have", () => {
+  it("lists exactly the approval channels the type allows", async () => {
+    const src = await readFile(resolve(ROOT, "packages/commerce/src/purchase.ts"), "utf8");
+    const declared = [...(/export type ApprovalChannel =([^;]+);/.exec(src)?.[1] ?? "").matchAll(/"([a-z]+)"/g)]
+      .map((m) => m[1]);
+    expect(declared).toEqual(["console", "panel"]);
+
+    const readme = await readFile(resolve(ROOT, "README.md"), "utf8");
+    const rows = [...readme.matchAll(/^\| \*\*([A-Z]) — /gm)].map((m) => m[1]);
+    expect(rows).toHaveLength(declared.length);
+  });
+
+  it("says the vault is not built for exactly as long as it is not built", async () => {
+    const vault = await readFile(resolve(ROOT, "packages/vault/src/index.ts"), "utf8");
+    // `export {}` is the empty-module marker. Anything exported is a real one.
+    const built = /^export (?:function|class|const|interface|type) /m.test(vault);
+
+    const readme = await readFile(resolve(ROOT, "README.md"), "utf8");
+    const disclaimed = /vault[\s\S]{0,200}?not built/i.test(readme);
+
+    expect(disclaimed).toBe(!built);
+    // And the present-tense claim that started this must not come back while
+    // there is nothing behind it.
+    if (!built) expect(readme).not.toMatch(/Tokens live only in the backend vault/);
+  });
+});

@@ -21,7 +21,7 @@ node packages/cli/bin.js serve --http --open            # panel + MCP on one por
 | | |
 |---|---|
 | **Cross-retailer basket behind a mandatory human approval gate** | Nobody has shipped this. Official merchant servers are one-retailer and stop at a checkout URL; community shopping servers automate purchases with no approval at all. The middle was empty. |
-| **The vault is on your machine** | There is no Basketed server to breach. After the May 2026 Composio breach — ~5,241 API keys and ~5,001 OAuth tokens taken from a store holding ~1.7M live credentials — that is a product claim, not a checkbox. |
+| **Everything runs on your machine** | There is no Basketed server to breach, and no credential held anywhere to breach it for. After the May 2026 Composio breach — ~5,241 API keys and ~5,001 OAuth tokens taken from a store holding ~1.7M live credentials — a hosted shopping agent is a target by construction. The [credential vault](#security) that would hold retailer tokens is designed and **not built**; neither shipped adapter authenticates as anybody, so today there is nothing in it. |
 | **A published token benchmark for e-commerce MCP** | **91.9%** fewer tokens than a naive MCP server, **99.3%** fewer than browsing the storefronts, on one real shopping task — and the figure *includes* our own 3,144-token tool-definition overhead. Method in [`docs/BENCHMARK.md`](docs/BENCHMARK.md). |
 
 ---
@@ -38,14 +38,18 @@ cart_prepare ──► PENDING ──(human)──► APPROVED ──(purchase_c
                                                                               outcome: unknown
 ```
 
-**Three approval channels, all converging on one function** so the security
+**Two approval channels, both converging on one function** so the security
 properties are identical wherever the human clicked:
 
 | | How | Works on |
 |---|---|---|
 | **A — panel** | `/approvals`, opened from the token link on the server's console; itemised, **type the exact total** | always |
-| **B — elicitation** | the client renders the dialog; the human answers | Claude Code, Cursor |
 | **C — console code** | a 6-digit code printed on the server's own stderr | **100% of clients** |
+
+Channel **B — elicitation**, where the client renders the dialog itself, is
+designed and **not built**. `ApprovalChannel` is `"console" | "panel"`, and
+that is the whole list. The letter is kept so the plan and the code use the
+same names for the same things.
 
 Channel C is safe because the model has no read access to that surface. The only
 way an agent obtains the code is for a person to read it out — which is exactly
@@ -68,7 +72,7 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # four smoke suites, all offline
-pnpm test         # 77 unit tests
+pnpm test         # 112 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```
@@ -177,7 +181,7 @@ basketed doctor                        # check the install end to end
 | Client | Key | The thing that will silently break it |
 |---|---|---|
 | Claude Code | `mcpServers` | a `url` with no `type` is a **hard error** |
-| Cursor | `mcpServers` | supports elicitation → channel B lights up |
+| Cursor | `mcpServers` | supports elicitation, where channel B *would* live — it is not built |
 | Codex CLI | `[mcp_servers.x]` | the only **TOML** target, with an underscore |
 | Claude Desktop | `mcpServers` | remote only via Settings → Connectors |
 | VS Code | **`servers`** | *not* `mcpServers` |
@@ -217,10 +221,20 @@ annotations, namespaced names.
 
 ## Security
 
-- Tokens live only in the backend vault, AES-256-GCM, AAD-bound to their account
-  handle. They are never returned by a tool, never logged, never in an error.
-- The agent sees only an **opaque account handle**. The vault returns a
-  *configured client*, never a credential.
+- **Basketed holds no retailer credential today.** The Shopify UCP transport is
+  anonymous and the simulated stores have nothing to authenticate to, so there
+  is no token to leak. The vault that would seal one — AES-256-GCM, AAD-bound to
+  its account handle, returning a *configured client* rather than a credential —
+  is designed and **not built**; `packages/vault` is an empty placeholder and
+  says so. This bullet used to be written in the present tense, which claimed a
+  defence that did not exist.
+- The agent sees only an **opaque account handle**, never anything that could
+  become one.
+- **The approval surface is behind a per-process token** printed on the server's
+  own console, beside the 6-digit code. Route separation is not the gate: every
+  client Basketed installs into has a shell, so the agent could always reach
+  `127.0.0.1` and forge any header. `/api` also requires an `Origin` exactly
+  equal to the panel's, and refuses a mutating request that sends none.
 - **Vendor text is untrusted data.** NFKC-normalised, stripped of control chars,
   zero-width and bidi overrides, HTML-stripped, length-capped, injection
   patterns flagged. The real defence is stronger: the **approval screen and the
@@ -239,10 +253,15 @@ annotations, namespaced names.
 
 ## Not built, stated so nobody claims it
 
-Provider adapters, real retailer OAuth, the mock IdP, `compare_products`,
-Stores/Settings/Orders pages, MCPB, registry publish, and ChatGPT plugin
-submission. All are designed in the plan and none are built. The pitch is *here
-is the architecture, and the two adapters plus the gate that prove it*.
+The credential vault, provider adapters, real retailer OAuth, the mock IdP,
+approval channel B (elicitation), `compare_products`, Stores/Settings/Orders
+pages, MCPB, registry publish, and ChatGPT plugin submission. All are designed
+in the plan and none are built. The pitch is *here is the architecture, and the
+two adapters plus the gate that prove it*.
+
+`packages/vault` exists as an empty package with a comment explaining what it
+would hold. An empty seam is honest; a README written in the present tense
+about it was not.
 
 `docs/` — [BENCHMARK](docs/BENCHMARK.md)
 

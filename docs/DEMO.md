@@ -158,15 +158,19 @@ approval screen and the cart hash are built **only** from numeric fields,
 enumerated fields and the normalized product name. No merchant-authored string
 reaches either. Sanitisation is defence in depth; that is the actual defence.
 
-**"What happens when your server gets breached?"** — There is no server. The
-vault is a file on this machine.
+**"What happens when your server gets breached?"** — There is no server, and
+there is nothing to take. Everything runs on this machine: the only state is a
+SQLite file under `~/.basketed`. Basketed holds no retailer credential at all
+today — the Shopify transport is anonymous — and the vault that would hold one
+is designed, not built. Say that, not "the vault is a file on this machine".
 
 ---
 
 ## Do not claim
 
-Provider-sourced retailer data, real retailer OAuth, `compare_products`, the
-Stores/Settings pages, MCPB, registry publish, or a completed paid order. All are
-designed in the plan; none are built. The pitch is *here is the architecture, and
+The credential vault, provider-sourced retailer data, real retailer OAuth,
+approval channel B (elicitation), `compare_products`, the Stores/Settings pages,
+MCPB, registry publish, or a completed paid order. All are designed in the plan;
+none are built. The pitch is *here is the architecture, and
 the two adapters plus the gate that prove it* — which is a stronger thing to say
 than six half-finished subsystems.

@@ -50,7 +50,7 @@ export const CLIENTS: ClientSpec[] = [
     key: "mcpServers",
     format: "json",
     transports: ["stdio", "http"],
-    gotcha: "Supports elicitation, so approval channel B lights up here automatically.",
+    gotcha: "Supports MCP elicitation, which is where approval channel B would live. Channel B is not built; use the panel or the console code.",
     verified: true,
   },
   {

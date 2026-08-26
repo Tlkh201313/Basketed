@@ -1,10 +1,14 @@
 /**
  * Outbound redaction (§5) -- the final net over every MCP response.
  *
- * This is deliberately NOT the primary defence. The vault never returns tokens
- * in the first place; adapters receive a pre-authenticated client, not a
- * credential. So a redaction hit means something upstream is broken, and it is
- * treated as an alarm rather than as routine hygiene.
+ * This is deliberately NOT the primary defence. Nothing upstream should ever
+ * put a credential in a response: no adapter is handed one (`AdapterCtx` cannot
+ * carry a secret), and today Basketed holds none at all. So a redaction hit
+ * means something upstream is broken, and it is treated as an alarm rather than
+ * as routine hygiene.
+ *
+ * `watched` stays because the design has a vault in it. It is empty for as long
+ * as there is nothing to watch, and a net over nothing costs nothing.
  */
 
 export const REDACTED = "[redacted:secret]";
@@ -39,8 +43,9 @@ export interface Redactor {
 }
 
 export function createRedactor(onAlarm?: (report: RedactionReport) => void): Redactor {
-  // Exact values currently held by the vault. Matched literally so that a token
-  // which happens not to fit any known shape is still caught on its way out.
+  // Exact secret values the process knows it is holding -- the vault's contents,
+  // once there is a vault. Matched literally so that a token which happens not
+  // to fit any known shape is still caught on its way out.
   const watched = new Set<string>();
   let alarmCount = 0;
 

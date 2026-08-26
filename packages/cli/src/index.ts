@@ -195,8 +195,9 @@ export async function main(argv: string[]): Promise<void> {
       .catch(fail);
   });
 
-  // 127.0.0.1, not 0.0.0.0: this process holds the vault, and a localhost
-  // single-user build has no business being reachable from the network.
+  // 127.0.0.1, not 0.0.0.0: this process holds the approval surface and the
+  // order history, and a localhost single-user build has no business being
+  // reachable from the network.
   server.listen(port, "127.0.0.1", () => {
     process.stderr.write(
       `[basketed] http · ${runtime.summary}` +
