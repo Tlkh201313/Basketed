@@ -62,8 +62,12 @@ live call.
 node packages/cli/bin.js serve --http --open
 ```
 
-One process, one port. The panel opens; the MCP endpoint is on `/mcp`; stdio is
-what the CLI agents use. Point at the two numbers on the page and move on.
+One process, one port. The panel opens; the MCP endpoint is on `/mcp`. Point at
+the two numbers on the page and move on.
+
+The demo uses `--http` because a fixed port is one less thing to go wrong on
+stage. Nobody has to: an agent that launched Basketed over stdio gets the same
+panel in that same process, on a port it prints to its console.
 
 ### 2 · Search — 40s
 

@@ -33,7 +33,15 @@ export interface PanelOptions {
   root: string;
   /** Absolute path to packages/cli/bin.js, for the install snippets. */
   binPath: string;
-  endpoint: string;
+  /**
+   * Where this panel is served, e.g. http://127.0.0.1:8787.
+   *
+   * Authoritative for the Origin check, and separate from `endpoint` because a
+   * panel attached to a stdio server has an origin but no MCP endpoint at all.
+   */
+  origin: string;
+  /** The Streamable HTTP MCP endpoint, or null when this process serves stdio. */
+  endpoint: string | null;
   version: string;
   /**
    * Per-process secret gating every /api route.
@@ -159,7 +167,7 @@ export function createPanelHandler(
   opts: PanelOptions,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
   let benchmark: Benchmark | undefined;
-  const panelOrigin = new URL(opts.endpoint).origin;
+  const panelOrigin = new URL(opts.origin).origin;
   const setCookie = `${PANEL_TOKEN_COOKIE}=${encodeURIComponent(opts.token)}; Path=/; SameSite=Strict; HttpOnly`;
 
   return async (req, res) => {

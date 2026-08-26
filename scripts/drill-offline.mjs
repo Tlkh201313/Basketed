@@ -226,7 +226,16 @@ try {
   const banner = stderr.slice(beforeBanner);
   const code = codeFrom(banner);
   check("the code printed on the server's own console", code.length === 6);
-  check("the banner never prints the approval id", !banner.includes(mandate.approval_id));
+  // The framed block is what a person reads: the total, and the code to read
+  // out. Since S13 the console ALSO carries a deep link to this approval,
+  // because the panel now runs alongside stdio -- that line has the id and the
+  // panel token in it, which is fine on a console no agent can read, and must
+  // never have the code in it.
+  const framed = banner.slice(banner.indexOf("=========="), banner.lastIndexOf("==========") + 10);
+  check("the framed banner never prints the approval id", !framed.includes(mandate.approval_id));
+  const summonLine = banner.split("\n").find((l) => l.includes("approve here")) ?? "";
+  check("a link to this approval reached the console", summonLine.includes(mandate.approval_id), summonLine.trim());
+  check("...and that link does not carry the code", code.length === 6 && !summonLine.includes(code));
   const noCode = await call("basket_purchase_confirm", { approval_id: mandate.approval_id });
   check("confirm without the human is refused", noCode.isError === true);
   const wrongCode = await call("basket_purchase_confirm", { approval_id: mandate.approval_id, code: "000000" });

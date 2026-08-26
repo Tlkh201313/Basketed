@@ -11,8 +11,12 @@ a purchase step **only a human can authorise**.
 ```bash
 pnpm i && pnpm build
 node packages/cli/bin.js install --client claude-code   # or --all
-node packages/cli/bin.js serve --http --open            # panel + MCP on one port
 ```
+
+That is the whole setup. Your client launches Basketed itself over stdio, and
+the control panel comes up in the same process — its link, and a link to any
+cart waiting on you, are printed on the server's console. `serve --http --open`
+is the other way in: same panel, plus a Streamable HTTP endpoint on `/mcp`.
 
 ---
 
@@ -43,7 +47,7 @@ properties are identical wherever the human clicked:
 
 | | How | Works on |
 |---|---|---|
-| **A — panel** | `/approvals`, opened from the token link on the server's console; itemised, **type the exact total** | always |
+| **A — panel** | `/approvals`, opened from the token link on the server's console; itemised, **type the exact total** | always — the panel runs on stdio too |
 | **C — console code** | a 6-digit code printed on the server's own stderr | **100% of clients** |
 
 Channel **B — elicitation**, where the client renders the dialog itself, is
@@ -59,7 +63,9 @@ Channel A rests on the same fact, not on the route split. Every client Basketed
 installs into has a shell, so "the agent speaks MCP and cannot reach `/api`" was
 never true on its own — a local process can call any port on 127.0.0.1 and forge
 any header. The panel is therefore behind a token minted per process and printed
-on that same console; `serve --http --open` opens the link for you. `/api` also
+on that same console — on both transports, so a client that launched Basketed
+over stdio still has channel A. When a cart needs a person, the link to that
+exact approval is printed there too, and the browser is opened once. `/api` also
 refuses any request whose `Origin` is not exactly the panel's, and refuses a
 mutating request that sends none, which is what keeps a web page from driving the
 panel through your browser.
@@ -71,8 +77,8 @@ and check. The absence is the feature.
 ### The adversarial pass
 
 ```bash
-pnpm smoke        # four smoke suites, all offline
-pnpm test         # 112 unit tests
+pnpm smoke        # five smoke suites, all offline
+pnpm test         # 116 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```

@@ -156,8 +156,16 @@ export function renderHome(input: HomeInput): string {
 <hr class="tear">
 
 <h2>Endpoint</h2>
-<p class="tiny muted" style="margin:0">Streamable HTTP, bound to 127.0.0.1 only. stdio is the default for CLI agents.</p>
-${copyBlock(input.endpoint)}
+${
+  input.endpoint
+    ? `<p class="tiny muted" style="margin:0">Streamable HTTP, bound to 127.0.0.1 only. stdio is the default for CLI agents.</p>
+${copyBlock(input.endpoint)}`
+    : `<div class="note">
+  This process is serving <span class="num">stdio</span> to the agent that launched it, and this panel
+  is its only HTTP surface. There is no endpoint to paste anywhere &mdash; your client already has the
+  server. Run <span class="num">basketed serve --http</span> if you want a Streamable HTTP endpoint too.
+</div>`
+}
 
 <h2>Install</h2>
 <p class="tiny muted" style="margin:0 0 14px">

@@ -1,4 +1,5 @@
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo, Socket } from "node:net";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -11,7 +12,15 @@ import {
   SERVER_INFO,
   ALL_TOOL_NAMES,
 } from "@basketed/mcp";
-import { createPanelHandler, CLIENTS, PRIMARY_CLIENTS, pathFor, snippetFor } from "@basketed/control";
+import {
+  createPanelHandler,
+  CLIENTS,
+  PRIMARY_CLIENTS,
+  pathFor,
+  snippetFor,
+  type ControlDeps,
+} from "@basketed/control";
+import type { Runtime } from "@basketed/mcp";
 import { findRoot } from "./root.js";
 import { installClient, findClient, expandPath } from "./install.js";
 
@@ -21,9 +30,12 @@ export * from "./install.js";
 const USAGE = `basketed ${SERVER_INFO.version}
 
   basketed serve --stdio          MCP over stdio (Claude Code, Cursor, Codex, opencode)
+                                  ...and the control panel, on a free local port
+  basketed serve --stdio --no-panel   stdio only; approve with the 6-digit code
   basketed serve --fast-mode      skip per-call confirmation for READ-ONLY tools only
   basketed serve --http [--port]  MCP over Streamable HTTP + control panel (port 8787)
   basketed serve --http --open    ...and open the panel in your browser
+  basketed serve --no-open        never open a browser by itself
   basketed install [--client X]   Write the MCP config for an agent client
   basketed install --all          ...for every client with a known file
   basketed install --dry-run      ...show the diff and write nothing
@@ -38,7 +50,15 @@ a legacy \`initialize\` opening from the same process.
 flag lives in mcp/policy.ts and is not reachable from commerce/purchase.ts at
 all, and a test asserts the import graph stays that way.
 
+The panel comes up on BOTH transports, so plugging Basketed into a client is
+all the setup there is. Its link carries a token minted per process and printed
+only on this console -- the same surface the 6-digit code goes to. When a cart
+needs a human, the link to that exact approval is printed here and the browser
+is opened once.
+
 Environment:
+  BASKETED_PANEL_PORT=n  preferred panel port (default 8787, falls back to any)
+  BASKETED_NO_OPEN=1     never open a browser (same as --no-open)
   BASKETED_SNAPSHOTS=1   replay from fixtures/snapshots instead of the network
   BASKETED_ROOT=<dir>    where fixtures/ lives (auto-detected otherwise)
   BASKETED_DB=<path>     SQLite file (default ~/.basketed/basketed.db)
@@ -53,6 +73,95 @@ function value(argv: string[], name: string): string | undefined {
   if (i >= 0 && argv[i + 1] && !argv[i + 1]!.startsWith("--")) return argv[i + 1];
   const inline = argv.find((a) => a.startsWith(`--${name}=`));
   return inline?.split("=").slice(1).join("=");
+}
+
+/** Everything the panel needs from a runtime, in one place both transports use. */
+function controlDeps(runtime: Runtime): ControlDeps {
+  if (!runtime.purchase) throw new Error("The purchase gate failed to initialise.");
+  return {
+    purchase: runtime.purchase,
+    registry: runtime.registry,
+    principal: runtime.principal,
+    policy: runtime.policy,
+    ledger: runtime.ledger,
+    summary: runtime.summary,
+    version: SERVER_INFO.version,
+    redactionAlarms: () => runtime.redactor.alarms(),
+  };
+}
+
+/**
+ * Bind the preferred port if it is free, otherwise take any port at all.
+ *
+ * A busy 8787 is a normal Tuesday -- it is a popular number and this server is
+ * started by whichever client happens to launch first. Refusing to serve the
+ * panel over it, or worse crashing the MCP server the client is waiting on,
+ * would be a much bigger failure than moving to another port and saying so.
+ */
+async function listenSomewhere(server: Server, preferred: number): Promise<number | null> {
+  for (const port of [preferred, 0]) {
+    const bound = await new Promise<number | null>((res) => {
+      const onError = () => {
+        server.removeListener("listening", onListening);
+        res(null);
+      };
+      const onListening = () => {
+        server.removeListener("error", onError);
+        res((server.address() as AddressInfo).port);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(port, "127.0.0.1");
+    });
+    if (bound !== null) return bound;
+  }
+  return null;
+}
+
+interface StdioPanel extends PanelHandle {
+  /** Let go of the listening socket and anything still attached to it. */
+  close(): void;
+}
+
+interface PanelHandle {
+  origin: string;
+  token: string;
+  /** A link a human can follow. Carries the token, so console and browser only. */
+  url(path: string): string;
+}
+
+/**
+ * Wire the panel to a runtime: token-free base for `approve_url`, tokened link
+ * for the console, and one browser tab when a cart first needs a person.
+ *
+ * The browser opens at APPROVAL time rather than at startup on purpose. A
+ * client launches its MCP servers whenever it starts, and a tab on every launch
+ * is the kind of thing people disable the whole feature to stop. A cart waiting
+ * on a human is the one moment the panel is worth interrupting for -- and once
+ * a tab is open it polls every five seconds, so later approvals appear in it
+ * without another one.
+ */
+function attachPanel(runtime: Runtime, panel: PanelHandle, mayOpen: boolean): void {
+  if (!runtime.purchase) return;
+  let opened = false;
+
+  runtime.purchase.panelBase = panel.origin;
+  runtime.purchase.summon = (approvalId) => {
+    const link = panel.url(`/approvals/${approvalId}`);
+    process.stderr.write(`[basketed] approve here    ${link}\n`);
+    if (!mayOpen || opened) return;
+    opened = true;
+    openBrowser(link);
+  };
+}
+
+function panelBanner(panel: PanelHandle): string {
+  return (
+    `[basketed] panel         ${panel.url("/")}\n` +
+    `[basketed] approvals     ${panel.url("/approvals")}\n` +
+    `[basketed] The panel links above carry a token good for this process only.\n` +
+    `[basketed] Approval lives behind it, on this console, where no agent can read it.\n`
+  );
 }
 
 export async function main(argv: string[]): Promise<void> {
@@ -102,6 +211,8 @@ export async function main(argv: string[]): Promise<void> {
     fastMode: flag(argv, "fast-mode"),
   });
 
+  const mayOpen = !flag(argv, "no-open") && process.env["BASKETED_NO_OPEN"] !== "1";
+
   if (!http) {
     // stdout belongs to the JSON-RPC stream from here on. Every diagnostic
     // in the whole process goes to stderr; one stray console.log corrupts the
@@ -110,7 +221,41 @@ export async function main(argv: string[]): Promise<void> {
       `[basketed] stdio · ${runtime.summary} · root=${root}` +
         `${runtime.policy.fastMode ? " · fast-mode (read-only tools only)" : ""}\n`,
     );
+
+    /*
+     * The panel comes up alongside stdio, in this same process.
+     *
+     * Approval channel A used to require a second command nobody runs, which
+     * left channel C (read the 6-digit code aloud) as the only one a plugged-in
+     * client ever saw. Same process means the same database and the same
+     * purchase gate -- there is no syncing, and no second thing to keep alive.
+     */
+    const panel = flag(argv, "no-panel") ? null : await startStdioPanel(runtime, root, mayOpen);
+    process.stderr.write(
+      panel
+        ? panelBanner(panel)
+        : flag(argv, "no-panel")
+          ? `[basketed] panel off (--no-panel). Approve with the 6-digit code.\n`
+          : `[basketed] panel could not bind a port. Approve with the 6-digit code.\n`,
+    );
+
     serveBasketedStdio(runtime);
+
+    /*
+     * EOF on stdin is the client saying it is finished with this server.
+     *
+     * Leaving is not automatic: on Windows a stdout pipe that has been written
+     * to stays an active handle, so a server that has answered even one tool
+     * call never reaches "nothing left to run" and lingers after its client is
+     * gone. That used to leave a stray process; with a panel in it, it would
+     * leave one still answering HTTP on a port with a live token. The timer is
+     * unreffed so a process that CAN exit on its own still does, immediately --
+     * this only backstops the case where a pipe is holding the door open.
+     */
+    process.stdin.once("end", () => {
+      panel?.close();
+      setTimeout(() => process.exit(0), 250).unref();
+    });
     return;
   }
 
@@ -127,32 +272,23 @@ export async function main(argv: string[]): Promise<void> {
    * server and cannot be replayed against the next one.
    */
   const panelToken = randomBytes(32).toString("base64url");
-  const panelUrl = (path: string) => `${origin}${path}?t=${panelToken}`;
+  const panelUrl = (path: string): string => `${origin}${path}?t=${panelToken}`;
   const handler = createBasketedHttpHandler(runtime);
   const node = toNodeHandler(handler, origin);
 
-  if (!runtime.purchase) throw new Error("The purchase gate failed to initialise.");
   // Runtime satisfies ControlDeps structurally, so the panel needs no
   // dependency on the MCP package to be handed everything it renders.
-  const panel = createPanelHandler(
-    {
-      purchase: runtime.purchase,
-      registry: runtime.registry,
-      principal: runtime.principal,
-      policy: runtime.policy,
-      ledger: runtime.ledger,
-      summary: runtime.summary,
-      version: SERVER_INFO.version,
-      redactionAlarms: () => runtime.redactor.alarms(),
-    },
-    {
-      root,
-      binPath: resolve(root, "packages/cli/bin.js"),
-      endpoint: `${origin}/mcp`,
-      version: SERVER_INFO.version,
-      token: panelToken,
-    },
-  );
+  const panel = createPanelHandler(controlDeps(runtime), {
+    root,
+    binPath: resolve(root, "packages/cli/bin.js"),
+    origin,
+    endpoint: `${origin}/mcp`,
+    version: SERVER_INFO.version,
+    token: panelToken,
+  });
+
+  const panelHandle: PanelHandle = { origin, token: panelToken, url: panelUrl };
+  attachPanel(runtime, panelHandle, mayOpen);
 
   const server = createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0];
@@ -195,6 +331,25 @@ export async function main(argv: string[]): Promise<void> {
       .catch(fail);
   });
 
+  /*
+   * A busy port is a message, not a stack trace.
+   *
+   * Unlike the stdio panel, this one does NOT quietly move: the port is half
+   * of the endpoint people paste into a client config, so changing it behind
+   * their back turns one clear failure into a confusing one. 8787 is a popular
+   * number -- it is worth saying which process to look for.
+   */
+  server.once("error", (err: NodeJS.ErrnoException) => {
+    if (err.code !== "EADDRINUSE") throw err;
+    process.stderr.write(
+      `[basketed] port ${port} is already in use by another process.\n` +
+        `[basketed] Pick a free one: basketed serve --http --port 8790 --open\n` +
+        `[basketed] (stdio needs no port at all, and brings the panel with it.)\n`,
+    );
+    process.exitCode = 1;
+    server.close();
+  });
+
   // 127.0.0.1, not 0.0.0.0: this process holds the approval surface and the
   // order history, and a localhost single-user build has no business being
   // reachable from the network.
@@ -202,15 +357,91 @@ export async function main(argv: string[]): Promise<void> {
     process.stderr.write(
       `[basketed] http · ${runtime.summary}` +
         `${runtime.policy.fastMode ? " · fast-mode (read-only tools only)" : ""}\n` +
-        `[basketed] panel         ${panelUrl("/")}\n` +
-        `[basketed] approvals     ${panelUrl("/approvals")}\n` +
+        panelBanner(panelHandle) +
         `[basketed] MCP endpoint  ${origin}/mcp\n` +
-        `[basketed] health        ${origin}/healthz\n` +
-        `[basketed] The panel links above carry a token good for this process only.\n` +
-        `[basketed] Approval lives behind it, on this console, where no agent can read it.\n`,
+        `[basketed] health        ${origin}/healthz\n`,
     );
-    if (flag(argv, "open")) openBrowser(panelUrl("/"));
+    if (flag(argv, "open") && mayOpen) openBrowser(panelUrl("/"));
   });
+}
+
+/**
+ * The panel, served next to a stdio MCP server.
+ *
+ * Returns null rather than throwing: the client is waiting on a JSON-RPC
+ * handshake, and no panel is a smaller failure than no server.
+ */
+async function startStdioPanel(runtime: Runtime, root: string, mayOpen: boolean): Promise<StdioPanel | null> {
+  const token = randomBytes(32).toString("base64url");
+
+  // Assigned right after the port is known, because the handler needs the
+  // origin it is going to be reached on. Requests that arrive in that window
+  // get a 503 rather than a crash.
+  let serve: ReturnType<typeof createPanelHandler> | undefined;
+  const server = createServer((req, res) => {
+    if (!serve) {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Panel still starting." }));
+      return;
+    }
+    serve(req, res)
+      .then((served) => {
+        if (served) return;
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Not found. This process serves MCP over stdio; / is the panel." }));
+      })
+      .catch((err: Error) => {
+        runtime.ctx.log(`panel request failed: ${err.message}`);
+        if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Internal error." }));
+      });
+  });
+
+  const preferred = Number(process.env["BASKETED_PANEL_PORT"] ?? 8787);
+  const port = await listenSomewhere(server, Number.isFinite(preferred) ? preferred : 8787);
+  if (port === null) return null;
+
+  /*
+   * The panel must not be what keeps this process alive.
+   *
+   * A stdio server is finished the moment its client closes stdin, and by then
+   * the panel is the only thing here still holding an operating-system handle:
+   * an open tab polls every five seconds over a keep-alive connection, which is
+   * a live socket whether or not anyone is looking at it. Unreffing tells Node
+   * those handles do not get a vote on whether to stay up (in-flight requests
+   * still finish); closing on EOF is what actually lets go of them.
+   */
+  const sockets = new Set<Socket>();
+  server.unref();
+  server.on("connection", (socket) => {
+    socket.unref();
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
+
+  const origin = `http://127.0.0.1:${port}`;
+  serve = createPanelHandler(controlDeps(runtime), {
+    root,
+    binPath: resolve(root, "packages/cli/bin.js"),
+    origin,
+    // stdio: there is no Streamable HTTP endpoint to advertise, and the panel
+    // says so rather than printing one that would not answer.
+    endpoint: null,
+    version: SERVER_INFO.version,
+    token,
+  });
+
+  const panel: StdioPanel = {
+    origin,
+    token,
+    url: (path) => `${origin}${path}?t=${token}`,
+    close: () => {
+      server.close();
+      for (const socket of sockets) socket.destroy();
+    },
+  };
+  attachPanel(runtime, panel, mayOpen);
+  return panel;
 }
 
 /* ------------------------------------------------------------- install */

@@ -87,6 +87,7 @@ beforeEach(async () => {
   handler = createPanelHandler(deps, {
     root: ROOT,
     binPath: resolve(ROOT, "packages/cli/bin.js"),
+    origin: base,
     endpoint: `${base}/mcp`,
     version: "test",
     token: TOKEN,
@@ -345,3 +346,50 @@ describe("the store allowlist can finally be set", () => {
     expect(loadGuardrails(purchase.db).allowedAddresses).toEqual(["addr_home"]);
   });
 });
+
+/* --------------------------------- the panel that rides along with stdio */
+
+/**
+ * When the panel is attached to a stdio server (S13) there is no Streamable
+ * HTTP endpoint in the process at all. It used to be handed one anyway --
+ * `PanelOptions.endpoint` was also what the Origin check was derived from --
+ * and the Install page would print a URL that answers nothing.
+ */
+describe("attached to a stdio server, with no MCP endpoint of its own", () => {
+  function stdioHandler() {
+    return createPanelHandler(deps, {
+      root: ROOT,
+      binPath: resolve(ROOT, "packages/cli/bin.js"),
+      origin: base,
+      endpoint: null,
+      version: "test",
+      token: TOKEN,
+    });
+  }
+
+  it("says so instead of printing an endpoint that would not answer", async () => {
+    handler = stdioHandler();
+    const html = await (await panel("/")).text();
+    expect(html).toContain("stdio");
+    expect(html).not.toContain("/mcp");
+  });
+
+  it("still knows its own origin, so the Origin check is unchanged", async () => {
+    handler = stdioHandler();
+    const good = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ per_order_cap: 42 }),
+    });
+    expect(good.status).toBe(200);
+
+    const evil = await fetch(`${base}/api/guardrails`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-basketed-token": TOKEN, origin: "http://evil.example" },
+      body: JSON.stringify({ per_order_cap: 43 }),
+    });
+    expect(evil.status).toBe(403);
+    expect(loadGuardrails(purchase.db).perOrderCap).toBe(42);
+  });
+});
+

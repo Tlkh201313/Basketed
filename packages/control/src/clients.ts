@@ -178,8 +178,8 @@ export const CLIENTS: ClientSpec[] = [
 export interface SnippetInput {
   /** Absolute path to `packages/cli/bin.js` on this machine. */
   binPath: string;
-  /** e.g. http://127.0.0.1:8787/mcp */
-  endpoint: string;
+  /** e.g. http://127.0.0.1:8787/mcp, or null when this process serves stdio. */
+  endpoint: string | null;
   platform: NodeJS.Platform;
 }
 

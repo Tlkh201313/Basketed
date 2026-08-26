@@ -49,6 +49,23 @@ export interface PurchaseDeps {
    * and hand it over, which is the human act we are trying to require.
    */
   announce: (lines: string[]) => void;
+  /**
+   * Where the panel is served, WITHOUT the token -- e.g. http://127.0.0.1:8787.
+   *
+   * This one ends up in `approve_url`, which is a tool result the model reads,
+   * so it must stay token-free. It is only useful to a human who already has
+   * the token; to anything else it is a link to a locked page.
+   */
+  panelBase?: string;
+  /**
+   * Called when a cart is sitting there waiting on a person.
+   *
+   * Deliberately a separate hook from `announce`: this one is allowed to know
+   * the panel token, because the CLI wires it to the server's own console and
+   * to the local browser -- never to anything the model can read. Keeping the
+   * token out of this file is the point of the split.
+   */
+  summon?: (approvalId: string) => void;
   now?: () => number;
 }
 
@@ -217,10 +234,12 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
 
   const summary = describeMandate(mandate);
   deps.announce(consoleBanner(adapter.manifest.name, mandate, summary, code, route));
+  // The banner is the code; this is the link. Both land on the console.
+  deps.summon?.(id);
 
   return {
     approvalId: id,
-    approveUrl: `http://127.0.0.1:8787/approvals/${id}`,
+    approveUrl: `${deps.panelBase ?? "http://127.0.0.1:8787"}/approvals/${id}`,
     expiresAt: new Date(expiresAt).toISOString(),
     mandate,
     cartHash: hash,
