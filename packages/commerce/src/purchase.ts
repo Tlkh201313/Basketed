@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 import type { FxTable, Money } from "@basketed/core";
 import type { AdapterCtx, StoreRegistry } from "@basketed/adapters";
 import { describeRoute, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
+import { authorizedFetch, type Vault } from "@basketed/vault";
 import type { Db } from "./db.js";
 import { cartHash, describeMandate, type CartMandate, type MandateLine } from "./mandate.js";
 import {
@@ -40,6 +41,14 @@ export interface PurchaseDeps {
   registry: StoreRegistry;
   ctx: AdapterCtx;
   fx: FxTable;
+  /**
+   * Credential store, so `buildCart` can hand a store's own adapter a
+   * request-preauthorised fetch for exactly its own id -- never a raw secret;
+   * see `authorizedFetch`. Optional because most existing PurchaseDeps
+   * construction sites (tests, the offline drill) have no vault and no
+   * authenticated store, and search/detail never need one at all.
+   */
+  vault?: Vault;
   /**
    * Where the approval code is announced.
    *
@@ -176,7 +185,10 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
     throw new Error(`Store "${storeId}" cannot build a cart. It reaches only ${adapter.manifest.capabilities.join(", ")}.`);
   }
 
-  const raw = await adapter.buildCart(input.items, deps.ctx);
+  // Vault-wrapped only for THIS store's id -- a store with no stored
+  // credential gets deps.ctx.http back unchanged (authorizedFetch no-ops).
+  const cartCtx = deps.vault ? { ...deps.ctx, http: authorizedFetch(deps.vault, storeId, deps.ctx.http) } : deps.ctx;
+  const raw = await adapter.buildCart(input.items, cartCtx);
   const lineItems: MandateLine[] = raw.lineItems.map((li) => ({
     id: li.id,
     variantId: li.variantId,

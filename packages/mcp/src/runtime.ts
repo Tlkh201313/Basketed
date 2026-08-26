@@ -5,6 +5,7 @@ import { createRedactor, type FxTable, type Redactor } from "@basketed/core";
 import {
   StoreRegistry,
   SimulatedAdapter,
+  TescoAdapter,
   loadPinnedShopifyStores,
   type AdapterCtx,
 } from "@basketed/adapters";
@@ -158,6 +159,17 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
     log(`no simulated catalog: ${(err as Error).message}`);
   }
 
+  // Real Tesco (S16). Registered even under --snapshots -- unlike Shopify UCP
+  // and the simulated stores, it has no fixture/snapshot mode of its own, so
+  // it always calls the real network. The offline drill therefore excludes it
+  // by store id rather than expecting it to replay: see drill-offline.mjs.
+  try {
+    registry.register(new TescoAdapter());
+    loaded.push("tsc:tesco");
+  } catch (err) {
+    log(`tesco adapter unavailable: ${(err as Error).message}`);
+  }
+
   const redactor = createRedactor((report) => {
     // A redaction hit is a bug, not routine. It is loud on purpose.
     log(`REDACTION ALARM: ${report.count} hit(s) [${report.hits.join(", ")}]`);
@@ -198,7 +210,7 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
     ledger: new TokenLedger(),
     principal: `local:${userInfo().username}`,
     policy: createPolicy(opts.fastMode ?? false),
-    purchase: { db, registry, ctx, fx, announce },
+    purchase: { db, registry, ctx, fx, announce, vault },
     summary:
       `${loaded.length} stores (` +
       [...byMode.entries()].map(([mode, n]) => `${n} ${mode}`).join(", ") +

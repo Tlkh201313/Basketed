@@ -84,7 +84,7 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # five smoke suites, all offline
-pnpm test         # 153 unit tests
+pnpm test         # 160 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```
@@ -120,17 +120,25 @@ Every adapter declares two independent things, and neither may be overstated.
 
 | Mode | Meaning |
 |---|---|
-| `native` | the retailer's own official endpoint — Shopify UCP |
+| `native` | the retailer's own official endpoint — Shopify UCP, and (S16) real Tesco: `search.api.tesco.com` / `xapi.tesco.com`, the same requests tesco.com's own frontend makes, ported and verified live, not scraped |
 | `provider` | real retailer data via a licensed commercial provider *(designed, not built)* |
 | `connected` | the user's own account via real retailer OAuth *(designed, not built)* |
 | `simulated` | fixture-backed and stamped **SIMULATED** |
 
 | Tier | Who has it |
 |---|---|
-| `discovery` `detail` | every adapter |
-| `cart` | Shopify UCP, simulated |
-| `handoff` | Shopify UCP |
-| `checkout` | **nobody.** Shopify gates payment completion behind a hand-granted merchant token with no public application. Interface defined, not implemented. |
+| `discovery` `detail` | every adapter, plus real Tesco |
+| `cart` | Shopify UCP, simulated, and real Tesco (via a bearer token pasted from the shopper's own tesco.com session — see [Connect stores](#security)) |
+| `handoff` | Shopify UCP, real Tesco (`tesco.com/groceries/.../trolley`, real basket) |
+| `checkout` | **nobody.** Shopify gates payment completion behind a hand-granted merchant token with no public application; Tesco's basket API is unofficial and this project does not touch card data regardless. Interface defined, not implemented. |
+
+**Real Tesco is not a licensed integration.** `search.api.tesco.com` and
+`xapi.tesco.com` are public endpoints Tesco's own website calls, with an API
+key that is public and embedded in their frontend JS — but Tesco does not
+document or support third-party use of either, and using them this way sits
+outside Tesco's Terms of Service, same as any unofficial API client. `sim:tesco`
+is untouched by this and stays exactly what it always was: fixture data, still
+what the offline drill runs against, still real-network-free.
 
 **No scraper, and no anti-bot circumvention.** Cloudflare challenges, WAF
 fingerprinting and CAPTCHAs are access controls the operator deliberately
@@ -288,15 +296,23 @@ annotations, namespaced names.
 
 ## Not built, stated so nobody claims it
 
-Real retailer adapters for Tesco/Costco/Walmart/Amazon (none publish a
-consumer API; the vault holds a credential — pasted or Chrome-captured —
-nothing yet authenticates with it), real retailer OAuth (none of the above
-publish one — see [Connect stores](#security)), a Chrome-login capture for any
-store outside that prototype four, the mock IdP, approval channel B
-(elicitation), `compare_products`, the Orders page, MCPB, registry publish, and
-ChatGPT plugin submission. All are designed in the plan and none are built.
+Real retailer adapters for Costco/Walmart/Amazon (none publish a consumer API;
+the vault holds a credential — pasted or Chrome-captured — nothing yet
+authenticates with it), real retailer OAuth (none of the four publish one —
+see [Connect stores](#security)), a Chrome-login capture for any store outside
+that prototype four, the mock IdP, approval channel B (elicitation),
+`compare_products`, the Orders page, MCPB, registry publish, and ChatGPT
+plugin submission. All are designed in the plan and none are built.
 
-The credential vault is the one item that moved off this list (S14) — see
+Tesco is the one retailer adapter that moved off this list (S16) — see
+"Where the data comes from", above: real search, real detail, and a real
+basket behind the shopper's own pasted session token. Costco, Walmart and
+Amazon stay here because none of the three has an equivalent unofficial-but-
+real endpoint Tesco's frontend happens to expose — see [Connect
+stores](#security) for what a Chrome-login session on those three can and
+cannot do instead.
+
+The credential vault is the other item that moved off this list (S14) — see
 Security, above — and the drift guard that used to check it here now checks
 the opposite: that this file stops disclaiming it exactly when it stops being
 true.

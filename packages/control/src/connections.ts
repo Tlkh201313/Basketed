@@ -79,7 +79,28 @@ const CHROME_LOGIN: Record<string, ChromeLogin> = {
   "sim:walmart": { url: "https://www.walmart.com/", domains: ["walmart.com"] },
 };
 
+/**
+ * Real Tesco (S16). `mode: "native"` because search/detail genuinely are --
+ * Tesco's own live API, no auth needed, checked in the header comment of
+ * `@basketed/adapters`' tesco adapter. That is also why it cannot fall
+ * through to the generic `mode === "native"` case below: unlike Shopify UCP,
+ * this store's basket DOES need a credential, so "native" here is not a
+ * synonym for "nothing to connect".
+ */
+const REAL_TESCO_POLICY: StoreAuthPolicy = {
+  methods: ["token"],
+  oauth: false,
+  reach:
+    "Real Tesco search and product data -- no account needed for that, and it works right now. " +
+    "Connecting adds a real basket: paste the bearer token from your own logged-in tesco.com session " +
+    "(browser DevTools → Network → any xapi.tesco.com request → the Authorization header, without the " +
+    "word “Bearer”). Tesco does not publish this as a supported integration; using it this way is outside " +
+    "their Terms of Service, the same as any unofficial API client.",
+  chromeLogin: null,
+};
+
 export function authPolicyFor(store: { id: string; mode: string }): StoreAuthPolicy {
+  if (store.id === "tsc:tesco") return REAL_TESCO_POLICY;
   if (store.mode === "native") return ANONYMOUS;
 
   const why = NO_PUBLIC_API[store.id];
