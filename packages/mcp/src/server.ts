@@ -2,7 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { McpServer, createMcpHandler, type McpHttpHandler, type McpServerFactory } from "@modelcontextprotocol/server";
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 import type { Runtime } from "./runtime.js";
-import { registerReadOnlyTools } from "./tools.js";
+import { registerReadOnlyTools, TOOL_NAMES } from "./tools.js";
+import { registerPurchaseTools, PURCHASE_TOOL_NAMES } from "./tools-purchase.js";
+
+/** The complete surface in wire order. Consumed by the install writers (S7). */
+export const ALL_TOOL_NAMES = [...TOOL_NAMES, ...PURCHASE_TOOL_NAMES] as const;
 
 export const SERVER_INFO = {
   name: "basketed",
@@ -21,7 +25,11 @@ export const SERVER_INFO = {
 export function createServerFactory(runtime: Runtime): McpServerFactory {
   return () => {
     const server = new McpServer(SERVER_INFO);
+    // Registration order is the wire order. Read-only first, money-adjacent
+    // last, and stable -- churning the list invalidates the provider prompt
+    // cache, and the miss can cost more than the definitions ever saved.
     registerReadOnlyTools(server, runtime);
+    if (runtime.purchase) registerPurchaseTools(server, runtime);
     return server;
   };
 }

@@ -10,11 +10,11 @@ stores, then buy it. All three arms answer the same task against the same stores
 | arm | tool defs | search | drill-down | task total |
 |---|---:|---:|---:|---:|
 | A — naive MCP (upstream JSON, unmodified) | 0 | 57,296 | — | 57,296 |
-| B — raw browse (storefront search HTML) | 0 | 711,564 | — | 711,564 |
-| C — Basketed (concise, 8 results + 1 drill-down) | 1,925 | 1,148 | 360 | 3,433 |
+| B — raw browse (storefront search HTML) | 0 | 715,465 | — | 715,465 |
+| C — Basketed (concise, 8 results + 1 drill-down) | 3,144 | 1,153 | 361 | 4,658 |
 
-- **vs naive MCP:** 94% fewer tokens
-- **vs raw browse:** 99.5% fewer tokens
+- **vs naive MCP:** 91.9% fewer tokens
+- **vs raw browse:** 99.3% fewer tokens
 
 ## Method, stated so it can be checked
 

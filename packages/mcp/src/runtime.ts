@@ -1,10 +1,15 @@
-import { createRedactor, type Redactor } from "@basketed/core";
+import { readFile } from "node:fs/promises";
+import { userInfo } from "node:os";
+import { resolve } from "node:path";
+import { createRedactor, type FxTable, type Redactor } from "@basketed/core";
 import {
   StoreRegistry,
   SimulatedAdapter,
   loadPinnedShopifyStores,
   type AdapterCtx,
 } from "@basketed/adapters";
+import { openDb, type PurchaseDeps } from "@basketed/commerce";
+import { createPolicy, type Policy } from "./policy.js";
 
 /**
  * Everything the tool handlers need, built ONCE per process.
@@ -20,6 +25,24 @@ export interface Runtime {
   ctx: AdapterCtx;
   redactor: Redactor;
   ledger: TokenLedger;
+  /**
+   * Who is acting, derived from the local session and NEVER from anything the
+   * agent supplied. An approval handle is bound to this at prepare time and
+   * re-checked inside the atomic consume, so possession of a handle alone is
+   * not authentication (2026-07-28 State Handle Hijacking).
+   *
+   * Stable per machine rather than per process, so a cart prepared by the
+   * agent over stdio can be approved in the panel by the same human.
+   */
+  principal: string;
+  /**
+   * Read-only auto-confirmation policy. Lives here so the panel and the
+   * install writers read the same list the server does -- and it is
+   * deliberately inert on the purchase path: see policy.ts.
+   */
+  policy: Policy;
+  /** The purchase gate. Absent only when a caller explicitly opts out of it. */
+  purchase?: PurchaseDeps;
   /** Which stores were loaded, for the startup banner on stderr. */
   summary: string;
 }
@@ -80,6 +103,18 @@ export interface RuntimeOptions {
   snapshots?: boolean;
   /** Where adapter diagnostics go. NEVER stdout on the stdio transport. */
   log?: (msg: string) => void;
+  /** SQLite path. ":memory:" in tests. */
+  dbPath?: string;
+  /**
+   * Where the approval banner is printed.
+   *
+   * Defaults to the server's own stderr, which is the whole basis of approval
+   * channel C: the model has no read access to it, so the only way it obtains
+   * the code is for a human to read it out.
+   */
+  announce?: (lines: string[]) => void;
+  /** Skips per-call confirmation for read-only tools. Never anything else. */
+  fastMode?: boolean;
 }
 
 export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime> {
@@ -117,14 +152,24 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
     log(`REDACTION ALARM: ${report.count} hit(s) [${report.hits.join(", ")}]`);
   });
 
+  const ctx: AdapterCtx = { http: fetch, log, snapshots };
+
+  const fx = JSON.parse(await readFile(resolve(root, "fixtures/fx.json"), "utf8")) as FxTable;
+  const db = openDb(opts.dbPath);
+  const announce =
+    opts.announce ?? ((lines: string[]) => process.stderr.write(`${lines.join("\n")}\n`));
+
   const byMode = new Map<string, number>();
   for (const row of registry.list()) byMode.set(row.mode, (byMode.get(row.mode) ?? 0) + 1);
 
   return {
     registry,
-    ctx: { http: fetch, log, snapshots },
+    ctx,
     redactor,
     ledger: new TokenLedger(),
+    principal: `local:${userInfo().username}`,
+    policy: createPolicy(opts.fastMode ?? false),
+    purchase: { db, registry, ctx, fx, announce },
     summary:
       `${loaded.length} stores (` +
       [...byMode.entries()].map(([mode, n]) => `${n} ${mode}`).join(", ") +

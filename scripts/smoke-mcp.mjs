@@ -104,16 +104,24 @@ legacy.notify("notifications/initialized");
 const list = await legacy.send("tools/list", {});
 const tools = list.result?.tools ?? [];
 const names = tools.map((t) => t.name);
-check("tools/list returns 4 tools", tools.length === 4, names.join(", "));
+check("tools/list returns 8 tools", tools.length === 8, names.join(", "));
 check(
   "tool order is deterministic",
   JSON.stringify(names) ===
     JSON.stringify([
+      // Read-only first, money-adjacent last, and stable. Churning this list
+      // invalidates the provider prompt cache, and the miss can cost more than
+      // the definitions ever saved.
       "basket_list_stores",
       "basket_search_products",
       "basket_get_product_detail",
       "basket_get_token_report",
+      "basket_cart_prepare",
+      "basket_purchase_confirm",
+      "basket_list_orders",
+      "basket_get_order_status",
     ]),
+  names.join(", "),
 );
 check("every tool is namespaced", names.every((n) => n.startsWith("basket_")));
 check("every tool has an outputSchema", tools.every((t) => !!t.outputSchema));
@@ -127,7 +135,10 @@ check(
       ),
   ),
 );
-check("no tool can approve anything", !names.some((n) => /approve|confirm|purchase|checkout/i.test(n)));
+// `purchase_confirm` exists and must: what must NOT exist is anything that
+// grants approval. The adversarial pass over the wire is in smoke-purchase.mjs.
+check("no tool can approve anything", !names.some((n) => /approve|authori[sz]e|grant/i.test(n)));
+check("no tool can set a delivery address", !names.some((n) => /address/i.test(n)));
 
 const defTokens = Math.ceil(JSON.stringify(tools).length / 3.6);
 console.log(`       tool-definition overhead: ~${defTokens} tokens`);
@@ -214,7 +225,7 @@ check(
 const modernList = await modern.send("tools/list", {}, { modern: true });
 check(
   "tools/list works with no initialize at all",
-  (modernList.result?.tools?.length ?? 0) === 4,
+  (modernList.result?.tools?.length ?? 0) === 8,
   `${modernList.result?.tools?.length} tools`,
 );
 

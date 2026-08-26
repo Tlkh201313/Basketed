@@ -58,7 +58,8 @@ interface UcpCartPayload {
   line_items?: Array<{
     id?: string;
     quantity?: number;
-    item?: { id?: string; title?: string };
+    /** `price` here is a bare integer in minor units, not a UcpMoney. */
+    item?: { id?: string; title?: string; price?: number };
     title?: string;
     unit_price?: UcpMoney;
     total?: UcpMoney;
@@ -297,13 +298,42 @@ export class ShopifyUcpAdapter implements StoreAdapter {
     const subtotalMinor = totalOfType(payload, "subtotal");
     const totalMinor = totalOfType(payload, "total");
 
-    const lineItems: CartLineItem[] = resolved.map((r) => ({
-      id: r.id,
-      variantId: r.cached.variantId,
-      quantity: r.quantity,
-      name: r.cached.name,
-      unitPrice: r.cached.unitPrice,
-    }));
+    /*
+     * The lines come from the CART, not from what we asked for.
+     *
+     * These diverge whenever the merchant does not give us exactly what we
+     * requested -- a quantity clamped to available stock, a line merged, a
+     * price that moved between search and cart. Echoing the request back would
+     * put a line on the human's approval banner that does not add up to the
+     * total underneath it, on the one surface that has to be trustworthy. So
+     * the merchant's own cart is authoritative, and the request is only a
+     * fallback for a store that returns no lines at all.
+     */
+    const byVariant = new Map(resolved.map((r) => [r.cached.variantId, r]));
+    const upstream = payload.line_items ?? [];
+    const lineItems: CartLineItem[] = upstream.length
+      ? upstream.map((li) => {
+          const variantId = li.item?.id ?? "";
+          const match = byVariant.get(variantId);
+          const unitMinor = li.item?.price;
+          return {
+            id: match?.id ?? variantId,
+            variantId,
+            quantity: li.quantity ?? 1,
+            name: match?.cached.name ?? sanitiseText(li.item?.title ?? li.title, { maxLength: 80 }).text,
+            unitPrice:
+              unitMinor !== undefined
+                ? fromMinor(unitMinor, currency)
+                : (match?.cached.unitPrice ?? fromMinor(0, currency)),
+          };
+        })
+      : resolved.map((r) => ({
+          id: r.id,
+          variantId: r.cached.variantId,
+          quantity: r.quantity,
+          name: r.cached.name,
+          unitPrice: r.cached.unitPrice,
+        }));
 
     const adjustments = (payload.totals ?? [])
       .filter((t) => t.type !== "subtotal" && t.type !== "total")

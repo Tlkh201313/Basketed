@@ -14,15 +14,21 @@ export { findRoot };
 const USAGE = `basketed ${SERVER_INFO.version}
 
   basketed serve --stdio          MCP over stdio (Claude Code, Cursor, Codex, opencode)
+  basketed serve --fast-mode      skip per-call confirmation for READ-ONLY tools only
   basketed serve --http [--port]  MCP over Streamable HTTP (default port 8787)
   basketed tools                  Print the tool surface and exit
 
 Both transports are dual-era: they answer the 2026-07-28 stateless dialect and
 a legacy \`initialize\` opening from the same process.
 
+--fast-mode cannot touch purchase. It is not merely ignored on that path: the
+flag lives in mcp/policy.ts and is not reachable from commerce/purchase.ts at
+all, and a test asserts the import graph stays that way.
+
 Environment:
   BASKETED_SNAPSHOTS=1   replay from fixtures/snapshots instead of the network
   BASKETED_ROOT=<dir>    where fixtures/ lives (auto-detected otherwise)
+  BASKETED_DB=<path>     SQLite file (default ~/.basketed/basketed.db)
 `;
 
 function flag(argv: string[], name: string): boolean {
@@ -61,13 +67,17 @@ export async function main(argv: string[]): Promise<void> {
   const runtime = await createRuntime({
     root,
     snapshots: flag(argv, "snapshots") || process.env["BASKETED_SNAPSHOTS"] === "1",
+    fastMode: flag(argv, "fast-mode"),
   });
 
   if (!http) {
     // stdout belongs to the JSON-RPC stream from here on. Every diagnostic
     // in the whole process goes to stderr; one stray console.log corrupts the
     // stream and the client reports a parse error with no clue where it came from.
-    process.stderr.write(`[basketed] stdio · ${runtime.summary} · root=${root}\n`);
+    process.stderr.write(
+      `[basketed] stdio · ${runtime.summary} · root=${root}` +
+        `${runtime.policy.fastMode ? " · fast-mode (read-only tools only)" : ""}\n`,
+    );
     serveBasketedStdio(runtime);
     return;
   }
