@@ -31,6 +31,13 @@ export interface ApiResult {
   body: unknown;
 }
 
+/** A list of strings, or null if the caller sent something else. */
+function asList(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  if (raw.some((v) => typeof v !== "string")) return null;
+  return raw as string[];
+}
+
 function mandateOf(row: Record<string, unknown>): CartMandate | null {
   try {
     return JSON.parse(String(row["cart_json"])) as CartMandate;
@@ -146,6 +153,39 @@ export async function handleApi(
     if (payload["home_currency"] !== undefined) next["homeCurrency"] = String(payload["home_currency"]);
     if (payload["per_order_cap"] !== undefined) next["perOrderCap"] = Number(payload["per_order_cap"]);
     if (payload["daily_cap"] !== undefined) next["dailyCap"] = Number(payload["daily_cap"]);
+
+    /*
+     * The two allowlists had no write route at all, so they could only ever
+     * hold their default. An empty store allowlist means "any registered
+     * store", which made the guardrail unreachable rather than merely unset --
+     * while `evaluateGuardrails` checked it on every single confirm.
+     *
+     * Store ids are checked against the registry here rather than inside
+     * `saveGuardrails`, which has no registry to check against. An allowlist
+     * naming a store that does not exist is a typo that silently refuses
+     * everything, and that is the failure this route must not ship.
+     */
+    if (payload["allowed_stores"] !== undefined) {
+      const wanted = asList(payload["allowed_stores"]);
+      if (!wanted) return { status: 400, body: { error: "allowed_stores must be a list of store ids." } };
+      const known = new Set(deps.registry.list().map((s) => s.id));
+      const unknown = wanted.filter((id) => !known.has(id));
+      if (unknown.length) {
+        return { status: 400, body: { error: `No such store: ${unknown.join(", ")}. Use the ids from /api/state.` } };
+      }
+      next["allowedStores"] = wanted;
+    }
+
+    // Nothing can put an address on a cart today -- there is no MCP tool for it
+    // and the panel does not offer one -- so this list guards a field that is
+    // always null. It is settable because the guardrail reading it is live, and
+    // a dormant check with no way to arm it is worse than either alternative.
+    if (payload["allowed_addresses"] !== undefined) {
+      const wanted = asList(payload["allowed_addresses"]);
+      if (!wanted) return { status: 400, body: { error: "allowed_addresses must be a list of address ids." } };
+      next["allowedAddresses"] = wanted;
+    }
+
     try {
       saveGuardrails(purchase.db, next);
     } catch (err) {

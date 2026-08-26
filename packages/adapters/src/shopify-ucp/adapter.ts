@@ -350,15 +350,23 @@ export class ShopifyUcpAdapter implements StoreAdapter {
       subtotal: fromMinor(subtotalMinor ?? 0, currency),
       total: fromMinor(totalMinor ?? subtotalMinor ?? 0, currency),
       adjustments,
-      handoffUrl: resolveHandoffUrl(payload as Record<string, unknown>, ctx.log),
+      handoffUrl: resolveHandoffUrl(payload as Record<string, unknown>, this.manifest.domain ?? "", ctx.log),
       ...(payload.expires_at ? { expiresAt: payload.expires_at } : {}),
     };
   }
 
   async handoff(cartId: string, ctx: AdapterCtx): Promise<{ handoffUrl: string }> {
     const { payload } = await this.#client.call<UcpCartPayload>("get_cart", { id: cartId }, ctx);
-    const url = resolveHandoffUrl(payload as Record<string, unknown>, ctx.log);
-    if (!url) throw new Error(`No hand-off URL on cart ${cartId} at ${this.manifest.domain}.`);
+    const url = resolveHandoffUrl(payload as Record<string, unknown>, this.manifest.domain ?? "", ctx.log);
+    // Null now covers two cases -- absent, and present but pointing somewhere
+    // this merchant does not own. Both mean the same thing to a person: there
+    // is no link we are willing to send them to.
+    if (!url) {
+      throw new Error(
+        `No hand-off URL we trust on cart ${cartId} at ${this.manifest.domain}. ` +
+          `A checkout link must be https and on the merchant's own domain or a Shopify checkout host.`,
+      );
+    }
     return { handoffUrl: url };
   }
 }

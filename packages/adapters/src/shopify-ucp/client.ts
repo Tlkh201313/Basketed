@@ -67,6 +67,34 @@ function parseBody(text: string): Record<string, unknown> {
 }
 
 /**
+ * Where a Shopify hand-off is allowed to land.
+ *
+ * "Same host as the store" is the obvious rule and it is wrong: a cart on
+ * deathwishcoffee.com hands off to deathwishcoffee.myshopify.com, so that rule
+ * would refuse every real hand-off. What IS true of a correct response is that
+ * the URL is on the merchant's own domain or on one of Shopify's checkout
+ * domains, and never anywhere else.
+ */
+const CHECKOUT_HOSTS = ["myshopify.com", "shopify.com", "shopifypreview.com", "shop.app"];
+
+function trustedHandoff(url: string, domain: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  // A hand-off is a link a person is told to click on a page that has just
+  // shown them a total. http:// is not that link.
+  if (parsed.protocol !== "https:") return false;
+
+  const host = parsed.hostname.toLowerCase();
+  const store = domain.toLowerCase().replace(/^www[.]/, "");
+  if (store && (host === store || host.endsWith(`.${store}`))) return true;
+  return CHECKOUT_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+/**
  * Find the URL a human uses to finish the purchase.
  *
  * `continue_url` is confirmed against live carts and is the field we expect.
@@ -74,9 +102,17 @@ function parseBody(text: string): Record<string, unknown> {
  * in the build -- if it is ever absent or renamed, purchase_confirm returns
  * something useless -- and because it warns loudly, a rename shows up as a log
  * line rather than as a broken demo.
+ *
+ * Every candidate is checked against the merchant's domain before it is
+ * returned. The fallback in particular is a regex over a JSON blob the MERCHANT
+ * wrote, so without that check any string in the response that happened to look
+ * like a cart URL became the link Basketed told a person to click and type
+ * their card into. A rename should degrade to "no hand-off URL", never to
+ * "some other site's checkout".
  */
 export function resolveHandoffUrl(
   payload: Record<string, unknown>,
+  domain: string,
   log?: AdapterCtx["log"],
 ): string | null {
   const direct =
@@ -84,15 +120,28 @@ export function resolveHandoffUrl(
     ((payload["cart"] as Record<string, unknown> | undefined)?.["continue_url"] as string | undefined) ??
     ((payload["checkout"] as Record<string, unknown> | undefined)?.["continue_url"] as string | undefined) ??
     (payload["checkout_url"] as string | undefined);
-  if (typeof direct === "string" && direct.startsWith("http")) return direct;
+  if (typeof direct === "string") {
+    if (trustedHandoff(direct, domain)) return direct;
+    log?.("continue_url is not on the merchant's domain or a Shopify checkout host; refused.", {
+      domain,
+      candidate: direct.slice(0, 80),
+    });
+    return null;
+  }
 
   const blob = JSON.stringify(payload);
   const guess = blob.match(/"(https:\/\/[^"]*\/(?:cart|checkouts?)\/[^"]*)"/)?.[1];
-  if (guess) {
+  if (guess && trustedHandoff(guess, domain)) {
     log?.("continue_url absent; fell back to a URL match. The field may have been renamed.", {
       matched: guess.slice(0, 80),
     });
     return guess;
+  }
+  if (guess) {
+    log?.("a cart-shaped URL was found but is not this merchant's; refused.", {
+      domain,
+      candidate: guess.slice(0, 80),
+    });
   }
   return null;
 }

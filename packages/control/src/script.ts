@@ -117,7 +117,9 @@ if (approvalsEl) {
       'Caps: <span class="num">' + g.perOrderCap.toFixed(2) + " " + g.homeCurrency +
       '</span> per order, <span class="num">' + g.dailyCap.toFixed(2) + " " + g.homeCurrency +
       '</span> per 24h (<span class="num">' + g.spent_24h.toFixed(2) +
-      '</span> used). Checked at confirm, never at prepare. Redaction alarms: <span class="num">' +
+      '</span> used). Checked at confirm, never at prepare. Stores: <span class="num">' +
+      (g.allowedStores.length ? g.allowedStores.map(esc).join(", ") : "any registered store") +
+      '</span>. Redaction alarms: <span class="num">' +
       state.redaction_alarms + "</span>.";
   }
 

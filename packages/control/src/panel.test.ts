@@ -301,3 +301,47 @@ describe("the guardrail route refuses a value that is not a policy", () => {
     expect(after.homeCurrency).toBe("USD");
   });
 });
+
+describe("the store allowlist can finally be set", () => {
+  it("writes a real store id and reads it back", async () => {
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ allowed_stores: ["sim:tesco"] }),
+    });
+    expect(res.status).toBe(200);
+    expect(loadGuardrails(purchase.db).allowedStores).toEqual(["sim:tesco"]);
+  });
+
+  it("refuses a store that does not exist, rather than silently blocking everything", async () => {
+    // An empty allowlist means "any store". A typo'd one means "no store,
+    // ever", with a refusal that names a guardrail instead of the typo.
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ allowed_stores: ["sim:tesco", "sim:nosuchshop"] }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error: string }).error).toMatch(/sim:nosuchshop/);
+    expect(loadGuardrails(purchase.db).allowedStores).toEqual([]);
+  });
+
+  it("refuses something that is not a list", async () => {
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ allowed_stores: "sim:tesco" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("takes an address allowlist too, so the live guardrail can be armed", async () => {
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ allowed_addresses: ["addr_home"] }),
+    });
+    expect(res.status).toBe(200);
+    expect(loadGuardrails(purchase.db).allowedAddresses).toEqual(["addr_home"]);
+  });
+});
