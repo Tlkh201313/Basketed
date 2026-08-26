@@ -1,0 +1,2712 @@
+{
+  "store": "deathwishcoffee.com",
+  "capturedAt": "2026-08-25T23:59:04.674Z",
+  "rawBytes": 218058,
+  "payload": {
+    "ucp": {
+      "version": "2026-04-08",
+      "status": "success",
+      "services": {
+        "dev.ucp.shopping": []
+      },
+      "capabilities": {
+        "dev.ucp.shopping.cart": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/cart",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/cart.json"
+          }
+        ],
+        "dev.ucp.shopping.checkout": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/checkout",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/checkout.json"
+          }
+        ],
+        "dev.ucp.shopping.catalog.search": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/catalog",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/catalog_search.json"
+          }
+        ],
+        "dev.ucp.shopping.catalog.lookup": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/catalog",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/catalog_lookup.json"
+          }
+        ]
+      },
+      "payment_handlers": {
+        "com.google.pay": [
+          {
+            "id": "gpay",
+            "version": "2026-01-11",
+            "spec": "https://pay.google.com/gp/p/ucp/2026-01-11/",
+            "schema": "https://pay.google.com/gp/p/ucp/2026-01-11/schemas/config.json",
+            "config": {
+              "api_version": 2,
+              "api_version_minor": 0,
+              "merchant_info": {
+                "merchant_name": "Death Wish Coffee",
+                "merchant_id": "16708973830884969730",
+                "merchant_origin": "www.deathwishcoffee.com",
+                "auth_jwt": ""
+              },
+              "allowed_payment_methods": [
+                {
+                  "type": "CARD",
+                  "parameters": {
+                    "allowed_auth_methods": [
+                      "PAN_ONLY",
+                      "CRYPTOGRAM_3DS"
+                    ],
+                    "allowed_card_networks": [
+                      "VISA",
+                      "MASTERCARD",
+                      "AMEX",
+                      "DISCOVER"
+                    ],
+                    "billing_address_required": true,
+                    "billing_address_parameters": {
+                      "format": "FULL",
+                      "phone_number_required": false
+                    }
+                  },
+                  "tokenization_specification": {
+                    "type": "PAYMENT_GATEWAY",
+                    "parameters": {
+                      "gateway": "shopify",
+                      "gatewayMerchantId": "2717209"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "dev.shopify.card": [
+          {
+            "id": "shopify.card",
+            "version": "2026-01-15",
+            "spec": "https://ucp.dev/specification/payment-handler-guide",
+            "schema": "https://shopify.dev/ucp/card-payment-handler/2026-01-15/config.json",
+            "config": {
+              "payment_methods": [
+                {
+                  "type": "card",
+                  "enabled_card_brands": [
+                    "visa",
+                    "master",
+                    "american_express",
+                    "discover",
+                    "diners_club"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "dev.shopify.shop_pay": [
+          {
+            "id": "shop_pay",
+            "version": "2026-04-08",
+            "spec": "https://shopify.dev/ucp/shop-pay-handler/2026-04-08/spec.md",
+            "schema": "https://shopify.dev/ucp/shop-pay-handler/2026-04-08/schema.json",
+            "config": {
+              "shop_id": "2717209"
+            }
+          }
+        ]
+      }
+    },
+    "products": [
+      {
+        "id": "gid://shopify/Product/263612097",
+        "title": "Dark Roast Coffee",
+        "description": {
+          "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+        },
+        "url": "https://www.deathwishcoffee.com/products/death-wish-coffee",
+        "handle": "death-wish-coffee",
+        "price_range": {
+          "min": {
+            "amount": 1999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 8499,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/2413985169421",
+            "sku": "50251G",
+            "title": "Ground / 1 lb",
+            "description": {
+              "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "1 lb"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Dark_Roast_16oz_Ground_Angle_DTC_A4_2.jpg?v=1726752263"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/3436627623949",
+            "sku": "50252GK",
+            "title": "Ground / 2 lbs",
+            "description": {
+              "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "2 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/DR_16oz_2pk_Ground_Angle_A2_05df07cd-0bf3-4c57-9c37-328540cac0df.jpg?v=1735589536"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40258822012983",
+            "sku": "LKGDRK48",
+            "title": "Ground / 3 lbs",
+            "description": {
+              "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "3 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/DR_16oz_3pk_Ground_Angle_A2_f60d0ef5-ecd0-4e6c-8992-02de2402e709.jpg?v=1752610068"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/3436746801165",
+            "sku": "50255G",
+            "title": "Ground / 5 lbs",
+            "description": {
+              "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Dark_Roast_80oz_Ground_Angle_DTC_A2_2.jpg?v=1735589536"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/2414002503693",
+            "sku": "50251W",
+            "title": "Whole Bean / 1 lb",
+            "description": {
+              "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "1 lb"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Dark_Roast_16oz_Whole_Bean_Angle_DTC_A4_2.jpg?v=1726752263"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/3436706430989",
+            "sku": "50252WK",
+            "title": "Whole Bean / 2 lbs",
+            "description": {
+              "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "2 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/DR_16oz_2pk_WB_Angle_A2_33cd2ea0-18a6-446e-8141-9652b7506702.jpg?v=1752610068"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40258822045751",
+            "sku": "LKWDRK48",
+            "title": "Whole Bean / 3 lbs",
+            "description": {
+              "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "3 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/DR_16oz_3pk_WB_Angle_A2_01b07f8b-a93f-489b-bd96-9923c20e53ad.jpg?v=1735589536"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/3436752928781",
+            "sku": "50255W",
+            "title": "Whole Bean / 5 lbs",
+            "description": {
+              "html": "DARKER ROAST FOR BOLDER DAYS. Meet the yin to your yang. While you grit your teeth through the daily grind, know this bold and delicious dark roast brew will have your back all day long. Certified Fair Trade and Organic, our balanced blend of arabica beans for smooth flavor and robusta for natural strength will kick the midday crash to the curb. Find harmony, no matter the horrors your day has in store. CAFFEINE CONTENT: Dark Roast Coffee contains approximately 180mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Dark_Roast_80oz_Whole_Bean_Angle_DTC_A2_2.jpg?v=1752610068"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Type",
+            "values": [
+              {
+                "label": "Ground"
+              },
+              {
+                "label": "Whole Bean"
+              }
+            ]
+          },
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "1 lb"
+              },
+              {
+                "label": "2 lbs"
+              },
+              {
+                "label": "3 lbs"
+              },
+              {
+                "label": "5 lbs"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Dark_Roast_16oz_Ground_Angle_DTC_A4_2.jpg?v=1726752263",
+            "alt_text": "Death Wish Coffee - Dark Roast Ground 16oz Bag."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Bagged",
+          "Dark",
+          "Dark Roast",
+          "Intro Offer",
+          "National Coffee Day",
+          "Subscription"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/6669374816311",
+        "title": "Espresso Roast Coffee",
+        "description": {
+          "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+        },
+        "url": "https://www.deathwishcoffee.com/products/espresso-roast-coffee",
+        "handle": "espresso-roast-coffee",
+        "price_range": {
+          "min": {
+            "amount": 1999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9399,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/39781001134135",
+            "sku": "LGESPR14",
+            "title": "Ground / 1 bag",
+            "description": {
+              "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "1 bag"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Espresso_Roast_14oz_Ground_Angle_DTC_A5_2.jpg?v=1726755281"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/39781001199671",
+            "sku": "LGESPR28K",
+            "title": "Ground / 2 bags",
+            "description": {
+              "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "2 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/ER_14oz_2pk_Ground_Angle_A2.jpg?v=1735591958"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/39792105848887",
+            "sku": "LGESPR42K",
+            "title": "Ground / 3 bags",
+            "description": {
+              "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "3 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/ER_14oz_3pk_Ground_Angle_A2.jpg?v=1735591958"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/39781001265207",
+            "sku": "LGESPR84K",
+            "title": "Ground / 6 bags",
+            "description": {
+              "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 9399,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "6 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/EspressoRoast_6Pack_Ground.jpg?v=1735591958"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/39781001166903",
+            "sku": "LWESPR14",
+            "title": "Whole Bean / 1 bag",
+            "description": {
+              "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "1 bag"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Espresso_Roast_14oz_Whole_Bean_Angle_DTC_A4_2.jpg?v=1726755280"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/39781001232439",
+            "sku": "LWESPR28K",
+            "title": "Whole Bean / 2 bags",
+            "description": {
+              "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "2 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/ER_14oz_2pk_WB_Angle_A2.jpg?v=1735591958"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/39792107520055",
+            "sku": "LWESPR42K",
+            "title": "Whole Bean / 3 bags",
+            "description": {
+              "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "3 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/ER_14oz_3pk_WB_Angle_A2.jpg?v=1735591958"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/39781001297975",
+            "sku": "LWESPR84K",
+            "title": "Whole Bean / 6 bags",
+            "description": {
+              "html": "Espresso your dark side. Our Espresso Roast delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Rich and intense with espresso-like texture and depth plus subtle undertones of caramelized sugar, prepare to abandon café lines and BYOB — Be Your Own Barista. CAFFEINE CONTENT: Espresso Roast Coffee contains approximately 170mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 9399,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "6 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/ER_14oz_6pk_WB_Angle_A2.jpg?v=1735591958"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Type",
+            "values": [
+              {
+                "label": "Ground"
+              },
+              {
+                "label": "Whole Bean"
+              }
+            ]
+          },
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "1 bag"
+              },
+              {
+                "label": "2 bags"
+              },
+              {
+                "label": "3 bags"
+              },
+              {
+                "label": "6 bags"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Espresso_Roast_14oz_Ground_Angle_DTC_A5_2.jpg?v=1726755281",
+            "alt_text": "Death Wish Coffee - Espresso Roast 14oz Ground Bag."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Bagged",
+          "Dark",
+          "Dark Roast",
+          "Espresso Roast",
+          "National Coffee Day",
+          "Subscription"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/6812324823095",
+        "title": "Vanilla Coffee",
+        "description": {
+          "html": "Not your nana's 'nilla. There's nothing \"vanilla\" about this brew. Warm your cold heart in a blaze of balanced, rich vanilla that's medium roasted and made with no artificial ingredients. A blend of arabica and robusta beans pair perfectly with vanilla for a bold, smooth taste and a subtly sweet finish made for sipping in solitude. A heavy hitter brewed hot or over ice, drown your cup in cream and sugar for the full death-by-decadence experience. CAFFEINE CONTENT: Flavored Death Wish Coffee contains approximately 140mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+        },
+        "url": "https://www.deathwishcoffee.com/products/vanilla-coffee",
+        "handle": "vanilla-coffee",
+        "price_range": {
+          "min": {
+            "amount": 1999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 8499,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 1999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 8499,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/40191150129207",
+            "sku": "LGVNLA14",
+            "title": "1 bag",
+            "description": {
+              "html": "Not your nana's 'nilla. There's nothing \"vanilla\" about this brew. Warm your cold heart in a blaze of balanced, rich vanilla that's medium roasted and made with no artificial ingredients. A blend of arabica and robusta beans pair perfectly with vanilla for a bold, smooth taste and a subtly sweet finish made for sipping in solitude. A heavy hitter brewed hot or over ice, drown your cup in cream and sugar for the full death-by-decadence experience. CAFFEINE CONTENT: Flavored Death Wish Coffee contains approximately 140mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "1 bag"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Vanilla_14oz_Ground_Angle_DTC_A2-_1.jpg?v=1726759714"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40197116526647",
+            "sku": "LGVNLA28",
+            "title": "2 bags",
+            "description": {
+              "html": "Not your nana's 'nilla. There's nothing \"vanilla\" about this brew. Warm your cold heart in a blaze of balanced, rich vanilla that's medium roasted and made with no artificial ingredients. A blend of arabica and robusta beans pair perfectly with vanilla for a bold, smooth taste and a subtly sweet finish made for sipping in solitude. A heavy hitter brewed hot or over ice, drown your cup in cream and sugar for the full death-by-decadence experience. CAFFEINE CONTENT: Flavored Death Wish Coffee contains approximately 140mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "2 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Vanilla_14oz_2pk_Ground_Angle_A2.jpg?v=1735594861"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40197116559415",
+            "sku": "LGVNLA70",
+            "title": "5 bags",
+            "description": {
+              "html": "Not your nana's 'nilla. There's nothing \"vanilla\" about this brew. Warm your cold heart in a blaze of balanced, rich vanilla that's medium roasted and made with no artificial ingredients. A blend of arabica and robusta beans pair perfectly with vanilla for a bold, smooth taste and a subtly sweet finish made for sipping in solitude. A heavy hitter brewed hot or over ice, drown your cup in cream and sugar for the full death-by-decadence experience. CAFFEINE CONTENT: Flavored Death Wish Coffee contains approximately 140mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "5 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Vanilla_14oz_5pk_Ground_Angle_A2.jpg?v=1735594861"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "1 bag"
+              },
+              {
+                "label": "2 bags"
+              },
+              {
+                "label": "5 bags"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Vanilla_14oz_Ground_Angle_DTC_A2-_1.jpg?v=1726759714",
+            "alt_text": "Death Wish Coffee Vanilla Flavored Ground Coffee - 14 oz Bag."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Bagged",
+          "Death Wish Coffee",
+          "LTO Coffee",
+          "Medium Roast",
+          "National Coffee Day",
+          "Subscription",
+          "Vanilla"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/7366892159031",
+        "title": "Vanilla Cold Brew Latte",
+        "description": {
+          "html": "Balance your grind with a sip of flavor. Meet a premium Vanilla Latte that’s far from average. Featuring Fair Trade Certified 100% Colombian Cold Brew Coffee and real vanilla that'll satisfy your sweet tooth while delivering the strength you need. Unbelievably smooth, seriously strong and just the right amount of sweet, this latte will carry you through even the toughest of days. Featuring warm, rich vanilla balanced against bold, quality coffee and creamy milk. Crack one open knowing you never have to compromise on quality for convenience. CAFFEINE CONTENT: This product contains approximately 120mg of caffeine per can. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 15% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, this product may be excluded from all other discounts and promotions."
+        },
+        "url": "https://www.deathwishcoffee.com/products/vanilla-cold-brew-latte",
+        "handle": "vanilla-cold-brew-latte",
+        "price_range": {
+          "min": {
+            "amount": 3999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 11999,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/41990791004215",
+            "sku": "LRVNLA12K",
+            "title": "12 Pack",
+            "description": {
+              "html": "Balance your grind with a sip of flavor. Meet a premium Vanilla Latte that’s far from average. Featuring Fair Trade Certified 100% Colombian Cold Brew Coffee and real vanilla that'll satisfy your sweet tooth while delivering the strength you need. Unbelievably smooth, seriously strong and just the right amount of sweet, this latte will carry you through even the toughest of days. Featuring warm, rich vanilla balanced against bold, quality coffee and creamy milk. Crack one open knowing you never have to compromise on quality for convenience. CAFFEINE CONTENT: This product contains approximately 120mg of caffeine per can. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 15% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, this product may be excluded from all other discounts and promotions."
+            },
+            "price": {
+              "amount": 3999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "12 Pack"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/RTD_Vanilla_Tray_Angle_Retailer_DTC_A3_FT.jpg?v=1775144456"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41990791036983",
+            "sku": "LRVNLA24K",
+            "title": "24 Pack",
+            "description": {
+              "html": "Balance your grind with a sip of flavor. Meet a premium Vanilla Latte that’s far from average. Featuring Fair Trade Certified 100% Colombian Cold Brew Coffee and real vanilla that'll satisfy your sweet tooth while delivering the strength you need. Unbelievably smooth, seriously strong and just the right amount of sweet, this latte will carry you through even the toughest of days. Featuring warm, rich vanilla balanced against bold, quality coffee and creamy milk. Crack one open knowing you never have to compromise on quality for convenience. CAFFEINE CONTENT: This product contains approximately 120mg of caffeine per can. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 15% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, this product may be excluded from all other discounts and promotions."
+            },
+            "price": {
+              "amount": 7999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "24 Pack"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/RTD_Vanilla_Tray_Angle_Retailer_DTC_A3_FT.jpg?v=1775144456"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41990791069751",
+            "sku": "LRVNLA36K",
+            "title": "36 Pack",
+            "description": {
+              "html": "Balance your grind with a sip of flavor. Meet a premium Vanilla Latte that’s far from average. Featuring Fair Trade Certified 100% Colombian Cold Brew Coffee and real vanilla that'll satisfy your sweet tooth while delivering the strength you need. Unbelievably smooth, seriously strong and just the right amount of sweet, this latte will carry you through even the toughest of days. Featuring warm, rich vanilla balanced against bold, quality coffee and creamy milk. Crack one open knowing you never have to compromise on quality for convenience. CAFFEINE CONTENT: This product contains approximately 120mg of caffeine per can. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 15% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, this product may be excluded from all other discounts and promotions."
+            },
+            "price": {
+              "amount": 11999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "36 Pack"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/RTD_Vanilla_Tray_Angle_Retailer_DTC_A3_FT.jpg?v=1775144456"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "12 Pack"
+              },
+              {
+                "label": "24 Pack"
+              },
+              {
+                "label": "36 Pack"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/RTD_Vanilla_Tray_Angle_Retailer_DTC_A3_FT.jpg?v=1775144456",
+            "alt_text": "Death Wish Coffee Vanilla Cold Brew Latte 12-Pack."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Canned",
+          "Canned Lattes",
+          "LTO Coffee",
+          "Subscription"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/7420854370359",
+        "title": "Power Surge Coffee",
+        "description": {
+          "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+        },
+        "url": "https://www.deathwishcoffee.com/products/power-surge-coffee",
+        "handle": "power-surge-coffee",
+        "price_range": {
+          "min": {
+            "amount": 1999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 8499,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/42123932336183",
+            "sku": "LGPWSR16",
+            "title": "Ground / 1 lb",
+            "description": {
+              "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "1 lb"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/42123932368951",
+            "sku": "LGPWSR32K",
+            "title": "Ground / 2 lbs",
+            "description": {
+              "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "2 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/42123932401719",
+            "sku": "LGPWSR48K",
+            "title": "Ground / 3 lbs",
+            "description": {
+              "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "3 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/42123932434487",
+            "sku": "LGPWSR80K",
+            "title": "Ground / 5 lbs",
+            "description": {
+              "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/42123932467255",
+            "sku": "LWPWSR16",
+            "title": "Whole Bean / 1 lb",
+            "description": {
+              "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "1 lb"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/42123932500023",
+            "sku": "LWPWSR32K",
+            "title": "Whole Bean / 2 lbs",
+            "description": {
+              "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "2 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/42123932532791",
+            "sku": "LWPWSR48K",
+            "title": "Whole Bean / 3 lbs",
+            "description": {
+              "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "3 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/42123932565559",
+            "sku": "LWPWSR80K",
+            "title": "Whole Bean / 5 lbs",
+            "description": {
+              "html": "When life surges, so do you. Life doesn’t build. It hits. The meeting that moves. The plan that breaks. The day that stacks before you finish your first cup. And then there’s the part nobody talks about: The second shift. The part of the day where work ends and everything else begins. Where responsibilities don’t slow down, they pile on. That’s not a routine. That’s a surge. Power Surge exists for those moments. Not to motivate you. Not to fix it. Just to meet it with you. CAFFEINE CONTENT: Power Surge Coffee contains approximately 210mg of caffeine (20% more than our Dark Roast) based on a standard 6oz serving when brewed following package instructions. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, subscriptions may be excluded from promotional offers or additional discounts."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Type",
+            "values": [
+              {
+                "label": "Ground"
+              },
+              {
+                "label": "Whole Bean"
+              }
+            ]
+          },
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "1 lb"
+              },
+              {
+                "label": "2 lbs"
+              },
+              {
+                "label": "3 lbs"
+              },
+              {
+                "label": "5 lbs"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Power_Surge_16oz_Ground_Angle_DTC_A1_FTO.jpg?v=1773241929",
+            "alt_text": "Shop Ground and Whole Bean Power Surge Death Wish Coffee."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Bagged",
+          "Power Surge",
+          "Subscription",
+          "Website Exclusive Sale"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/4657897373751",
+        "title": "Medium Roast Coffee",
+        "description": {
+          "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+        },
+        "url": "https://www.deathwishcoffee.com/products/medium-roast",
+        "handle": "medium-roast",
+        "price_range": {
+          "min": {
+            "amount": 1999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 8499,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/32485212061751",
+            "sku": "7583G",
+            "title": "Ground / 1 lb",
+            "description": {
+              "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "1 lb"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Medium_Roast_16oz_Ground_Angle_DTC_A4_2.jpg?v=1726752632"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/32485212127287",
+            "sku": "752GK",
+            "title": "Ground / 2 lbs",
+            "description": {
+              "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "2 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/MR_16oz_2pk_Ground_Angle_A2.jpg?v=1735590227"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40258823159863",
+            "sku": "LKGMED48",
+            "title": "Ground / 3 lbs",
+            "description": {
+              "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "3 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/MR_16oz_3pk_Ground_Angle_A2.jpg?v=1735590227"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/32485212192823",
+            "sku": "755GK",
+            "title": "Ground / 5 lbs",
+            "description": {
+              "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Medium_Roast_16oz_Ground_Angle_DTC_A4_2.jpg?v=1726752632"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/32485212094519",
+            "sku": "7590W",
+            "title": "Whole Bean / 1 lb",
+            "description": {
+              "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "1 lb"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Medium_Roast_16oz_Whole_Bean_Angle_DTC_A4_2.jpg?v=1726752632"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/32485212160055",
+            "sku": "752WK",
+            "title": "Whole Bean / 2 lbs",
+            "description": {
+              "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "2 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/MR_16oz_2pk_WB_Angle_A2.jpg?v=1735590227"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40258823192631",
+            "sku": "LKWMED48",
+            "title": "Whole Bean / 3 lbs",
+            "description": {
+              "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "3 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/MR_16oz_3pk_WB_Angle_A2.jpg?v=1735590228"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/32485212225591",
+            "sku": "755WK",
+            "title": "Whole Bean / 5 lbs",
+            "description": {
+              "html": "A happy medium without compromise. Our Medium Roast Coffee delivers a bold, full-bodied yet smooth and flavorful brew that will awaken your taste buds. Smooth and balanced with a complex flavor profile including subtle undertones of stone fruit and caramel, we recommend at least one cup first thing in the morning in total isolation. CAFFEINE CONTENT: Medium Roast Coffee contains approximately 165mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Medium_Roast_16oz_Whole_Bean_Angle_DTC_A4_2.jpg?v=1726752632"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Type",
+            "values": [
+              {
+                "label": "Ground"
+              },
+              {
+                "label": "Whole Bean"
+              }
+            ]
+          },
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "1 lb"
+              },
+              {
+                "label": "2 lbs"
+              },
+              {
+                "label": "3 lbs"
+              },
+              {
+                "label": "5 lbs"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Medium_Roast_16oz_Ground_Angle_DTC_A4_2.jpg?v=1726752632",
+            "alt_text": "Death Wish Coffee - Medium Roast 16oz Ground Bag."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Bagged",
+          "Intro Offer",
+          "Medium",
+          "Medium Roast",
+          "National Coffee Day",
+          "Subscription"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/7156764475447",
+        "title": "Light Roast Coffee",
+        "description": {
+          "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+        },
+        "url": "https://www.deathwishcoffee.com/products/light-roast-coffee",
+        "handle": "light-roast-coffee",
+        "price_range": {
+          "min": {
+            "amount": 1999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 8499,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/41224639217719",
+            "sku": "LGLIGT16",
+            "title": "Ground / 1 lb",
+            "description": {
+              "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "1 lb"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Light_Roast_16oz_Ground_Angle_DTC_A1_2.jpg?v=1727439735"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41224639250487",
+            "sku": "LGLIGT32K",
+            "title": "Ground / 2 lbs",
+            "description": {
+              "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "2 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/LR_16oz_2pk_Ground_Angle_A1.jpg?v=1735592735"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41224639283255",
+            "sku": "LGLIGT48K",
+            "title": "Ground / 3 lbs",
+            "description": {
+              "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "3 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/LR_16oz_3pk_Ground_Angle_A1.jpg?v=1735592735"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41224639316023",
+            "sku": "LGLIGT80K",
+            "title": "Ground / 5 lbs",
+            "description": {
+              "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Light_Roast_80oz_Ground_Angle_DTC_A1.jpg?v=1735592735"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41224639348791",
+            "sku": "LWLIGT16",
+            "title": "Whole Bean / 1 lb",
+            "description": {
+              "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "1 lb"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Light_Roast_16oz_Whole_Bean_Angle_DTC_A1_d0389c33-17bb-4a38-8bd0-f402390075ba.jpg?v=1735592735"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41224639381559",
+            "sku": "LWLIGT32K",
+            "title": "Whole Bean / 2 lbs",
+            "description": {
+              "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3998,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "2 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/LR_16oz_2pk_WB_Angle_A1.jpg?v=1735592735"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41224639414327",
+            "sku": "LWLIGT48K",
+            "title": "Whole Bean / 3 lbs",
+            "description": {
+              "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 5997,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "3 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/LR_16oz_3pk_WB_Angle_A1.jpg?v=1735592735"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41224639447095",
+            "sku": "LWLIGT80K",
+            "title": "Whole Bean / 5 lbs",
+            "description": {
+              "html": "AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM It's time to hit SKIP on watered-down decisions and weak cups of coffee. Recharge your routine with a bold, bright roast that delivers the smooth punch you've been looking for. With delicious notes of agave and golden raisins, this Certified Fair Trade and Organic light roast will energize you and keep things interesting. Lighten up, one cup at a time. CAFFEINE CONTENT: Light Roast Coffee contains approximately 155mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Light_Roast_80oz_Whole_Bean_Angle_DTC_A1.jpg?v=1735592735"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Type",
+            "values": [
+              {
+                "label": "Ground"
+              },
+              {
+                "label": "Whole Bean"
+              }
+            ]
+          },
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "1 lb"
+              },
+              {
+                "label": "2 lbs"
+              },
+              {
+                "label": "3 lbs"
+              },
+              {
+                "label": "5 lbs"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Light_Roast_16oz_Ground_Angle_DTC_A1_2.jpg?v=1727439735",
+            "alt_text": "Death Wish Coffee Light Roast Ground Coffee - 16oz."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Bagged",
+          "Intro Offer",
+          "Light Roast",
+          "National Coffee Day",
+          "Subscription"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/7366891962423",
+        "title": "Classic Cold Brew Latte",
+        "description": {
+          "html": "For When Life's A Latte. Get your quick fix with premium coffee cold-brewed into a delicious, creamy latte that delivers serious strength. Unbelievably smooth, strong and just the right amount of sweet, this Original Latte is perfectly balanced for when your days are anything but. No fluff and all flavor. Original Latte features only quality ingredients–because we refuse to compromise and you shouldn't have to either. Classic Latte is a new look on our Original Latte – same bold, smooth, delicious taste. CAFFEINE CONTENT: This product contains approximately 140mg of caffeine per can. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 15% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, this product may be excluded from all other discounts and promotions."
+        },
+        "url": "https://www.deathwishcoffee.com/products/classic-cold-brew-latte",
+        "handle": "classic-cold-brew-latte",
+        "price_range": {
+          "min": {
+            "amount": 3999,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 11999,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/41990810959927",
+            "sku": "LRLATE12K",
+            "title": "12 Pack",
+            "description": {
+              "html": "For When Life's A Latte. Get your quick fix with premium coffee cold-brewed into a delicious, creamy latte that delivers serious strength. Unbelievably smooth, strong and just the right amount of sweet, this Original Latte is perfectly balanced for when your days are anything but. No fluff and all flavor. Original Latte features only quality ingredients–because we refuse to compromise and you shouldn't have to either. Classic Latte is a new look on our Original Latte – same bold, smooth, delicious taste. CAFFEINE CONTENT: This product contains approximately 140mg of caffeine per can. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 15% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, this product may be excluded from all other discounts and promotions."
+            },
+            "price": {
+              "amount": 3999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "12 Pack"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/RTD_Classic_Tray_Angle_Retailer_DTC_A1_FT.jpg?v=1775143084"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41990810992695",
+            "sku": "LRLATE24K",
+            "title": "24 Pack",
+            "description": {
+              "html": "For When Life's A Latte. Get your quick fix with premium coffee cold-brewed into a delicious, creamy latte that delivers serious strength. Unbelievably smooth, strong and just the right amount of sweet, this Original Latte is perfectly balanced for when your days are anything but. No fluff and all flavor. Original Latte features only quality ingredients–because we refuse to compromise and you shouldn't have to either. Classic Latte is a new look on our Original Latte – same bold, smooth, delicious taste. CAFFEINE CONTENT: This product contains approximately 140mg of caffeine per can. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 15% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, this product may be excluded from all other discounts and promotions."
+            },
+            "price": {
+              "amount": 7999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "24 Pack"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/RTD_Classic_Tray_Angle_Retailer_DTC_A1_FT.jpg?v=1775143084"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41990811025463",
+            "sku": "LRLATE36K",
+            "title": "36 Pack",
+            "description": {
+              "html": "For When Life's A Latte. Get your quick fix with premium coffee cold-brewed into a delicious, creamy latte that delivers serious strength. Unbelievably smooth, strong and just the right amount of sweet, this Original Latte is perfectly balanced for when your days are anything but. No fluff and all flavor. Original Latte features only quality ingredients–because we refuse to compromise and you shouldn't have to either. Classic Latte is a new look on our Original Latte – same bold, smooth, delicious taste. CAFFEINE CONTENT: This product contains approximately 140mg of caffeine per can. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 15% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. *Unless otherwise specified, this product may be excluded from all other discounts and promotions."
+            },
+            "price": {
+              "amount": 11999,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "36 Pack"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/RTD_Classic_Tray_Angle_Retailer_DTC_A1_FT.jpg?v=1775143084"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "12 Pack"
+              },
+              {
+                "label": "24 Pack"
+              },
+              {
+                "label": "36 Pack"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/RTD_Classic_Tray_Angle_Retailer_DTC_A1_FT.jpg?v=1775143084",
+            "alt_text": "Death Wish Coffee Classic (Original) Cold Brew Latte 12 Pack."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Canned",
+          "Canned Lattes",
+          "LTO Coffee",
+          "Subscription"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/272081685",
+        "title": "Valhalla Java Odinforce Blend",
+        "description": {
+          "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+        },
+        "url": "https://www.deathwishcoffee.com/products/valhalla-java-odin-force-blend",
+        "handle": "valhalla-java-odin-force-blend",
+        "price_range": {
+          "min": {
+            "amount": 1599,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 8499,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/638652625",
+            "sku": "50011G",
+            "title": "Ground / 1 bag",
+            "description": {
+              "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1599,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "1 bag"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Valhalla_Java_12oz_Ground_Front_A1_2.jpg?v=1733925443"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40216565121079",
+            "sku": "LGDWVJ24K",
+            "title": "Ground / 2 bags",
+            "description": {
+              "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3198,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "2 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/VJ_12oz_2pk_Ground_Angle_A2.jpg?v=1735593928"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40192503906359",
+            "sku": "LGDWVJ36K",
+            "title": "Ground / 3 bags",
+            "description": {
+              "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 4499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "3 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/VJ_12oz_3pk_Ground_Angle_A2.jpg?v=1735593928"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40480500109",
+            "sku": "50015G",
+            "title": "Ground / 5 lbs",
+            "description": {
+              "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Ground"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/VJ_80oz_Ground_Angle_A2.jpg?v=1735593928"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/638749409",
+            "sku": "50011W",
+            "title": "Whole Bean / 1 bag",
+            "description": {
+              "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 1599,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "1 bag"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Valhalla_Java_12oz_Whole_Bean_Front_A1_2.jpg?v=1733925472"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40216565153847",
+            "sku": "LWDWVJ24K",
+            "title": "Whole Bean / 2 bags",
+            "description": {
+              "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 3198,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "2 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/VJ_12oz_2pk_WB_Angle_A2.jpg?v=1735593928"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40192503939127",
+            "sku": "LWDWVJ36K",
+            "title": "Whole Bean / 3 bags",
+            "description": {
+              "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 4499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "3 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/VJ_12oz_3pk_WB_Angle_A2.jpg?v=1735593928"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/40480530125",
+            "sku": "50015W",
+            "title": "Whole Bean / 5 lbs",
+            "description": {
+              "html": "By the power of Odin. Meet the Valhalla Java Odinforce blend. Worthy of the gods, these beans were forged from the volcanic soils of Indonesia and nutrient-rich soils of Central and South America. Crafted for boldness and maximum flavor, this blend is strong enough to wake the dead and chariot them gloriously through the gates of Valhalla. CAFFEINE CONTENT: Valhalla Java Odinforce Blend contains approximately 175mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. SUBSCRIBE & SAVE: Join the Society of Strong Coffee to save 30% off your first shipment and up to 20% off future deliveries. Plus, unlock free shipping on all subscription orders and keep an eye out for exclusive access to upcoming releases. Unless specified in promotional messaging, coffee subscriptions are not eligible for additional discounts or promotional offers."
+            },
+            "price": {
+              "amount": 8499,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Type",
+                "label": "Whole Bean"
+              },
+              {
+                "name": "Size",
+                "label": "5 lbs"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/VJ_80oz_WB_Angle_A2.jpg?v=1735593928"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Type",
+            "values": [
+              {
+                "label": "Ground"
+              },
+              {
+                "label": "Whole Bean"
+              }
+            ]
+          },
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "1 bag"
+              },
+              {
+                "label": "2 bags"
+              },
+              {
+                "label": "3 bags"
+              },
+              {
+                "label": "5 lbs"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Valhalla_Java_12oz_Ground_Front_A1_2.jpg?v=1733925443",
+            "alt_text": "Death Wish Coffee Valhalla Java Ground 12oz Bag."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Bagged",
+          "National Coffee Day",
+          "Subscription",
+          "Valhalla Java",
+          "Valhalla Java Odinforce Blend"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/7330615623735",
+        "title": "Maple Cinnamon Coffee",
+        "description": {
+          "html": "Cinn is in. Delve into dark thoughts while satisfying your seasonal obsession with a brew that fits the bill. Bold notes of fiery cinnamon pair with sweet maple syrup, providing a flavor that will stick to your psyche and whisper sweet, sinful nothings in your ear. No need to repent when your brew is boasting natural flavors, and Fair Trade & Organic Certified arabica and robusta beans like this one. So come on, cinn is in. CAFFEINE CONTENT: Flavored Death Wish Coffee contains approximately 140mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM"
+        },
+        "url": "https://www.deathwishcoffee.com/products/maple-cinnamon-coffee",
+        "handle": "maple-cinnamon-coffee",
+        "price_range": {
+          "min": {
+            "amount": 1399,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 6995,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 0,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 0,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/41847427432503",
+            "sku": "LGMPCN09",
+            "title": "1 bag",
+            "description": {
+              "html": "Cinn is in. Delve into dark thoughts while satisfying your seasonal obsession with a brew that fits the bill. Bold notes of fiery cinnamon pair with sweet maple syrup, providing a flavor that will stick to your psyche and whisper sweet, sinful nothings in your ear. No need to repent when your brew is boasting natural flavors, and Fair Trade & Organic Certified arabica and robusta beans like this one. So come on, cinn is in. CAFFEINE CONTENT: Flavored Death Wish Coffee contains approximately 140mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM"
+            },
+            "price": {
+              "amount": 1399,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "1 bag"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Maple_Cinnamon_9oz_Ground_Angle_DTC_A1.jpg?v=1773934706"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41847427465271",
+            "sku": "LGMPCN18",
+            "title": "2 bags",
+            "description": {
+              "html": "Cinn is in. Delve into dark thoughts while satisfying your seasonal obsession with a brew that fits the bill. Bold notes of fiery cinnamon pair with sweet maple syrup, providing a flavor that will stick to your psyche and whisper sweet, sinful nothings in your ear. No need to repent when your brew is boasting natural flavors, and Fair Trade & Organic Certified arabica and robusta beans like this one. So come on, cinn is in. CAFFEINE CONTENT: Flavored Death Wish Coffee contains approximately 140mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM"
+            },
+            "price": {
+              "amount": 2798,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "2 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Maple_Cinnamon_9oz_Ground_Angle_DTC_A1.jpg?v=1773934706"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/41847427498039",
+            "sku": "LGMPCN45",
+            "title": "5 bags",
+            "description": {
+              "html": "Cinn is in. Delve into dark thoughts while satisfying your seasonal obsession with a brew that fits the bill. Bold notes of fiery cinnamon pair with sweet maple syrup, providing a flavor that will stick to your psyche and whisper sweet, sinful nothings in your ear. No need to repent when your brew is boasting natural flavors, and Fair Trade & Organic Certified arabica and robusta beans like this one. So come on, cinn is in. CAFFEINE CONTENT: Flavored Death Wish Coffee contains approximately 140mg of caffeine based on a 6oz serving following brewing instructions on the package. Learn more about the caffeine content of all Death Wish Coffee products at deathwishcoffee.com/caffeine. AVAILABLE EXCLUSIVELY AT DEATHWISHCOFFEE.COM"
+            },
+            "price": {
+              "amount": 6995,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "5 bags"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Maple_Cinnamon_9oz_Ground_Angle_DTC_A1.jpg?v=1773934706"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "1 bag"
+              },
+              {
+                "label": "2 bags"
+              },
+              {
+                "label": "5 bags"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Maple_Cinnamon_9oz_Ground_Angle_DTC_A1.jpg?v=1773934706",
+            "alt_text": "Delve into cinn with Maple Cinnamon flavored Death Wish Coffee."
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/fb-1-3",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "Bagged",
+          "LTO Coffee",
+          "Maple Cinnamon",
+          "Website Exclusive Sale"
+        ]
+      }
+    ],
+    "pagination": {
+      "has_next_page": true,
+      "cursor": "eyJncmFwaHFsX2N1cnNvciI6ImV5SndZV2RsSWpveUxDSnNZWE4wWDJsa0lqbzNNek13TmpFMU5qSXpOek0xTENKeVpYWmxjbk5sSWpwMGNuVmxMQ0p2Wm1aelpYUWlPamw5IiwicGFnZSI6Mn0="
+    },
+    "messages": []
+  }
+}

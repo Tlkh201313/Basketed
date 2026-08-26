@@ -1,0 +1,227 @@
+{
+  "probed_at": "2026-08-25T23:55:48.586Z",
+  "api_version": "2026-04-08",
+  "note": "Two-step probe. A missing /.well-known/ucp is not proof of opt-out; tools/list decides.",
+  "stores": [
+    {
+      "id": "shp:deathwishcoffee-com",
+      "domain": "deathwishcoffee.com",
+      "endpoint": "https://deathwishcoffee.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:chubbiesshorts-com",
+      "domain": "chubbiesshorts.com",
+      "endpoint": "https://chubbiesshorts.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:tonyschocolonely-com",
+      "domain": "tonyschocolonely.com",
+      "endpoint": "https://tonyschocolonely.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:gymshark-com",
+      "domain": "gymshark.com",
+      "endpoint": "https://gymshark.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:allbirds-com",
+      "domain": "allbirds.com",
+      "endpoint": "https://allbirds.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:brooklinen-com",
+      "domain": "brooklinen.com",
+      "endpoint": "https://brooklinen.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:mejuri-com",
+      "domain": "mejuri.com",
+      "endpoint": "https://mejuri.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:drsquatch-com",
+      "domain": "drsquatch.com",
+      "endpoint": "https://drsquatch.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:kirrinfinch-com",
+      "domain": "kirrinfinch.com",
+      "endpoint": "https://kirrinfinch.com/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    },
+    {
+      "id": "shp:hiutdenim-co-uk",
+      "domain": "hiutdenim.co.uk",
+      "endpoint": "https://hiutdenim.co.uk/api/ucp/mcp",
+      "mode": "native",
+      "tools": [
+        "get_checkout",
+        "create_checkout",
+        "update_checkout",
+        "complete_checkout",
+        "cancel_checkout",
+        "get_cart",
+        "create_cart",
+        "update_cart",
+        "cancel_cart",
+        "get_order",
+        "search_catalog",
+        "lookup_catalog",
+        "get_product"
+      ],
+      "discovery": "ok"
+    }
+  ]
+}

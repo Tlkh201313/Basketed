@@ -1,0 +1,194 @@
+{
+  "store": "deathwishcoffee.com",
+  "variantId": "gid://shopify/ProductVariant/2413985169421",
+  "rawBytes": 8072,
+  "payload": {
+    "ucp": {
+      "version": "2026-04-08",
+      "status": "success",
+      "services": {
+        "dev.ucp.shopping": []
+      },
+      "capabilities": {
+        "dev.ucp.shopping.cart": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/cart",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/cart.json"
+          }
+        ],
+        "dev.ucp.shopping.checkout": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/checkout",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/checkout.json"
+          }
+        ],
+        "dev.ucp.shopping.catalog.search": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/catalog",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/catalog_search.json"
+          }
+        ],
+        "dev.ucp.shopping.catalog.lookup": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/catalog",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/catalog_lookup.json"
+          }
+        ]
+      },
+      "payment_handlers": {
+        "com.google.pay": [
+          {
+            "id": "gpay",
+            "version": "2026-01-11",
+            "spec": "https://pay.google.com/gp/p/ucp/2026-01-11/",
+            "schema": "https://pay.google.com/gp/p/ucp/2026-01-11/schemas/config.json",
+            "config": {
+              "api_version": 2,
+              "api_version_minor": 0,
+              "merchant_info": {
+                "merchant_name": "Death Wish Coffee",
+                "merchant_id": "16708973830884969730",
+                "merchant_origin": "www.deathwishcoffee.com",
+                "auth_jwt": ""
+              },
+              "allowed_payment_methods": [
+                {
+                  "type": "CARD",
+                  "parameters": {
+                    "allowed_auth_methods": [
+                      "PAN_ONLY",
+                      "CRYPTOGRAM_3DS"
+                    ],
+                    "allowed_card_networks": [
+                      "VISA",
+                      "MASTERCARD",
+                      "AMEX",
+                      "DISCOVER"
+                    ],
+                    "billing_address_required": true,
+                    "billing_address_parameters": {
+                      "format": "FULL",
+                      "phone_number_required": false
+                    }
+                  },
+                  "tokenization_specification": {
+                    "type": "PAYMENT_GATEWAY",
+                    "parameters": {
+                      "gateway": "shopify",
+                      "gatewayMerchantId": "2717209"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "dev.shopify.card": [
+          {
+            "id": "shopify.card",
+            "version": "2026-01-15",
+            "spec": "https://ucp.dev/specification/payment-handler-guide",
+            "schema": "https://shopify.dev/ucp/card-payment-handler/2026-01-15/config.json",
+            "config": {
+              "payment_methods": [
+                {
+                  "type": "card",
+                  "enabled_card_brands": [
+                    "visa",
+                    "master",
+                    "american_express",
+                    "discover",
+                    "diners_club"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "dev.shopify.shop_pay": [
+          {
+            "id": "shop_pay",
+            "version": "2026-04-08",
+            "spec": "https://shopify.dev/ucp/shop-pay-handler/2026-04-08/spec.md",
+            "schema": "https://shopify.dev/ucp/shop-pay-handler/2026-04-08/schema.json",
+            "config": {
+              "shop_id": "2717209"
+            }
+          }
+        ]
+      }
+    },
+    "id": "gid://shopify/Cart/hWNG54reiyTULpKMEworizad?key=08769d60b4d38034acfe3fed697caa97",
+    "line_items": [
+      {
+        "id": "gid://shopify/CartLine/056c62c4-1cef-4280-abab-3a583e52569a?cart=hWNG54reiyTULpKMEworizad",
+        "item": {
+          "id": "gid://shopify/ProductVariant/2413985169421",
+          "title": "Dark Roast Coffee - Ground / 1 lb",
+          "price": 1999,
+          "image_url": "https://cdn.shopify.com/s/files/1/0271/7209/files/Dark_Roast_16oz_Ground_Angle_DTC_A4_2.jpg?v=1726752263"
+        },
+        "quantity": 1,
+        "totals": [
+          {
+            "type": "subtotal",
+            "amount": 1999,
+            "display_text": "Subtotal"
+          },
+          {
+            "type": "items_discount",
+            "amount": -599,
+            "display_text": "Item Discounts"
+          },
+          {
+            "type": "total",
+            "amount": 1400,
+            "display_text": "Total"
+          }
+        ]
+      }
+    ],
+    "currency": "USD",
+    "totals": [
+      {
+        "type": "subtotal",
+        "amount": 1999,
+        "display_text": "Subtotal"
+      },
+      {
+        "type": "items_discount",
+        "amount": -599,
+        "display_text": "Item Discounts"
+      },
+      {
+        "type": "total",
+        "amount": 1400,
+        "display_text": "Total"
+      }
+    ],
+    "expires_at": "2026-09-24T23:59:04Z",
+    "links": [
+      {
+        "type": "refund_policy",
+        "title": "Refund Policy",
+        "url": "https://www.deathwishcoffee.com/2717209/policies/1003631.html?locale=en"
+      },
+      {
+        "type": "terms_of_service",
+        "title": "Terms of Service",
+        "url": "https://www.deathwishcoffee.com/2717209/policies/1003633.html?locale=en"
+      },
+      {
+        "type": "privacy_policy",
+        "title": "Privacy Policy",
+        "url": "https://www.deathwishcoffee.com/2717209/policies/1003635.html?locale=en"
+      }
+    ],
+    "messages": [],
+    "continue_url": "https://deathwishcoffee.myshopify.com/cart/c/hWNG54reiyTULpKMEworizad?key=xV9IyJIRV9BAMV6pSSYi1BYcEzp1rz2UNgpkWlIqZJ6ElfGvAYukh0eK_dWSUozyXZfJ22fZkM-GvqB8hmHkw9981boCy2HPd1qSPQCosVqHVH1Kgdw-pjYAqxXl7CfQYc-mVDt__K6Par5jRFDOGQ%3D%3D"
+  }
+}

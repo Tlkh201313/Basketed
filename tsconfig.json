@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/adapters" },
+    { "path": "packages/vault" },
+    { "path": "packages/commerce" },
+    { "path": "packages/mcp" },
+    { "path": "packages/control" },
+    { "path": "packages/cli" }
+  ]
+}

@@ -1,0 +1,18 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+coverage/
+
+# Local vault + database — never commit
+.basketed/
+*.db
+*.db-journal
+master.key
+
+# Environment
+.env
+.env.local
+
+# Backups written by the config installers
+*.basketed-backup-*

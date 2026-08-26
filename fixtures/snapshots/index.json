@@ -1,0 +1,29 @@
+{
+  "profile": "https://cdn.statically.io/gist/Tlkh201313/1d42ef351a9075c75901f539bae847bc/raw/ucp-profile.json",
+  "captured": [
+    {
+      "store": "deathwishcoffee.com",
+      "products": 10,
+      "searchRawBytes": 218058,
+      "cartRawBytes": 8072,
+      "handoffUrlFound": true,
+      "handoffSample": "https://deathwishcoffee.myshopify.com/cart/c/hWNG54reiyTULpKMEworizad?key=xV9IyJIRV9BAMV6p"
+    },
+    {
+      "store": "chubbiesshorts.com",
+      "products": 6,
+      "searchRawBytes": 88936,
+      "cartRawBytes": 7752,
+      "handoffUrlFound": true,
+      "handoffSample": "https://chubbies.myshopify.com/cart/c/hWNG54rn8Dm3Pqchb3UZlTUJ?key=DcvaUOnsH6uZIgGs1PrGNiG"
+    },
+    {
+      "store": "tonyschocolonely.com",
+      "products": 0,
+      "searchRawBytes": 4450,
+      "cartRawBytes": null,
+      "handoffUrlFound": false,
+      "handoffSample": null
+    }
+  ]
+}

@@ -1,0 +1,1694 @@
+{
+  "store": "chubbiesshorts.com",
+  "capturedAt": "2026-08-25T23:59:05.887Z",
+  "rawBytes": 88936,
+  "payload": {
+    "ucp": {
+      "version": "2026-04-08",
+      "status": "success",
+      "services": {
+        "dev.ucp.shopping": []
+      },
+      "capabilities": {
+        "dev.ucp.shopping.cart": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/cart",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/cart.json"
+          }
+        ],
+        "dev.ucp.shopping.checkout": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/checkout",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/checkout.json"
+          }
+        ],
+        "dev.ucp.shopping.catalog.search": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/catalog",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/catalog_search.json"
+          }
+        ],
+        "dev.ucp.shopping.catalog.lookup": [
+          {
+            "version": "2026-04-08",
+            "spec": "https://ucp.dev/2026-04-08/specification/catalog",
+            "schema": "https://ucp.dev/2026-04-08/schemas/shopping/catalog_lookup.json"
+          }
+        ]
+      },
+      "payment_handlers": {
+        "com.google.pay": [
+          {
+            "id": "gpay",
+            "version": "2026-01-11",
+            "spec": "https://pay.google.com/gp/p/ucp/2026-01-11/",
+            "schema": "https://pay.google.com/gp/p/ucp/2026-01-11/schemas/config.json",
+            "config": {
+              "api_version": 2,
+              "api_version_minor": 0,
+              "merchant_info": {
+                "merchant_name": "Chubbies Shorts",
+                "merchant_id": "16708973830884969730",
+                "merchant_origin": "checkout.chubbiesshorts.com",
+                "auth_jwt": ""
+              },
+              "allowed_payment_methods": [
+                {
+                  "type": "CARD",
+                  "parameters": {
+                    "allowed_auth_methods": [
+                      "PAN_ONLY",
+                      "CRYPTOGRAM_3DS"
+                    ],
+                    "allowed_card_networks": [
+                      "VISA",
+                      "MASTERCARD",
+                      "AMEX",
+                      "DISCOVER"
+                    ],
+                    "billing_address_required": true,
+                    "billing_address_parameters": {
+                      "format": "FULL",
+                      "phone_number_required": true
+                    }
+                  },
+                  "tokenization_specification": {
+                    "type": "PAYMENT_GATEWAY",
+                    "parameters": {
+                      "gateway": "shopify",
+                      "gatewayMerchantId": "770432"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "dev.shopify.card": [
+          {
+            "id": "shopify.card",
+            "version": "2026-01-15",
+            "spec": "https://ucp.dev/specification/payment-handler-guide",
+            "schema": "https://shopify.dev/ucp/card-payment-handler/2026-01-15/config.json",
+            "config": {
+              "payment_methods": [
+                {
+                  "type": "card",
+                  "enabled_card_brands": [
+                    "visa",
+                    "master",
+                    "american_express",
+                    "discover",
+                    "diners_club"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "dev.shopify.shop_pay": [
+          {
+            "id": "shop_pay",
+            "version": "2026-04-08",
+            "spec": "https://shopify.dev/ucp/shop-pay-handler/2026-04-08/spec.md",
+            "schema": "https://shopify.dev/ucp/shop-pay-handler/2026-04-08/schema.json",
+            "config": {
+              "shop_id": "770432"
+            }
+          }
+        ]
+      }
+    },
+    "products": [
+      {
+        "id": "gid://shopify/Product/15352137646153",
+        "title": "The Navy Babys (Everywear Performance Jogger)",
+        "description": {
+          "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+        },
+        "url": "https://checkout.chubbiesshorts.com/products/the-navy-babys-everywear-performance-jogger",
+        "handle": "the-navy-babys-everywear-performance-jogger",
+        "price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/54559640256585",
+            "sku": "780253-022",
+            "title": "S",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "S"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/ChubbiesAug29PDP22317.webp?v=1772590118"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559640289353",
+            "sku": "780253-023",
+            "title": "M",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "M"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/ChubbiesAug29PDP22317.webp?v=1772590118"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559640322121",
+            "sku": "780253-024",
+            "title": "L",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "L"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/ChubbiesAug29PDP22317.webp?v=1772590118"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559640354889",
+            "sku": "780253-025",
+            "title": "XL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/ChubbiesAug29PDP22317.webp?v=1772590118"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559640387657",
+            "sku": "780253-026",
+            "title": "XXL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XXL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/ChubbiesAug29PDP22317.webp?v=1772590118"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "S"
+              },
+              {
+                "label": "M"
+              },
+              {
+                "label": "L"
+              },
+              {
+                "label": "XL"
+              },
+              {
+                "label": "XXL"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/ChubbiesAug29PDP22317.webp?v=1772590118",
+            "alt_text": "The Navy Babys (Everywear Performance Jogger) - Image 1 - Chubbies Shorts"
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/na",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "ALLPANTS",
+          "allproductsnogiftcards",
+          "COLLECTION:casual-pants",
+          "COLLECTION:everywear",
+          "COLLECTION:pants",
+          "COLLECTION:the-fall-collection",
+          "COLLECTION:the-joggers",
+          "Color Group:Blue",
+          "Color:Navy Blue",
+          "ColorApplication:SOLID",
+          "Fabric:EVERYWEAR",
+          "filter-feature:Elastic Waistband",
+          "filter-feature:Water Resistant",
+          "filter-feature:Wrinkle Resistant",
+          "FULL_PRICE",
+          "FULLPRICEBUNDLE",
+          "FULLPRICECASUAL",
+          "FULLPRICEPANTS",
+          "Length:30\"",
+          "Lining:NO LINER",
+          "POSonly",
+          "Season:FH25",
+          "Silhouette:EVERYWEAR",
+          "style:everywear-jogger",
+          "Type:PANTS",
+          "USShippingOnly",
+          "YCRF_CASUAL",
+          "YGroup_EVERYWEAR-JOGGER"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/15352137449545",
+        "title": "The Midnight Adventures (Everywear Performance Jogger)",
+        "description": {
+          "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+        },
+        "url": "https://checkout.chubbiesshorts.com/products/the-midnight-adventures-everywear-performance-jogger-1",
+        "handle": "the-midnight-adventures-everywear-performance-jogger-1",
+        "price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/54559639273545",
+            "sku": "780253-002",
+            "title": "S",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "S"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_MidnightAdventures_EverywearPerformanceJogger__780253-00_OF.webp?v=1762273499"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559639306313",
+            "sku": "780253-003",
+            "title": "M",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "M"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_MidnightAdventures_EverywearPerformanceJogger__780253-00_OF.webp?v=1762273499"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559639339081",
+            "sku": "780253-004",
+            "title": "L",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "L"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_MidnightAdventures_EverywearPerformanceJogger__780253-00_OF.webp?v=1762273499"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559639371849",
+            "sku": "780253-005",
+            "title": "XL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_MidnightAdventures_EverywearPerformanceJogger__780253-00_OF.webp?v=1762273499"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559639404617",
+            "sku": "780253-006",
+            "title": "XXL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XXL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_MidnightAdventures_EverywearPerformanceJogger__780253-00_OF.webp?v=1762273499"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "S"
+              },
+              {
+                "label": "M"
+              },
+              {
+                "label": "L"
+              },
+              {
+                "label": "XL"
+              },
+              {
+                "label": "XXL"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_MidnightAdventures_EverywearPerformanceJogger__780253-00_OF.webp?v=1762273499",
+            "alt_text": "The Midnight Adventures (Everywear Performance Jogger) - Image 1 - Chubbies Shorts"
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/na",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "ALLPANTS",
+          "allproductsnogiftcards",
+          "COLLECTION:casual-pants",
+          "COLLECTION:everywear",
+          "COLLECTION:pants",
+          "COLLECTION:the-fall-collection",
+          "COLLECTION:the-joggers",
+          "Color Group:Black",
+          "Color:Black",
+          "ColorApplication:SOLID",
+          "Fabric:EVERYWEAR",
+          "filter-feature:Elastic Waistband",
+          "filter-feature:Water Resistant",
+          "filter-feature:Wrinkle Resistant",
+          "FULL_PRICE",
+          "FULLPRICEBUNDLE",
+          "FULLPRICECASUAL",
+          "FULLPRICEPANTS",
+          "Length:30\"",
+          "Lining:NO LINER",
+          "Season:FH25",
+          "Silhouette:EVERYWEAR",
+          "style:everywear-jogger",
+          "Type:PANTS",
+          "USShippingOnly",
+          "YCRF_CASUAL",
+          "YGroup_EVERYWEAR-JOGGER"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/15352137908297",
+        "title": "The World's Grayests (Everywear Performance Jogger)",
+        "description": {
+          "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+        },
+        "url": "https://checkout.chubbiesshorts.com/products/the-worlds-grayests-everywear-performance-jogger-1",
+        "handle": "the-worlds-grayests-everywear-performance-jogger-1",
+        "price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/54559641829449",
+            "sku": "780253-032",
+            "title": "S",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "S"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_World_27s_20Grayests_20_28Everywear_20Performance_20Jogger_29_780253-03_OF.webp?v=1768016024"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559641862217",
+            "sku": "780253-033",
+            "title": "M",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "M"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_World_27s_20Grayests_20_28Everywear_20Performance_20Jogger_29_780253-03_OF.webp?v=1768016024"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559641894985",
+            "sku": "780253-034",
+            "title": "L",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "L"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_World_27s_20Grayests_20_28Everywear_20Performance_20Jogger_29_780253-03_OF.webp?v=1768016024"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559641927753",
+            "sku": "780253-035",
+            "title": "XL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_World_27s_20Grayests_20_28Everywear_20Performance_20Jogger_29_780253-03_OF.webp?v=1768016024"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559641960521",
+            "sku": "780253-036",
+            "title": "XXL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XXL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_World_27s_20Grayests_20_28Everywear_20Performance_20Jogger_29_780253-03_OF.webp?v=1768016024"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "S"
+              },
+              {
+                "label": "M"
+              },
+              {
+                "label": "L"
+              },
+              {
+                "label": "XL"
+              },
+              {
+                "label": "XXL"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_World_27s_20Grayests_20_28Everywear_20Performance_20Jogger_29_780253-03_OF.webp?v=1768016024",
+            "alt_text": "The World's Grayests (Everywear Performance Jogger) - Image 1 - Chubbies Shorts"
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/na",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "ALLPANTS",
+          "allproductsnogiftcards",
+          "COLLECTION:casual-pants",
+          "COLLECTION:everywear",
+          "COLLECTION:pants",
+          "COLLECTION:the-fall-collection",
+          "COLLECTION:the-joggers",
+          "Color Group:Grey",
+          "Color:Grey",
+          "ColorApplication:SOLID",
+          "Fabric:EVERYWEAR",
+          "filter-feature:Elastic Waistband",
+          "filter-feature:Water Resistant",
+          "filter-feature:Wrinkle Resistant",
+          "FULL_PRICE",
+          "FULLPRICEBUNDLE",
+          "FULLPRICECASUAL",
+          "FULLPRICEPANTS",
+          "Length:30\"",
+          "Lining:NO LINER",
+          "POSonly",
+          "Season:FH25",
+          "Silhouette:EVERYWEAR",
+          "style:everywear-jogger",
+          "Type:PANTS",
+          "USShippingOnly",
+          "YCRF_CASUAL",
+          "YGroup_EVERYWEAR-JOGGER"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/15352137515081",
+        "title": "The Hidden Jungles (Everywear Performance Jogger)",
+        "description": {
+          "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+        },
+        "url": "https://checkout.chubbiesshorts.com/products/the-hidden-jungles-everywear-performance-jogger",
+        "handle": "the-hidden-jungles-everywear-performance-jogger",
+        "price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/54559639109705",
+            "sku": "780253-042",
+            "title": "S",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "S"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Hidden_20Jungles_20_28Everywear_20Performance_20Jogger_29_780253-04_OF.webp?v=1753388764"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559639142473",
+            "sku": "780253-043",
+            "title": "M",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "M"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Hidden_20Jungles_20_28Everywear_20Performance_20Jogger_29_780253-04_OF.webp?v=1753388764"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559639175241",
+            "sku": "780253-044",
+            "title": "L",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "L"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Hidden_20Jungles_20_28Everywear_20Performance_20Jogger_29_780253-04_OF.webp?v=1753388764"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559639208009",
+            "sku": "780253-045",
+            "title": "XL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Hidden_20Jungles_20_28Everywear_20Performance_20Jogger_29_780253-04_OF.webp?v=1753388764"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559639240777",
+            "sku": "780253-046",
+            "title": "XXL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XXL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Hidden_20Jungles_20_28Everywear_20Performance_20Jogger_29_780253-04_OF.webp?v=1753388764"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "S"
+              },
+              {
+                "label": "M"
+              },
+              {
+                "label": "L"
+              },
+              {
+                "label": "XL"
+              },
+              {
+                "label": "XXL"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Hidden_20Jungles_20_28Everywear_20Performance_20Jogger_29_780253-04_OF.webp?v=1753388764",
+            "alt_text": "The Hidden Jungles (Everywear Performance Jogger) - Image 1 - Chubbies Shorts"
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/na",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "ALLPANTS",
+          "allproductsnogiftcards",
+          "COLLECTION:casual-pants",
+          "COLLECTION:everywear",
+          "COLLECTION:pants",
+          "COLLECTION:the-fall-collection",
+          "COLLECTION:the-joggers",
+          "Color Group:Green",
+          "Color:Olive Green",
+          "ColorApplication:SOLID",
+          "Fabric:EVERYWEAR",
+          "filter-feature:Elastic Waistband",
+          "filter-feature:Water Resistant",
+          "filter-feature:Wrinkle Resistant",
+          "FULL_PRICE",
+          "FULLPRICEBUNDLE",
+          "FULLPRICECASUAL",
+          "FULLPRICEPANTS",
+          "Length:30\"",
+          "Lining:NO LINER",
+          "Season:FH25",
+          "Silhouette:EVERYWEAR",
+          "style:everywear-jogger",
+          "Type:PANTS",
+          "USShippingOnly",
+          "YCRF_CASUAL",
+          "YGroup_EVERYWEAR-JOGGER"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/15352137744457",
+        "title": "The Khakinator (Everywear Performance Jogger)",
+        "description": {
+          "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+        },
+        "url": "https://checkout.chubbiesshorts.com/products/the-khakinator-everywear-performance-jogger",
+        "handle": "the-khakinator-everywear-performance-jogger",
+        "price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 9450,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 9450,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/54559640420425",
+            "sku": "780253-012",
+            "title": "S",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "S"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Khakinator_20_28Everywear_20Performance_20Jogger_29_780253-01_OF.webp?v=1772590728"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559640453193",
+            "sku": "780253-013",
+            "title": "M",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "M"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Khakinator_20_28Everywear_20Performance_20Jogger_29_780253-01_OF.webp?v=1772590728"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559640485961",
+            "sku": "780253-014",
+            "title": "L",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "L"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Khakinator_20_28Everywear_20Performance_20Jogger_29_780253-01_OF.webp?v=1772590728"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559640518729",
+            "sku": "780253-015",
+            "title": "XL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Khakinator_20_28Everywear_20Performance_20Jogger_29_780253-01_OF.webp?v=1772590728"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/54559640551497",
+            "sku": "780253-016",
+            "title": "XXL",
+            "description": {
+              "html": "The Everywear Jogger fuses performance fiber with a clean, tailored silhouette that pairs as well with a crisp tee and high-tops as it does with your gym uniform. Four-way stretch and moisture-wicking keeps you cool in crowded rooms; a DWR finish fends off coffee spills and unexpected street mist. Finished with an elastic waistband and secure pockets, it’s the jogger that blurs the line between workout and weekend. And it nails both. Fabric: 90% Polyester/10% Spandex Machine Wash Cold, Tumble Dry Low"
+            },
+            "price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 9450,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": true
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XXL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Khakinator_20_28Everywear_20Performance_20Jogger_29_780253-01_OF.webp?v=1772590728"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "S"
+              },
+              {
+                "label": "M"
+              },
+              {
+                "label": "L"
+              },
+              {
+                "label": "XL"
+              },
+              {
+                "label": "XXL"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Khakinator_20_28Everywear_20Performance_20Jogger_29_780253-01_OF.webp?v=1772590728",
+            "alt_text": "The Khakinator (Everywear Performance Jogger) - Image 1 - Chubbies Shorts"
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/na",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "ALLPANTS",
+          "allproductsnogiftcards",
+          "COLLECTION:casual-pants",
+          "COLLECTION:everywear",
+          "COLLECTION:pants",
+          "COLLECTION:the-fall-collection",
+          "COLLECTION:the-joggers",
+          "Color Group:Khaki",
+          "Color:Light Khaki",
+          "ColorApplication:SOLID",
+          "Fabric:EVERYWEAR",
+          "filter-feature:Elastic Waistband",
+          "filter-feature:Water Resistant",
+          "filter-feature:Wrinkle Resistant",
+          "FULL_PRICE",
+          "FULLPRICEBUNDLE",
+          "FULLPRICECASUAL",
+          "FULLPRICEPANTS",
+          "Length:30\"",
+          "Lining:NO LINER",
+          "POSonly",
+          "Season:FH25",
+          "Silhouette:EVERYWEAR",
+          "style:everywear-jogger",
+          "Type:PANTS",
+          "USShippingOnly",
+          "YCRF_CASUAL",
+          "YGroup_EVERYWEAR-JOGGER"
+        ]
+      },
+      {
+        "id": "gid://shopify/Product/15540695138377",
+        "title": "The Espresso Yourself (Knit Polo)",
+        "description": {
+          "html": "This shirt rewrites the dress code. The Knit Polo combines a timeless silhouette with soft cotton construction, a sun-washed finish, and a relaxed collar for an effortless upgrade to your everyday fit. Designed for comfort, styled for nights out, and versatile enough to wear anywhere. A modern classic with vintage soul."
+        },
+        "url": "https://checkout.chubbiesshorts.com/products/the-brownie-knit-polo",
+        "handle": "the-brownie-knit-polo",
+        "price_range": {
+          "min": {
+            "amount": 5950,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 5950,
+            "currency": "USD"
+          }
+        },
+        "list_price_range": {
+          "min": {
+            "amount": 5950,
+            "currency": "USD"
+          },
+          "max": {
+            "amount": 5950,
+            "currency": "USD"
+          }
+        },
+        "variants": [
+          {
+            "id": "gid://shopify/ProductVariant/55692143689801",
+            "sku": "559264-021",
+            "title": "XS",
+            "description": {
+              "html": "This shirt rewrites the dress code. The Knit Polo combines a timeless silhouette with soft cotton construction, a sun-washed finish, and a relaxed collar for an effortless upgrade to your everyday fit. Designed for comfort, styled for nights out, and versatile enough to wear anywhere. A modern classic with vintage soul."
+            },
+            "price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": false
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XS"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Brownie_20_28Knit_20Polo_29_559264-02_OF.webp?v=1782776191"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/55692143722569",
+            "sku": "559264-022",
+            "title": "S",
+            "description": {
+              "html": "This shirt rewrites the dress code. The Knit Polo combines a timeless silhouette with soft cotton construction, a sun-washed finish, and a relaxed collar for an effortless upgrade to your everyday fit. Designed for comfort, styled for nights out, and versatile enough to wear anywhere. A modern classic with vintage soul."
+            },
+            "price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": false
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "S"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Brownie_20_28Knit_20Polo_29_559264-02_OF.webp?v=1782776191"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/55692143755337",
+            "sku": "559264-023",
+            "title": "M",
+            "description": {
+              "html": "This shirt rewrites the dress code. The Knit Polo combines a timeless silhouette with soft cotton construction, a sun-washed finish, and a relaxed collar for an effortless upgrade to your everyday fit. Designed for comfort, styled for nights out, and versatile enough to wear anywhere. A modern classic with vintage soul."
+            },
+            "price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": false
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "M"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Brownie_20_28Knit_20Polo_29_559264-02_OF.webp?v=1782776191"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/55692143788105",
+            "sku": "559264-024",
+            "title": "L",
+            "description": {
+              "html": "This shirt rewrites the dress code. The Knit Polo combines a timeless silhouette with soft cotton construction, a sun-washed finish, and a relaxed collar for an effortless upgrade to your everyday fit. Designed for comfort, styled for nights out, and versatile enough to wear anywhere. A modern classic with vintage soul."
+            },
+            "price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": false
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "L"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Brownie_20_28Knit_20Polo_29_559264-02_OF.webp?v=1782776191"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/55692143820873",
+            "sku": "559264-025",
+            "title": "XL",
+            "description": {
+              "html": "This shirt rewrites the dress code. The Knit Polo combines a timeless silhouette with soft cotton construction, a sun-washed finish, and a relaxed collar for an effortless upgrade to your everyday fit. Designed for comfort, styled for nights out, and versatile enough to wear anywhere. A modern classic with vintage soul."
+            },
+            "price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": false
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Brownie_20_28Knit_20Polo_29_559264-02_OF.webp?v=1782776191"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/55692143853641",
+            "sku": "559264-026",
+            "title": "XXL",
+            "description": {
+              "html": "This shirt rewrites the dress code. The Knit Polo combines a timeless silhouette with soft cotton construction, a sun-washed finish, and a relaxed collar for an effortless upgrade to your everyday fit. Designed for comfort, styled for nights out, and versatile enough to wear anywhere. A modern classic with vintage soul."
+            },
+            "price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": false
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XXL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Brownie_20_28Knit_20Polo_29_559264-02_OF.webp?v=1782776191"
+              }
+            ]
+          },
+          {
+            "id": "gid://shopify/ProductVariant/55692143886409",
+            "sku": "559264-027",
+            "title": "XXXL",
+            "description": {
+              "html": "This shirt rewrites the dress code. The Knit Polo combines a timeless silhouette with soft cotton construction, a sun-washed finish, and a relaxed collar for an effortless upgrade to your everyday fit. Designed for comfort, styled for nights out, and versatile enough to wear anywhere. A modern classic with vintage soul."
+            },
+            "price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "list_price": {
+              "amount": 5950,
+              "currency": "USD"
+            },
+            "availability": {
+              "available": false
+            },
+            "options": [
+              {
+                "name": "Size",
+                "label": "XXXL"
+              }
+            ],
+            "media": [
+              {
+                "type": "image",
+                "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Brownie_20_28Knit_20Polo_29_559264-02_OF.webp?v=1782776191"
+              }
+            ]
+          }
+        ],
+        "options": [
+          {
+            "name": "Size",
+            "values": [
+              {
+                "label": "XS"
+              },
+              {
+                "label": "S"
+              },
+              {
+                "label": "M"
+              },
+              {
+                "label": "L"
+              },
+              {
+                "label": "XL"
+              },
+              {
+                "label": "XXL"
+              },
+              {
+                "label": "XXXL"
+              }
+            ]
+          }
+        ],
+        "media": [
+          {
+            "type": "image",
+            "url": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Brownie_20_28Knit_20Polo_29_559264-02_OF.webp?v=1782776191",
+            "alt_text": "The Brownie (Knit Polo) - Image 9 - Chubbies Shorts"
+          }
+        ],
+        "categories": [
+          {
+            "value": "gid://shopify/TaxonomyCategory/na",
+            "taxonomy": "shopify"
+          }
+        ],
+        "tags": [
+          "ALLCOLLAREDSHIRTS",
+          "allproductsnogiftcards",
+          "COLLECTION:all-mens-tops",
+          "COLLECTION:short-sleeve-collared-shirts",
+          "COLLECTION:short-sleeve-shirts",
+          "COLLECTION:the-polos",
+          "Fabric:COTTON",
+          "FULL_PRICE",
+          "FULLPRICEBUNDLE",
+          "FULLPRICECOLLAREDSHIRTS",
+          "fullpriceHSDTops",
+          "Length:SHORT-SLEEVE",
+          "Season:SS26",
+          "Silhouette:POLO",
+          "style:knit-polos",
+          "Type:SHORT SLEEVE",
+          "YCRF_COLLARED-SHIRTS",
+          "YGroup_KNIT-POLO"
+        ]
+      }
+    ],
+    "pagination": {
+      "has_next_page": false
+    },
+    "messages": []
+  }
+}
