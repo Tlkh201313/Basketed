@@ -1,12 +1,15 @@
 import { createServer } from "node:http";
+import { resolve } from "node:path";
+import { spawn } from "node:child_process";
 import {
   createRuntime,
   createBasketedHttpHandler,
   serveBasketedStdio,
   toNodeHandler,
   SERVER_INFO,
-  TOOL_NAMES,
+  ALL_TOOL_NAMES,
 } from "@basketed/mcp";
+import { createPanelHandler } from "@basketed/control";
 import { findRoot } from "./root.js";
 
 export { findRoot };
@@ -15,7 +18,8 @@ const USAGE = `basketed ${SERVER_INFO.version}
 
   basketed serve --stdio          MCP over stdio (Claude Code, Cursor, Codex, opencode)
   basketed serve --fast-mode      skip per-call confirmation for READ-ONLY tools only
-  basketed serve --http [--port]  MCP over Streamable HTTP (default port 8787)
+  basketed serve --http [--port]  MCP over Streamable HTTP + control panel (port 8787)
+  basketed serve --http --open    ...and open the panel in your browser
   basketed tools                  Print the tool surface and exit
 
 Both transports are dual-era: they answer the 2026-07-28 stateless dialect and
@@ -51,7 +55,7 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   if (command === "tools") {
-    process.stdout.write(`${TOOL_NAMES.join("\n")}\n`);
+    process.stdout.write(`${ALL_TOOL_NAMES.join("\n")}\n`);
     return;
   }
 
@@ -83,8 +87,26 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   const port = Number(value(argv, "port") ?? process.env["PORT"] ?? 8787);
+  const origin = `http://127.0.0.1:${port}`;
   const handler = createBasketedHttpHandler(runtime);
-  const node = toNodeHandler(handler, `http://127.0.0.1:${port}`);
+  const node = toNodeHandler(handler, origin);
+
+  if (!runtime.purchase) throw new Error("The purchase gate failed to initialise.");
+  // Runtime satisfies ControlDeps structurally, so the panel needs no
+  // dependency on the MCP package to be handed everything it renders.
+  const panel = createPanelHandler(
+    {
+      purchase: runtime.purchase,
+      registry: runtime.registry,
+      principal: runtime.principal,
+      policy: runtime.policy,
+      ledger: runtime.ledger,
+      summary: runtime.summary,
+      version: SERVER_INFO.version,
+      redactionAlarms: () => runtime.redactor.alarms(),
+    },
+    { root, binPath: resolve(root, "packages/cli/bin.js"), endpoint: `${origin}/mcp`, version: SERVER_INFO.version },
+  );
 
   const server = createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0];
@@ -93,25 +115,54 @@ export async function main(argv: string[]): Promise<void> {
       res.end(JSON.stringify({ ok: true, server: SERVER_INFO, stores: runtime.summary }));
       return;
     }
-    if (path !== "/mcp") {
-      res.writeHead(404, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "Not found. The MCP endpoint is POST /mcp." }));
-      return;
-    }
-    node(req, res).catch((err: Error) => {
+
+    const fail = (err: Error) => {
       runtime.ctx.log(`request failed: ${err.message}`);
       if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "Internal error." }));
-    });
+    };
+
+    if (path === "/mcp") {
+      node(req, res).catch(fail);
+      return;
+    }
+
+    // The panel and the MCP endpoint share one port and one process, but they
+    // are separate channels: nothing an agent can reach serves /api/*.
+    panel(req, res)
+      .then((served) => {
+        if (served) return;
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Not found. MCP is POST /mcp; the panel is /." }));
+      })
+      .catch(fail);
   });
 
   // 127.0.0.1, not 0.0.0.0: this process holds the vault, and a localhost
   // single-user build has no business being reachable from the network.
   server.listen(port, "127.0.0.1", () => {
     process.stderr.write(
-      `[basketed] http · ${runtime.summary}\n` +
-        `[basketed] MCP endpoint  http://127.0.0.1:${port}/mcp\n` +
-        `[basketed] health        http://127.0.0.1:${port}/healthz\n`,
+      `[basketed] http · ${runtime.summary}` +
+        `${runtime.policy.fastMode ? " · fast-mode (read-only tools only)" : ""}\n` +
+        `[basketed] panel         ${origin}/\n` +
+        `[basketed] approvals     ${origin}/approvals\n` +
+        `[basketed] MCP endpoint  ${origin}/mcp\n` +
+        `[basketed] health        ${origin}/healthz\n`,
     );
+    if (flag(argv, "open")) openBrowser(origin);
   });
+}
+
+function openBrowser(url: string): void {
+  const cmd =
+    process.platform === "win32"
+      ? { file: "cmd", args: ["/c", "start", "", url] }
+      : process.platform === "darwin"
+        ? { file: "open", args: [url] }
+        : { file: "xdg-open", args: [url] };
+  try {
+    spawn(cmd.file, cmd.args, { detached: true, stdio: "ignore" }).unref();
+  } catch {
+    // Not being able to open a browser is not a reason to fail to serve.
+  }
 }

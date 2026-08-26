@@ -560,6 +560,30 @@ export function getOrder(db: Db, orderId: string): Record<string, unknown> | und
   return db.prepare("SELECT * FROM orders WHERE id = ?").get(orderId) as Record<string, unknown> | undefined;
 }
 
+/**
+ * Move a handed-off order onto a real state. **Human action only.**
+ *
+ * There is deliberately no MCP tool for this, for the same reason there is no
+ * tool that approves: when the route ends in the human's own browser we
+ * genuinely do not know the outcome, and letting the agent assert one would let
+ * it manufacture a completed order out of nothing. Only the panel calls this.
+ */
+export function markOrderOutcome(
+  db: Db,
+  orderId: string,
+  state: Extract<OrderState, "CONFIRMED" | "CANCELLED">,
+  now = Date.now(),
+): boolean {
+  const changed = db
+    .prepare(
+      `UPDATE orders SET state = ?, outcome = ?, updated_at = ?
+        WHERE id = ? AND state = 'HANDED_OFF'`,
+    )
+    .run(state, state === "CONFIRMED" ? "confirmed_by_human" : "cancelled_by_human", now, orderId);
+  if (changed.changes) audit(db, "order_outcome", `${orderId} -> ${state} by human`, now);
+  return changed.changes > 0;
+}
+
 export function listPendingApprovals(db: Db, principal: string, now = Date.now()): Array<Record<string, unknown>> {
   return db
     .prepare(

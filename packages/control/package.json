@@ -16,8 +16,8 @@
   },
   "dependencies": {
     "@basketed/core": "workspace:*",
+    "@basketed/adapters": "workspace:*",
     "@basketed/commerce": "workspace:*",
-    "@basketed/vault": "workspace:*",
-    "zod": "^4.4.3"
+    "@basketed/vault": "workspace:*"
   }
 }

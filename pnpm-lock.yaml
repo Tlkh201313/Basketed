@@ -71,6 +71,9 @@ importers:
 
   packages/control:
     dependencies:
+      '@basketed/adapters':
+        specifier: workspace:*
+        version: link:../adapters
       '@basketed/commerce':
         specifier: workspace:*
         version: link:../commerce
@@ -80,9 +83,6 @@ importers:
       '@basketed/vault':
         specifier: workspace:*
         version: link:../vault
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
 
   packages/core:
     dependencies:
