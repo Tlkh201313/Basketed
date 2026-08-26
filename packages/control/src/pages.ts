@@ -25,6 +25,8 @@ function esc(s: unknown): string {
  * proved it holds the token. `renderLocked()` is what an unauthenticated GET
  * gets, and it deliberately goes through neither this function nor SCRIPT.
  */
+const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2L13.9 8.1L20 10L13.9 11.9L12 18L10.1 11.9L4 10L10.1 8.1L12 2Z" fill="white"/><path d="M18.5 3.5L19.2 5.3L21 6L19.2 6.7L18.5 8.5L17.8 6.7L16 6L17.8 5.3L18.5 3.5Z" fill="white" opacity="0.95"/><path d="M6.2 14.2L7 16.5L9.3 17.3L7 18.1L6.2 20.4L5.4 18.1L3.1 17.3L5.4 16.5L6.2 14.2Z" fill="white" opacity="0.9"/></svg>`;
+
 function shell(title: string, active: "home" | "approvals", main: string, token: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -32,18 +34,22 @@ function shell(title: string, active: "home" | "approvals", main: string, token:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
 <title>${esc(title)} · Basketed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <style>${STYLE}</style>
 </head>
 <body>
 <header class="top"><div class="wrap">
-  <a class="mark" href="/">basket<span>ed</span></a>
+  <a class="mark" href="/"><span class="spark">${SPARK_SVG}</span> Basket<em>ed</em></a>
   <nav>
     <a href="/" class="${active === "home" ? "on" : ""}">Install</a>
     <a href="/approvals" class="${active === "approvals" ? "on" : ""}">Approvals</a>
   </nav>
 </div></header>
-<main class="wrap">${main}</main>
+<main class="wrap">${main}
+<div class="gemini-foot"><span class="spark-sm">${SPARK_SVG}</span> <span>Basketed control panel · Gemini-inspired design · <span class="num">basketed ${esc(title.toLowerCase())}</span> · local-only, token-gated</span></div>
+</main>
 <script>window.__BASKETED_TOKEN__ = ${JSON.stringify(token)};</script>
 <script>${SCRIPT}</script>
 </body>
@@ -63,13 +69,14 @@ export function renderLocked(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
 <title>Locked · Basketed</title>
 <style>${STYLE}</style>
 </head>
 <body>
-<header class="top"><div class="wrap"><span class="mark">basket<span>ed</span></span></div></header>
+<header class="top"><div class="wrap"><span class="mark"><span class="spark">${SPARK_SVG}</span> Basket<em>ed</em></span></div></header>
 <main class="wrap">
-<h1>This panel is locked.</h1>
+<h1>This panel is <strong>locked.</strong></h1>
 <p class="lede">
   The approval surface is gated by a token minted when this server started and printed on its own
   console — the same surface the 6-digit approval code goes to, and one no agent can read.
@@ -84,6 +91,7 @@ export function renderLocked(): string {
   working for to open the panel, or use the 6-digit console code with
   <span class="num">basket_purchase_confirm</span>.
 </p>
+<div class="gemini-foot"><span class="spark-sm">${SPARK_SVG}</span> <span>Basketed · Gemini-inspired · local-only</span></div>
 </main>
 </body>
 </html>`;
@@ -128,7 +136,8 @@ export function renderHome(input: HomeInput): string {
     "Install",
     "home",
     `
-<h1>One basket. Many shops.<br>Nothing bought without you.</h1>
+<div style="margin-top: 40px"></div>
+<h1>One basket. Many shops.<br><strong>Nothing bought without you.</strong></h1>
 <p class="lede">
   Basketed gives any MCP agent real product search across many retailers, and a purchase step
   <strong>only a human can authorise</strong>. Your accounts and tokens stay on this machine —
@@ -213,7 +222,8 @@ export function renderApprovals(token: string): string {
     "Approvals",
     "approvals",
     `
-<h1>Approvals</h1>
+<div style="margin-top: 40px"></div>
+<h1><strong>Approvals</strong></h1>
 <p class="lede">
   Every purchase stops here. Type the exact total to authorise it — so what you confirm is the
   number, not the position of a button.
