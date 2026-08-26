@@ -106,6 +106,16 @@ export const STYLE = `
 }
 
 * { box-sizing: border-box; }
+/*
+ * Every component below sets its own display (flex, grid, inline-flex...),
+ * which is an author-origin rule and therefore beats the browser's built-in
+ * hidden-attribute rule regardless of specificity -- origin wins over
+ * specificity in the cascade. Without this, setting .hidden = true from the
+ * script silently does nothing on anything already styled with display:
+ * the Connect-stores page's "Connected" filter is exactly this bug, setting
+ * hidden on cards that a display:flex rule on .appcard keeps showing.
+ */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 html { scrollbar-gutter: stable; }
 body {
@@ -346,10 +356,14 @@ table.lines tr.total td { border-top: 1px solid var(--rule); padding-top: 12px; 
 .tabs { display: inline-flex; background: var(--surface-2); border: 1px solid var(--rule); border-radius: var(--radius-pill); padding: 3px; }
 .tabs button {
   font: inherit; font-size: 13px; font-weight: 550;
-  border: 0; background: transparent; color: var(--ink-2);
+  border: 1px solid transparent; background: transparent; color: var(--ink-2);
   padding: 6px 16px; border-radius: var(--radius-pill); cursor: pointer; transition: all 0.15s;
 }
-.tabs button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.tabs button:hover:not(.on) { color: var(--ink); }
+/* Needs more than a shade of white-on-off-white: the active tab also gets its
+   own border and a bolder weight, so which one is selected reads at a glance
+   instead of needing a side-by-side comparison to spot. */
+.tabs button.on { background: var(--surface); color: var(--accent); border-color: var(--rule); box-shadow: var(--shadow); font-weight: 700; }
 .finder { position: relative; margin-left: auto; }
 .finder input {
   font: inherit; font-size: 13.5px;

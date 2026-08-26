@@ -16,3 +16,4 @@ master.key
 
 # Backups written by the config installers
 *.basketed-backup-*
+.gstack/
