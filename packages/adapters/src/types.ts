@@ -71,6 +71,17 @@ export interface RawOrder {
  */
 export interface StoreAdapter {
   manifest: StoreManifest;
+  /**
+   * Bytes actually received from upstream on the last search, when the adapter
+   * fetched any. This is the honest baseline for the token benchmark.
+   *
+   * Declared on the interface rather than detected with `instanceof`: the same
+   * class reached through two module specifiers is two different constructors,
+   * so an instanceof check silently reports zero -- which it did, until this
+   * replaced it. Simulated adapters leave it undefined and so contribute
+   * nothing to the baseline, which is correct: they fetched nothing.
+   */
+  lastRawBytes?: number;
   search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]>;
   detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail>;
   buildCart?(items: Array<{ id: string; quantity: number }>, ctx: AdapterCtx): Promise<RawCart>;

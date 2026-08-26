@@ -1,0 +1,1492 @@
+{
+  "generated_at": "2026-08-26T00:11:32.160Z",
+  "warning": "SIMULATED DATA. Prices and ratings are synthetic and deterministic. URLs are real retailer search links. Every product carries mode:'simulated' and must be displayed as such.",
+  "stores": [
+    {
+      "id": "sim:tesco",
+      "name": "Tesco",
+      "country": "GB",
+      "currency": "GBP",
+      "categories": [
+        "grocery"
+      ],
+      "note": "UK grocery. No public product API; Tesco is reachable only via a licensed data provider.",
+      "searchUrl": "https://www.tesco.com/groceries/en-GB/search?query="
+    },
+    {
+      "id": "sim:amazon",
+      "name": "Amazon",
+      "country": "US",
+      "currency": "USD",
+      "categories": [
+        "general",
+        "electronics",
+        "grocery"
+      ],
+      "note": "Product Advertising API retired May 2026. Provider-sourced in the day-two roadmap.",
+      "searchUrl": "https://www.amazon.com/s?k="
+    },
+    {
+      "id": "sim:costco",
+      "name": "Costco",
+      "country": "US",
+      "currency": "USD",
+      "categories": [
+        "grocery",
+        "general"
+      ],
+      "note": "No self-serve API. Bulk sizing reflected in the fixtures.",
+      "searchUrl": "https://www.costco.com/CatalogSearch?keyword="
+    },
+    {
+      "id": "sim:shopee",
+      "name": "Shopee",
+      "country": "SG",
+      "currency": "SGD",
+      "categories": [
+        "general",
+        "apparel",
+        "electronics"
+      ],
+      "note": "Open Platform is seller-side only.",
+      "searchUrl": "https://shopee.sg/search?keyword="
+    },
+    {
+      "id": "sim:taobao",
+      "name": "Taobao",
+      "country": "CN",
+      "currency": "CNY",
+      "categories": [
+        "general",
+        "apparel",
+        "electronics"
+      ],
+      "note": "Alibaba open platform requires a Chinese business entity.",
+      "searchUrl": "https://s.taobao.com/search?q="
+    },
+    {
+      "id": "sim:ikea",
+      "name": "IKEA",
+      "country": "GB",
+      "currency": "GBP",
+      "categories": [
+        "furniture"
+      ],
+      "note": "No official product API.",
+      "searchUrl": "https://www.ikea.com/gb/en/search/?q="
+    }
+  ],
+  "products": [
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1000",
+      "name": "Tesco Finest Ground Coffee — 500g",
+      "price": {
+        "value": 6.07,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 3.9,
+        "count": 54
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Tesco%20Finest%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Tesco Finest",
+        "size": "500g",
+        "diet": [
+          "arabica",
+          "fairtrade"
+        ]
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1001",
+      "name": "Tesco Finest Instant Coffee — 200g",
+      "price": {
+        "value": 11.85,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 3.6,
+        "count": 618
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Tesco%20Finest%20Instant%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Tesco Finest",
+        "size": "200g"
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1002",
+      "name": "Tesco Coffee Beans — 1kg",
+      "price": {
+        "value": 9.56,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4.5,
+        "count": 1523
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Tesco%20Coffee%20Beans",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Tesco",
+        "size": "1kg",
+        "diet": [
+          "arabica"
+        ]
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1003",
+      "name": "Taylors Decaf Ground Coffee — 227g",
+      "price": {
+        "value": 8.29,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 855
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Taylors%20Decaf%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Taylors",
+        "size": "227g",
+        "diet": [
+          "decaf"
+        ]
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1004",
+      "name": "Tesco Semi-Skimmed Milk — 2L",
+      "price": {
+        "value": 8.45,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4.4,
+        "count": 822
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Tesco%20Semi-Skimmed%20Milk",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Tesco",
+        "size": "2L"
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1005",
+      "name": "Tesco Free-Range Eggs — 12 pack",
+      "price": {
+        "value": 1.03,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4.9,
+        "count": 2925
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Tesco%20Free-Range%20Eggs",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Tesco",
+        "size": "12 pack",
+        "diet": [
+          "free-range"
+        ]
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1006",
+      "name": "Tesco Finest Wholemeal Bread — 800g",
+      "price": {
+        "value": 7.08,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4,
+        "count": 3369
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Tesco%20Finest%20Wholemeal%20Bread",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Tesco Finest",
+        "size": "800g",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1007",
+      "name": "Tesco Finest Olive Oil — 750ml",
+      "price": {
+        "value": 1.24,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4,
+        "count": 2269
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Tesco%20Finest%20Olive%20Oil",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Tesco Finest",
+        "size": "750ml",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1008",
+      "name": "Tesco Dark Chocolate — 180g",
+      "price": {
+        "value": 1.93,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4.6,
+        "count": 2486
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Tesco%20Dark%20Chocolate",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Tesco",
+        "size": "180g",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:tesco",
+      "nativeId": "tesco-1009",
+      "name": "Nescafé Green Tea — 80 bags",
+      "price": {
+        "value": 8.82,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4.3,
+        "count": 439
+      },
+      "url": "https://www.tesco.com/groceries/en-GB/search?query=Nescaf%C3%A9%20Green%20Tea",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Nescafé",
+        "size": "80 bags",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1010",
+      "name": "Lavazza Stainless Steel Water Bottle — 750ml",
+      "price": {
+        "value": 198.96,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.8,
+        "count": 1327
+      },
+      "url": "https://www.amazon.com/s?k=Lavazza%20Stainless%20Steel%20Water%20Bottle",
+      "attrs": {
+        "cat": "general",
+        "brand": "Lavazza"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1011",
+      "name": "Amazon Basics Cotton Bath Towel Set — 4 piece",
+      "price": {
+        "value": 204.34,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.9,
+        "count": 2999
+      },
+      "url": "https://www.amazon.com/s?k=Amazon%20Basics%20Cotton%20Bath%20Towel%20Set",
+      "attrs": {
+        "cat": "general",
+        "brand": "Amazon Basics"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1012",
+      "name": "Amazon Basics Storage Boxes — set of 3",
+      "price": {
+        "value": 31.17,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.5,
+        "count": 1913
+      },
+      "url": "https://www.amazon.com/s?k=Amazon%20Basics%20Storage%20Boxes",
+      "attrs": {
+        "cat": "general",
+        "brand": "Amazon Basics"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1013",
+      "name": "Amazon Basics LED Desk Lamp — adjustable",
+      "price": {
+        "value": 164.75,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 1633
+      },
+      "url": "https://www.amazon.com/s?k=Amazon%20Basics%20LED%20Desk%20Lamp",
+      "attrs": {
+        "cat": "general",
+        "brand": "Amazon Basics"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1014",
+      "name": "Amazon Basics Kitchen Knife Set — 5 piece",
+      "price": {
+        "value": 159.08,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 76
+      },
+      "url": "https://www.amazon.com/s?k=Amazon%20Basics%20Kitchen%20Knife%20Set",
+      "attrs": {
+        "cat": "general",
+        "brand": "Amazon Basics"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1015",
+      "name": "Lavazza Wireless Earbuds — ANC",
+      "price": {
+        "value": 147.11,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.3,
+        "count": 2897
+      },
+      "url": "https://www.amazon.com/s?k=Lavazza%20Wireless%20Earbuds",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "Lavazza"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1016",
+      "name": "Solimo USB-C Charger — 65W",
+      "price": {
+        "value": 22.13,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.9,
+        "count": 1800
+      },
+      "url": "https://www.amazon.com/s?k=Solimo%20USB-C%20Charger",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "Solimo"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1017",
+      "name": "Lavazza Bluetooth Speaker — portable",
+      "price": {
+        "value": 97.08,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 2190
+      },
+      "url": "https://www.amazon.com/s?k=Lavazza%20Bluetooth%20Speaker",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "Lavazza"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1018",
+      "name": "Solimo Mechanical Keyboard — 75%",
+      "price": {
+        "value": 56.52,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 3119
+      },
+      "url": "https://www.amazon.com/s?k=Solimo%20Mechanical%20Keyboard",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "Solimo"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1019",
+      "name": "Lavazza Ground Coffee — 500g",
+      "price": {
+        "value": 122.78,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 2960
+      },
+      "url": "https://www.amazon.com/s?k=Lavazza%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Lavazza",
+        "size": "500g",
+        "diet": [
+          "arabica",
+          "fairtrade"
+        ]
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1020",
+      "name": "Lavazza Instant Coffee — 200g",
+      "price": {
+        "value": 206.96,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.6,
+        "count": 1501
+      },
+      "url": "https://www.amazon.com/s?k=Lavazza%20Instant%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Lavazza",
+        "size": "200g"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1021",
+      "name": "Amazon Basics Coffee Beans — 1kg",
+      "price": {
+        "value": 238.09,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.9,
+        "count": 1421
+      },
+      "url": "https://www.amazon.com/s?k=Amazon%20Basics%20Coffee%20Beans",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Amazon Basics",
+        "size": "1kg",
+        "diet": [
+          "arabica"
+        ]
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1022",
+      "name": "Anker Decaf Ground Coffee — 227g",
+      "price": {
+        "value": 153,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 814
+      },
+      "url": "https://www.amazon.com/s?k=Anker%20Decaf%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Anker",
+        "size": "227g",
+        "diet": [
+          "decaf"
+        ]
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1023",
+      "name": "Amazon Basics Semi-Skimmed Milk — 2L",
+      "price": {
+        "value": 54.19,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.5,
+        "count": 1890
+      },
+      "url": "https://www.amazon.com/s?k=Amazon%20Basics%20Semi-Skimmed%20Milk",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Amazon Basics",
+        "size": "2L"
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1024",
+      "name": "Anker Free-Range Eggs — 12 pack",
+      "price": {
+        "value": 170.97,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.7,
+        "count": 1776
+      },
+      "url": "https://www.amazon.com/s?k=Anker%20Free-Range%20Eggs",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Anker",
+        "size": "12 pack",
+        "diet": [
+          "free-range"
+        ]
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1025",
+      "name": "Anker Wholemeal Bread — 800g",
+      "price": {
+        "value": 162.38,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 4491
+      },
+      "url": "https://www.amazon.com/s?k=Anker%20Wholemeal%20Bread",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Anker",
+        "size": "800g",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1026",
+      "name": "Anker Olive Oil — 750ml",
+      "price": {
+        "value": 16.42,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.9,
+        "count": 849
+      },
+      "url": "https://www.amazon.com/s?k=Anker%20Olive%20Oil",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Anker",
+        "size": "750ml",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1027",
+      "name": "Lavazza Dark Chocolate — 180g",
+      "price": {
+        "value": 148.43,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 2659
+      },
+      "url": "https://www.amazon.com/s?k=Lavazza%20Dark%20Chocolate",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Lavazza",
+        "size": "180g",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:amazon",
+      "nativeId": "amazon-1028",
+      "name": "Solimo Green Tea — 80 bags",
+      "price": {
+        "value": 201.01,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.5,
+        "count": 3037
+      },
+      "url": "https://www.amazon.com/s?k=Solimo%20Green%20Tea",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Solimo",
+        "size": "80 bags",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1029",
+      "name": "Kirkland Signature Ground Coffee — 500g",
+      "price": {
+        "value": 113.39,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.9,
+        "count": 4735
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Kirkland%20Signature%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Kirkland Signature",
+        "size": "500g",
+        "diet": [
+          "arabica",
+          "fairtrade"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1030",
+      "name": "Kirkland Signature Instant Coffee — 200g",
+      "price": {
+        "value": 64.65,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.7,
+        "count": 3021
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Kirkland%20Signature%20Instant%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Kirkland Signature",
+        "size": "200g"
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1031",
+      "name": "Starbucks Coffee Beans — 1kg",
+      "price": {
+        "value": 31.19,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 3302
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Starbucks%20Coffee%20Beans",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Starbucks",
+        "size": "1kg",
+        "diet": [
+          "arabica"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1032",
+      "name": "Member's Mark Decaf Ground Coffee — 227g",
+      "price": {
+        "value": 53.45,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 3013
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Member's%20Mark%20Decaf%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Member's Mark",
+        "size": "227g",
+        "diet": [
+          "decaf"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1033",
+      "name": "Starbucks Semi-Skimmed Milk — 2L",
+      "price": {
+        "value": 98.44,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 3437
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Starbucks%20Semi-Skimmed%20Milk",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Starbucks",
+        "size": "2L"
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1034",
+      "name": "Starbucks Free-Range Eggs — 12 pack",
+      "price": {
+        "value": 53.17,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 301
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Starbucks%20Free-Range%20Eggs",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Starbucks",
+        "size": "12 pack",
+        "diet": [
+          "free-range"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1035",
+      "name": "Starbucks Wholemeal Bread — 800g",
+      "price": {
+        "value": 146.6,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.6,
+        "count": 2466
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Starbucks%20Wholemeal%20Bread",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Starbucks",
+        "size": "800g",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1036",
+      "name": "Member's Mark Olive Oil — 750ml",
+      "price": {
+        "value": 44.99,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.6,
+        "count": 370
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Member's%20Mark%20Olive%20Oil",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Member's Mark",
+        "size": "750ml",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1037",
+      "name": "Member's Mark Dark Chocolate — 180g",
+      "price": {
+        "value": 43.11,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.5,
+        "count": 2070
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Member's%20Mark%20Dark%20Chocolate",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Member's Mark",
+        "size": "180g",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1038",
+      "name": "Member's Mark Green Tea — 80 bags",
+      "price": {
+        "value": 185.82,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 4143
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Member's%20Mark%20Green%20Tea",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Member's Mark",
+        "size": "80 bags",
+        "diet": [
+          "vegan"
+        ]
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1039",
+      "name": "Member's Mark Stainless Steel Water Bottle — 750ml",
+      "price": {
+        "value": 115.33,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 959
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Member's%20Mark%20Stainless%20Steel%20Water%20Bottle",
+      "attrs": {
+        "cat": "general",
+        "brand": "Member's Mark"
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1040",
+      "name": "Kirkland Signature Cotton Bath Towel Set — 4 piece",
+      "price": {
+        "value": 30.03,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.5,
+        "count": 1428
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Kirkland%20Signature%20Cotton%20Bath%20Towel%20Set",
+      "attrs": {
+        "cat": "general",
+        "brand": "Kirkland Signature"
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1041",
+      "name": "Kirkland Signature Storage Boxes — set of 3",
+      "price": {
+        "value": 82.84,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 3.7,
+        "count": 798
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Kirkland%20Signature%20Storage%20Boxes",
+      "attrs": {
+        "cat": "general",
+        "brand": "Kirkland Signature"
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1042",
+      "name": "Member's Mark LED Desk Lamp — adjustable",
+      "price": {
+        "value": 130.41,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 4676
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Member's%20Mark%20LED%20Desk%20Lamp",
+      "attrs": {
+        "cat": "general",
+        "brand": "Member's Mark"
+      }
+    },
+    {
+      "store": "sim:costco",
+      "nativeId": "costco-1043",
+      "name": "Starbucks Kitchen Knife Set — 5 piece",
+      "price": {
+        "value": 116.61,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 589
+      },
+      "url": "https://www.costco.com/CatalogSearch?keyword=Starbucks%20Kitchen%20Knife%20Set",
+      "attrs": {
+        "cat": "general",
+        "brand": "Starbucks"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1044",
+      "name": "Xiaomi Stainless Steel Water Bottle — 750ml",
+      "price": {
+        "value": 98.13,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 4.3,
+        "count": 4414
+      },
+      "url": "https://shopee.sg/search?keyword=Xiaomi%20Stainless%20Steel%20Water%20Bottle",
+      "attrs": {
+        "cat": "general",
+        "brand": "Xiaomi"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1045",
+      "name": "ShopeeChoice Cotton Bath Towel Set — 4 piece",
+      "price": {
+        "value": 62.68,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 4.8,
+        "count": 3112
+      },
+      "url": "https://shopee.sg/search?keyword=ShopeeChoice%20Cotton%20Bath%20Towel%20Set",
+      "attrs": {
+        "cat": "general",
+        "brand": "ShopeeChoice"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1046",
+      "name": "ShopeeChoice Storage Boxes — set of 3",
+      "price": {
+        "value": 69.52,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 3395
+      },
+      "url": "https://shopee.sg/search?keyword=ShopeeChoice%20Storage%20Boxes",
+      "attrs": {
+        "cat": "general",
+        "brand": "ShopeeChoice"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1047",
+      "name": "ShopeeChoice LED Desk Lamp — adjustable",
+      "price": {
+        "value": 60.88,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 4.7,
+        "count": 382
+      },
+      "url": "https://shopee.sg/search?keyword=ShopeeChoice%20LED%20Desk%20Lamp",
+      "attrs": {
+        "cat": "general",
+        "brand": "ShopeeChoice"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1048",
+      "name": "ShopeeChoice Kitchen Knife Set — 5 piece",
+      "price": {
+        "value": 23.4,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 4.3,
+        "count": 2513
+      },
+      "url": "https://shopee.sg/search?keyword=ShopeeChoice%20Kitchen%20Knife%20Set",
+      "attrs": {
+        "cat": "general",
+        "brand": "ShopeeChoice"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1049",
+      "name": "OEM Cotton T-Shirt — unisex",
+      "price": {
+        "value": 49.63,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 3.7,
+        "count": 4368
+      },
+      "url": "https://shopee.sg/search?keyword=OEM%20Cotton%20T-Shirt",
+      "attrs": {
+        "cat": "apparel",
+        "brand": "OEM",
+        "size": "M"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1050",
+      "name": "OEM Running Leggings — high-waist",
+      "price": {
+        "value": 80.4,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 4621
+      },
+      "url": "https://shopee.sg/search?keyword=OEM%20Running%20Leggings",
+      "attrs": {
+        "cat": "apparel",
+        "brand": "OEM",
+        "size": "M"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1051",
+      "name": "ShopeeChoice Hooded Sweatshirt — fleece-lined",
+      "price": {
+        "value": 107.25,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 4750
+      },
+      "url": "https://shopee.sg/search?keyword=ShopeeChoice%20Hooded%20Sweatshirt",
+      "attrs": {
+        "cat": "apparel",
+        "brand": "ShopeeChoice",
+        "size": "M"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1052",
+      "name": "Xiaomi Wireless Earbuds — ANC",
+      "price": {
+        "value": 16.91,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 3.7,
+        "count": 3969
+      },
+      "url": "https://shopee.sg/search?keyword=Xiaomi%20Wireless%20Earbuds",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "Xiaomi"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1053",
+      "name": "Xiaomi USB-C Charger — 65W",
+      "price": {
+        "value": 8.49,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 3711
+      },
+      "url": "https://shopee.sg/search?keyword=Xiaomi%20USB-C%20Charger",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "Xiaomi"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1054",
+      "name": "Xiaomi Bluetooth Speaker — portable",
+      "price": {
+        "value": 86.04,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 4,
+        "count": 1806
+      },
+      "url": "https://shopee.sg/search?keyword=Xiaomi%20Bluetooth%20Speaker",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "Xiaomi"
+      }
+    },
+    {
+      "store": "sim:shopee",
+      "nativeId": "shopee-1055",
+      "name": "Xiaomi Mechanical Keyboard — 75%",
+      "price": {
+        "value": 32.27,
+        "currency": "SGD"
+      },
+      "rating": {
+        "score": 4.2,
+        "count": 1770
+      },
+      "url": "https://shopee.sg/search?keyword=Xiaomi%20Mechanical%20Keyboard",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "Xiaomi"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1056",
+      "name": "小米 Stainless Steel Water Bottle — 750ml",
+      "price": {
+        "value": 176.67,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 3.7,
+        "count": 4432
+      },
+      "url": "https://s.taobao.com/search?q=%E5%B0%8F%E7%B1%B3%20Stainless%20Steel%20Water%20Bottle",
+      "attrs": {
+        "cat": "general",
+        "brand": "小米"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1057",
+      "name": "网易严选 Cotton Bath Towel Set — 4 piece",
+      "price": {
+        "value": 875.35,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 4.2,
+        "count": 4381
+      },
+      "url": "https://s.taobao.com/search?q=%E7%BD%91%E6%98%93%E4%B8%A5%E9%80%89%20Cotton%20Bath%20Towel%20Set",
+      "attrs": {
+        "cat": "general",
+        "brand": "网易严选"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1058",
+      "name": "小米 Storage Boxes — set of 3",
+      "price": {
+        "value": 801.61,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 3.6,
+        "count": 3248
+      },
+      "url": "https://s.taobao.com/search?q=%E5%B0%8F%E7%B1%B3%20Storage%20Boxes",
+      "attrs": {
+        "cat": "general",
+        "brand": "小米"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1059",
+      "name": "网易严选 LED Desk Lamp — adjustable",
+      "price": {
+        "value": 299.26,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 4.3,
+        "count": 243
+      },
+      "url": "https://s.taobao.com/search?q=%E7%BD%91%E6%98%93%E4%B8%A5%E9%80%89%20LED%20Desk%20Lamp",
+      "attrs": {
+        "cat": "general",
+        "brand": "网易严选"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1060",
+      "name": "小米 Kitchen Knife Set — 5 piece",
+      "price": {
+        "value": 723.65,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 2705
+      },
+      "url": "https://s.taobao.com/search?q=%E5%B0%8F%E7%B1%B3%20Kitchen%20Knife%20Set",
+      "attrs": {
+        "cat": "general",
+        "brand": "小米"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1061",
+      "name": "小米 Cotton T-Shirt — unisex",
+      "price": {
+        "value": 594.78,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 2762
+      },
+      "url": "https://s.taobao.com/search?q=%E5%B0%8F%E7%B1%B3%20Cotton%20T-Shirt",
+      "attrs": {
+        "cat": "apparel",
+        "brand": "小米",
+        "size": "M"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1062",
+      "name": "OEM Running Leggings — high-waist",
+      "price": {
+        "value": 97.39,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 3.9,
+        "count": 4108
+      },
+      "url": "https://s.taobao.com/search?q=OEM%20Running%20Leggings",
+      "attrs": {
+        "cat": "apparel",
+        "brand": "OEM",
+        "size": "M"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1063",
+      "name": "网易严选 Hooded Sweatshirt — fleece-lined",
+      "price": {
+        "value": 836.12,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 3.8,
+        "count": 3222
+      },
+      "url": "https://s.taobao.com/search?q=%E7%BD%91%E6%98%93%E4%B8%A5%E9%80%89%20Hooded%20Sweatshirt",
+      "attrs": {
+        "cat": "apparel",
+        "brand": "网易严选",
+        "size": "M"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1064",
+      "name": "网易严选 Wireless Earbuds — ANC",
+      "price": {
+        "value": 691.04,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 4,
+        "count": 3420
+      },
+      "url": "https://s.taobao.com/search?q=%E7%BD%91%E6%98%93%E4%B8%A5%E9%80%89%20Wireless%20Earbuds",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "网易严选"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1065",
+      "name": "小米 USB-C Charger — 65W",
+      "price": {
+        "value": 323.9,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 4.6,
+        "count": 2657
+      },
+      "url": "https://s.taobao.com/search?q=%E5%B0%8F%E7%B1%B3%20USB-C%20Charger",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "小米"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1066",
+      "name": "小米 Bluetooth Speaker — portable",
+      "price": {
+        "value": 197.59,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 4.8,
+        "count": 411
+      },
+      "url": "https://s.taobao.com/search?q=%E5%B0%8F%E7%B1%B3%20Bluetooth%20Speaker",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "小米"
+      }
+    },
+    {
+      "store": "sim:taobao",
+      "nativeId": "taobao-1067",
+      "name": "OEM Mechanical Keyboard — 75%",
+      "price": {
+        "value": 156.83,
+        "currency": "CNY"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 526
+      },
+      "url": "https://s.taobao.com/search?q=OEM%20Mechanical%20Keyboard",
+      "attrs": {
+        "cat": "electronics",
+        "brand": "OEM"
+      }
+    },
+    {
+      "store": "sim:ikea",
+      "nativeId": "ikea-1068",
+      "name": "IKEA Two-Seat Sofa — fabric",
+      "price": {
+        "value": 365.29,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4,
+        "count": 709
+      },
+      "url": "https://www.ikea.com/gb/en/search/?q=IKEA%20Two-Seat%20Sofa",
+      "attrs": {
+        "cat": "furniture",
+        "brand": "IKEA",
+        "material": "oak"
+      }
+    },
+    {
+      "store": "sim:ikea",
+      "nativeId": "ikea-1069",
+      "name": "IKEA Oak Coffee Table — 110x60cm",
+      "price": {
+        "value": 186.32,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4.2,
+        "count": 2701
+      },
+      "url": "https://www.ikea.com/gb/en/search/?q=IKEA%20Oak%20Coffee%20Table",
+      "attrs": {
+        "cat": "furniture",
+        "brand": "IKEA",
+        "material": "oak"
+      }
+    },
+    {
+      "store": "sim:ikea",
+      "nativeId": "ikea-1070",
+      "name": "IKEA Bookshelf — 5 tier",
+      "price": {
+        "value": 421.42,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4.4,
+        "count": 2918
+      },
+      "url": "https://www.ikea.com/gb/en/search/?q=IKEA%20Bookshelf",
+      "attrs": {
+        "cat": "furniture",
+        "brand": "IKEA",
+        "material": "oak"
+      }
+    },
+    {
+      "store": "sim:ikea",
+      "nativeId": "ikea-1071",
+      "name": "IKEA Office Chair — ergonomic",
+      "price": {
+        "value": 257.97,
+        "currency": "GBP"
+      },
+      "rating": {
+        "score": 4.2,
+        "count": 4572
+      },
+      "url": "https://www.ikea.com/gb/en/search/?q=IKEA%20Office%20Chair",
+      "attrs": {
+        "cat": "furniture",
+        "brand": "IKEA",
+        "material": "oak"
+      }
+    }
+  ]
+}
