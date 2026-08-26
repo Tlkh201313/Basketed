@@ -1,0 +1,170 @@
+# Demo runbook
+
+Five minutes. The last two are the strongest and they are the adversarial pass —
+so do not let the first three overrun.
+
+---
+
+## 30 minutes before
+
+```bash
+pnpm build
+pnpm preflight          # profile URL, 10 pinned stores, port 8787
+pnpm test               # 77
+pnpm smoke              # 4 suites, all offline
+```
+
+`preflight` checks the three things that silently kill the demo, each with a
+symptom that is otherwise maddening to diagnose:
+
+| Symptom | Cause |
+|---|---|
+| every tool answers `Tool not found` | the UCP agent profile is unreachable, or served without a public `Cache-Control` / `application/json` |
+| a hand-picked store returns nothing | headless or password-protected storefront — the pin file is stale |
+| server won't start | 8787 already listening |
+
+**Then stop touching the live endpoints.** Rate limits are unpublished and a
+rehearsal loop is the one thing that can burn them.
+
+### If the venue wifi dies
+
+```bash
+pnpm drill        # the whole demo path with the network actually severed
+```
+
+This is not `BASKETED_SNAPSHOTS=1` on a machine that still has wifi — that
+proves only that the flag parses. `scripts/offline-guard.mjs` is preloaded into
+the server and refuses every non-loopback connection, so if any part of the
+demo needed the internet, the drill fails instead of the stage does. It covers
+§11 steps 1, 3–11, and it passes: Shopify replays from `fixtures/snapshots/`,
+the simulated stores never wanted the network, and the purchase gate is
+untouched by either.
+
+Two things it will show you, both worth saying out loud:
+
+- **Seven of the ten pinned stores go dark**, because only three have a Day-0
+  snapshot. They come back in `stores_failed`, named. A search that quietly
+  returned fewer stores would look *identical to success* from the stage.
+- The Shopify cart still reconciles: `lines 19.99 vs total 14.00 — Item
+  Discounts: -5.99 USD`. A real merchant discount, captured at Day-0.
+
+**Say it rather than hide it** — "the wifi is gone, so this is running off
+Day-0 snapshots, and here is the same flow" is a stronger moment than a failed
+live call.
+
+---
+
+## The run
+
+### 1 · Start it — 20s
+
+```bash
+node packages/cli/bin.js serve --http --open
+```
+
+One process, one port. The panel opens; the MCP endpoint is on `/mcp`; stdio is
+what the CLI agents use. Point at the two numbers on the page and move on.
+
+### 2 · Search — 40s
+
+> "Find me ground coffee under £10, across everything I'm connected to."
+
+What to point at, in order:
+
+1. **Real Shopify results and stamped `SIMULATED` results side by side.** Say the
+   difference out loud. "That one is a live merchant. That one is fixture-backed
+   and says so on every single row. There is no mode that means *we scraped it
+   and hoped*."
+2. `basket_get_token_report` → **~99% saved** against the bytes we actually
+   fetched. Then immediately give the honest version: *the published headline is
+   91.9%, because that one includes our own 3,144-token tool-definition
+   overhead.* Volunteering the less flattering number is the point.
+
+### 3 · Prepare — 40s
+
+> "Add the cheapest one to a basket."
+
+- A **real server-side cart** at the merchant. Real totals. Merchant discounts
+  applied server-side without us asking.
+- `charged: false`, stated as a structured field, not just prose.
+- **Turn to the terminal.** A 6-digit code is sitting on the server's own stderr.
+  "The model cannot read this surface. The only way it gets that code is if I
+  read it out."
+
+### 4 · Approve — 40s
+
+Two ways, pick one and mention the other:
+
+- **Channel C** — read the code to the agent. Works in 100% of clients.
+- **Channel A** — `/approvals`. Itemised, five-minute countdown, and **you have
+  to type the exact total.** What you confirm is the number, not the position of
+  a button.
+
+Then confirm. The order comes back **`HANDED_OFF`, `outcome: unknown`** —
+
+> "It did not buy anything. It handed me a checkout page. We never take payment
+> and we have no way to know whether I completed it, so it says exactly that.
+> A green tick here would be the most damaging bug this product could ship."
+
+### 5 · The adversarial pass — 90s, the strongest part
+
+Run these live, in this order:
+
+```bash
+node scripts/smoke-purchase.mjs     # or do it by hand in the agent
+```
+
+1. `purchase_confirm` on a fresh id, **before** approving → refused
+2. approve, confirm, then **replay the same `approval_id`** → refused, consumed
+3. **edit a price in the DB**, then confirm → refused, hash drift
+4. restart with `--fast-mode`, repeat 1–3 → **all still refused**
+5. **ask the agent to approve its own purchase**
+
+Item 5 costs nothing and lands hardest. There is no tool that can. Show
+`tools/list`. *The absence is the feature.*
+
+Then the line that closes it:
+
+> "Most projects assert that in a README. We assert it in the import graph — a
+> test walks it and fails CI if `mcp/policy.ts` ever becomes reachable from
+> `commerce/purchase.ts`. The flag isn't ignored on the purchase path. It can't
+> be seen from there."
+
+---
+
+## Questions you will get
+
+**"Why not just scrape Amazon?"** — Because circumventing anti-bot controls
+destroys the "the user is the actor" defence that makes agentic shopping lawful
+at all, and it breaks constantly. The licensed-provider route gets the same data
+with a real commercial relationship behind it. This is not a capability we ship
+disabled; it is one we do not build.
+
+**"So some of your stores are fake?"** — Every response and every card carries
+its mode. Six stores are fixture-backed because they have no lawful automated
+route at any price — Alibaba, Taobao, JD and the rest need a Chinese business
+entity. Simulating them is the honest option, which is why we label it instead of
+pretending.
+
+**"Did it actually buy anything?"** — No, and it says so. Shopify gates payment
+completion behind a hand-granted merchant token with no public application, so
+hand-off is not a choice we made, it is the platform ceiling. No code path here
+can move real money and none could even if we wanted it to.
+
+**"What if a product description tells the agent to buy something?"** — The
+approval screen and the cart hash are built **only** from numeric fields,
+enumerated fields and the normalized product name. No merchant-authored string
+reaches either. Sanitisation is defence in depth; that is the actual defence.
+
+**"What happens when your server gets breached?"** — There is no server. The
+vault is a file on this machine.
+
+---
+
+## Do not claim
+
+Provider-sourced retailer data, real retailer OAuth, `compare_products`, the
+Stores/Settings pages, MCPB, registry publish, or a completed paid order. All are
+designed in the plan; none are built. The pitch is *here is the architecture, and
+the two adapters plus the gate that prove it* — which is a stronger thing to say
+than six half-finished subsystems.

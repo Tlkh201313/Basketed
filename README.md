@@ -58,8 +58,10 @@ and check. The absence is the feature.
 ### The adversarial pass
 
 ```bash
-pnpm smoke        # all three suites
+pnpm smoke        # four smoke suites, all offline
 pnpm test         # 77 unit tests
+pnpm drill        # the whole demo path with the network genuinely severed
+pnpm smoke:live   # ...and against live merchants, spending real requests
 ```
 
 1. `purchase_confirm` before approving → refused
@@ -74,6 +76,15 @@ Behaviourally, and by **walking the real import graph**: nothing reachable from
 `commerce/purchase.ts` imports `mcp/policy.ts`, where the flag lives. The flag
 is not ignored on the purchase path — it is not reachable from it, and a
 refactor that wires them together fails CI.
+
+### The offline drill actually cuts the network
+
+`pnpm drill` preloads a guard that refuses every non-loopback connection in the
+server process, then walks the whole demo path. Setting a snapshot flag on a
+machine that still has wifi proves only that the flag parses. Under a real cut,
+seven of the ten pinned Shopify stores go dark — and come back **named** in
+`stores_failed`, because a search that silently returns fewer stores looks
+exactly like success.
 
 ---
 
