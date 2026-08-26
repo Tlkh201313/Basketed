@@ -22,6 +22,48 @@ export interface Guardrails {
   allowedAddresses: string[];
 }
 
+/**
+ * A rejected guardrail write, in words the panel can show a person.
+ *
+ * Separate from a thrown Error so a caller can tell "you typed something that
+ * is not a cap" from "the database is broken", and answer 400 rather than 500.
+ */
+export class GuardrailValueError extends Error {}
+
+/**
+ * The ceiling on a ceiling.
+ *
+ * A cap of 1e308 is not a large cap, it is the absence of one, and the whole
+ * point of this file is that the absence of a cap should never be reachable by
+ * typing a number into a box. Stated once so the panel, the API and the tests
+ * cannot disagree about where the edge is.
+ */
+export const MAX_CAP = 1_000_000;
+
+function checkedCap(name: string, raw: number): number {
+  if (!Number.isFinite(raw)) {
+    throw new GuardrailValueError(`${name} must be a number.`);
+  }
+  if (raw < 0) {
+    // Not merely odd: a negative cap refuses every purchase forever, and the
+    // refusal names a guardrail rather than the typo that caused it.
+    throw new GuardrailValueError(`${name} cannot be negative -- that would refuse every purchase.`);
+  }
+  if (raw > MAX_CAP) {
+    throw new GuardrailValueError(`${name} cannot exceed ${MAX_CAP} -- a cap that large is not a cap.`);
+  }
+  return Math.round(raw * 100) / 100;
+}
+
+function checkedList(name: string, raw: readonly string[]): string[] {
+  if (!Array.isArray(raw)) throw new GuardrailValueError(`${name} must be a list.`);
+  const clean = raw.map((v) => String(v).trim());
+  if (clean.some((v) => v.length === 0)) {
+    throw new GuardrailValueError(`${name} contains an empty entry.`);
+  }
+  return [...new Set(clean)];
+}
+
 export const DEFAULT_GUARDRAILS: Guardrails = {
   homeCurrency: "USD",
   perOrderCap: 250,
@@ -66,13 +108,34 @@ export function loadGuardrails(db: Db): Guardrails {
   };
 }
 
+/**
+ * The only write path for the Intent Mandate, and the only place it is checked.
+ *
+ * `loadGuardrails` already guards against a NaN it finds in the database, which
+ * quietly meant a NaN could be PUT there and the fallback would paper over it
+ * -- the user would be running the default cap while the panel showed theirs.
+ * Validating on the way in is the half that was missing.
+ *
+ * Everything is checked before anything is written, so a bad field cannot leave
+ * half a policy applied.
+ */
 export function saveGuardrails(db: Db, g: Partial<Guardrails>): void {
+  const currency = g.homeCurrency === undefined ? undefined : g.homeCurrency.trim().toUpperCase();
+  if (currency !== undefined && !/^[A-Z]{3}$/.test(currency)) {
+    throw new GuardrailValueError("home_currency must be a three-letter ISO code, like GBP.");
+  }
+  const perOrderCap = g.perOrderCap === undefined ? undefined : checkedCap("per_order_cap", g.perOrderCap);
+  const dailyCap = g.dailyCap === undefined ? undefined : checkedCap("daily_cap", g.dailyCap);
+  const allowedStores = g.allowedStores === undefined ? undefined : checkedList("allowed_stores", g.allowedStores);
+  const allowedAddresses =
+    g.allowedAddresses === undefined ? undefined : checkedList("allowed_addresses", g.allowedAddresses);
+
   const put = db.prepare("INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v");
-  if (g.homeCurrency) put.run("home_currency", g.homeCurrency.toUpperCase());
-  if (g.perOrderCap !== undefined) put.run("per_order_cap", String(g.perOrderCap));
-  if (g.dailyCap !== undefined) put.run("daily_cap", String(g.dailyCap));
-  if (g.allowedStores) put.run("allowed_stores", JSON.stringify(g.allowedStores));
-  if (g.allowedAddresses) put.run("allowed_addresses", JSON.stringify(g.allowedAddresses));
+  if (currency !== undefined) put.run("home_currency", currency);
+  if (perOrderCap !== undefined) put.run("per_order_cap", String(perOrderCap));
+  if (dailyCap !== undefined) put.run("daily_cap", String(dailyCap));
+  if (allowedStores !== undefined) put.run("allowed_stores", JSON.stringify(allowedStores));
+  if (allowedAddresses !== undefined) put.run("allowed_addresses", JSON.stringify(allowedAddresses));
 }
 
 /** Total already spent in the rolling window, in home currency. */

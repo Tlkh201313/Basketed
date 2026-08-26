@@ -337,22 +337,37 @@ export function approveApproval(
     return { ok: false, reason: "Approval expired. Prepare the cart again.", state: "EXPIRED" };
   }
 
+  /*
+   * One attempt budget, shared by both channels.
+   *
+   * The console channel locked after five wrong codes. The panel channel
+   * counted nothing at all, so its evidence -- the exact total -- could be
+   * guessed at leisure by anything that could reach the route. There is no
+   * version of this where one human channel is cheap to brute-force and the
+   * other is not, so the limit moved out of the console branch.
+   */
+  if (row.attempts >= MAX_CODE_ATTEMPTS) {
+    deps.db.prepare("UPDATE approvals SET state = 'REJECTED' WHERE id = ? AND state = 'PENDING'").run(approvalId);
+    audit(deps.db, "approval_locked", fingerprint(approvalId), now);
+    return { ok: false, reason: "Too many wrong attempts. This approval is dead.", state: "REJECTED" };
+  }
+
+  /*
+   * One statement, not read-then-write: two processes sharing the database file
+   * would otherwise both read 4, both write 5, and hand out a free sixth guess.
+   */
+  const wrong = (event: string, reason: string): ApproveResult => {
+    const bumped = deps.db
+      .prepare("UPDATE approvals SET attempts = attempts + 1 WHERE id = ? RETURNING attempts")
+      .all(approvalId) as unknown as Array<{ attempts: number }>;
+    const attempts = Number(bumped[0]?.attempts ?? row.attempts + 1);
+    audit(deps.db, event, `${fingerprint(approvalId)} attempt ${attempts}`, now);
+    return { ok: false, reason, state: "PENDING", attemptsLeft: Math.max(0, MAX_CODE_ATTEMPTS - attempts) };
+  };
+
   if (evidence.channel === "console") {
-    if (row.attempts >= MAX_CODE_ATTEMPTS) {
-      deps.db.prepare("UPDATE approvals SET state = 'REJECTED' WHERE id = ?").run(approvalId);
-      audit(deps.db, "approval_locked", fingerprint(approvalId), now);
-      return { ok: false, reason: "Too many wrong codes. This approval is dead.", state: "REJECTED" };
-    }
     if (!evidence.code || !codeMatches(evidence.code, row)) {
-      const attempts = row.attempts + 1;
-      deps.db.prepare("UPDATE approvals SET attempts = ? WHERE id = ?").run(attempts, approvalId);
-      audit(deps.db, "approval_code_wrong", `${fingerprint(approvalId)} attempt ${attempts}`, now);
-      return {
-        ok: false,
-        reason: "That code is not correct.",
-        state: "PENDING",
-        attemptsLeft: Math.max(0, MAX_CODE_ATTEMPTS - attempts),
-      };
+      return wrong("approval_code_wrong", "That code is not correct.");
     }
   }
 
@@ -362,15 +377,23 @@ export function approveApproval(
     const expected = `${row.total_value.toFixed(2)}`;
     const typed = (evidence.typedTotal ?? "").replace(/[^\d.]/g, "");
     if (typed !== expected) {
-      return { ok: false, reason: "The typed total does not match this cart.", state: "PENDING" };
+      return wrong("approval_total_wrong", "The typed total does not match this cart.");
     }
   }
 
-  deps.db
+  const applied = deps.db
     .prepare(
       "UPDATE approvals SET state = 'APPROVED', approved_at = ?, approved_channel = ?, approved_total = ? WHERE id = ? AND state = 'PENDING'",
     )
     .run(now, evidence.channel, `${row.total_value.toFixed(2)} ${row.total_currency}`, approvalId);
+
+  // The WHERE clause is the guard, so the row count is the answer. Announcing
+  // an approval this statement did not make would tell a person their click
+  // landed on a cart another writer had already moved.
+  if (Number(applied.changes) === 0) {
+    const current = readApproval(deps.db, approvalId)?.state ?? "EXPIRED";
+    return { ok: false, reason: `Approval is already ${current}.`, state: current };
+  }
 
   audit(deps.db, "approved", `${fingerprint(approvalId)} via ${evidence.channel}`, now);
   return { ok: true, state: "APPROVED" };
@@ -380,7 +403,19 @@ export function rejectApproval(deps: PurchaseDeps, approvalId: string, principal
   const now = deps.now?.() ?? Date.now();
   const row = readApproval(deps.db, approvalId);
   if (!row || row.principal !== principal) return { ok: false, reason: "No such approval.", state: "EXPIRED" };
-  deps.db.prepare("UPDATE approvals SET state = 'REJECTED' WHERE id = ? AND state = 'PENDING'").run(approvalId);
+
+  const applied = deps.db
+    .prepare("UPDATE approvals SET state = 'REJECTED' WHERE id = ? AND state = 'PENDING'")
+    .run(approvalId);
+
+  // Only a PENDING approval can be rejected, and this used to return ok: true
+  // without ever asking whether it had rejected one. Telling a person that a
+  // purchase they tried to call off is dead, when it was already CONSUMED, is
+  // the single worst lie this surface could tell.
+  if (Number(applied.changes) === 0) {
+    return { ok: false, reason: `Approval is already ${row.state}.`, state: row.state };
+  }
+
   audit(deps.db, "rejected", fingerprint(approvalId), now);
   return { ok: true, state: "REJECTED" };
 }

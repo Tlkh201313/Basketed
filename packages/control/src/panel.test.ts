@@ -252,3 +252,52 @@ describe("the browser-facing half of the gate", () => {
     expect(stateOf(approvalId)).toBe("PENDING");
   });
 });
+
+describe("the guardrail route refuses a value that is not a policy", () => {
+  it("answers 400 and changes nothing on a negative cap", async () => {
+    const before = loadGuardrails(purchase.db);
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ per_order_cap: -1 }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error: string }).error).toMatch(/negative/);
+    expect(loadGuardrails(purchase.db)).toEqual(before);
+  });
+
+  it("answers 400 on a cap that is really the absence of one", async () => {
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ daily_cap: 1e308 }),
+    });
+    expect(res.status).toBe(400);
+    expect(loadGuardrails(purchase.db).dailyCap).toBe(5000);
+  });
+
+  it("answers 400 on something that is not a number at all", async () => {
+    // `Number("lots")` is NaN, and a NaN in the settings table reads back as
+    // the DEFAULT cap -- the user would be running 250 while the panel showed
+    // what they typed.
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ per_order_cap: "lots" }),
+    });
+    expect(res.status).toBe(400);
+    expect(loadGuardrails(purchase.db).perOrderCap).toBe(1000);
+  });
+
+  it("still takes a cap a person would actually set", async () => {
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ per_order_cap: 42.5, home_currency: "usd" }),
+    });
+    expect(res.status).toBe(200);
+    const after = loadGuardrails(purchase.db);
+    expect(after.perOrderCap).toBe(42.5);
+    expect(after.homeCurrency).toBe("USD");
+  });
+});

@@ -6,6 +6,7 @@ import {
   markOrderOutcome,
   loadGuardrails,
   saveGuardrails,
+  GuardrailValueError,
   spentInWindow,
   type CartMandate,
 } from "@basketed/commerce";
@@ -14,11 +15,15 @@ import type { ControlDeps } from "./types.js";
 /**
  * The panel's REST surface — approval channel A (§6).
  *
- * This is a SEPARATE channel from the MCP one, and that separation is the
- * entire security property: the agent speaks JSON-RPC on /mcp and cannot reach
- * these routes, so an approval that arrives here provably did not come from the
- * model. Same `approveApproval()` underneath, so the guarantees are identical
- * wherever the human clicked.
+ * This is a SEPARATE channel from the MCP one, and that separation is most of
+ * the security property -- but the route split is not what enforces it. Every
+ * client Basketed installs into has a shell, so reaching these paths was never
+ * beyond an agent. What is beyond it is the panel token these routes sit
+ * behind, which is minted per process and printed on the server's own console.
+ * See the gate in `./index.ts`.
+ *
+ * Same `approveApproval()` underneath, so the guarantees are identical wherever
+ * the human clicked.
  */
 
 export interface ApiResult {
@@ -138,10 +143,18 @@ export async function handleApi(
   if (method === "POST" && path === "/api/guardrails") {
     const payload = await body();
     const next: Record<string, unknown> = {};
-    if (payload["home_currency"]) next["homeCurrency"] = String(payload["home_currency"]);
+    if (payload["home_currency"] !== undefined) next["homeCurrency"] = String(payload["home_currency"]);
     if (payload["per_order_cap"] !== undefined) next["perOrderCap"] = Number(payload["per_order_cap"]);
     if (payload["daily_cap"] !== undefined) next["dailyCap"] = Number(payload["daily_cap"]);
-    saveGuardrails(purchase.db, next);
+    try {
+      saveGuardrails(purchase.db, next);
+    } catch (err) {
+      // A refused write says why, in words the panel can show. `Number("abc")`
+      // is NaN, and a NaN written here would read back as the DEFAULT cap --
+      // the user would be running 250 while the panel showed what they typed.
+      if (err instanceof GuardrailValueError) return { status: 400, body: { error: err.message } };
+      throw err;
+    }
     return { status: 200, body: loadGuardrails(purchase.db) };
   }
 

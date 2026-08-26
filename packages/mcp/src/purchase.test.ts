@@ -7,8 +7,13 @@ import {
   confirmPurchase,
   openDb,
   prepareCart,
+  rejectApproval,
   saveGuardrails,
+  loadGuardrails,
   cartHash,
+  GuardrailValueError,
+  MAX_CAP,
+  MAX_CODE_ATTEMPTS,
   type CartMandate,
   type PurchaseDeps,
 } from "@basketed/commerce";
@@ -371,5 +376,101 @@ describe("the approval surface leaks nothing", () => {
     expect(result.outcome).toBe("simulated");
     expect(result.next).toMatch(/SIMULATED/);
     expect(result.handoffUrl).toBeNull();
+  });
+});
+
+/* ------------------------------------------ the gate tells the truth (S10) */
+
+describe("a guardrail write that is not a policy is refused", () => {
+  it("refuses a negative cap rather than bricking every purchase", () => {
+    expect(() => saveGuardrails(deps.db, { perOrderCap: -1 })).toThrow(GuardrailValueError);
+    expect(loadGuardrails(deps.db).perOrderCap).toBe(1000);
+  });
+
+  it("refuses a cap so large it is the absence of one", () => {
+    expect(() => saveGuardrails(deps.db, { dailyCap: 1e308 })).toThrow(GuardrailValueError);
+    expect(() => saveGuardrails(deps.db, { dailyCap: MAX_CAP + 1 })).toThrow(GuardrailValueError);
+    expect(saveGuardrails(deps.db, { dailyCap: MAX_CAP })).toBeUndefined();
+  });
+
+  it("refuses a NaN instead of silently reading back the default", () => {
+    // This is the one that hid: loadGuardrails() guards a NaN it FINDS, so a
+    // NaN written here read back as 250 while the panel showed what was typed.
+    expect(() => saveGuardrails(deps.db, { perOrderCap: Number("not a number") })).toThrow(GuardrailValueError);
+    expect(loadGuardrails(deps.db).perOrderCap).toBe(1000);
+  });
+
+  it("refuses a home currency that is not an ISO code", () => {
+    expect(() => saveGuardrails(deps.db, { homeCurrency: "pounds" })).toThrow(GuardrailValueError);
+    expect(loadGuardrails(deps.db).homeCurrency).toBe("GBP");
+  });
+
+  it("writes nothing at all when one field of the write is bad", () => {
+    expect(() => saveGuardrails(deps.db, { homeCurrency: "USD", perOrderCap: -5 })).toThrow(GuardrailValueError);
+    const after = loadGuardrails(deps.db);
+    expect(after.homeCurrency).toBe("GBP");
+    expect(after.perOrderCap).toBe(1000);
+  });
+});
+
+describe("both human channels burn the same attempt budget", () => {
+  it("locks the panel channel after the same number of wrong totals as the console", async () => {
+    const { approvalId } = await prepare();
+
+    for (let i = 1; i <= MAX_CODE_ATTEMPTS; i += 1) {
+      const bad = approveApproval(deps, approvalId, PRINCIPAL, { channel: "panel", typedTotal: `${i}.00` });
+      expect(bad.ok).toBe(false);
+      expect(bad.attemptsLeft).toBe(MAX_CODE_ATTEMPTS - i);
+    }
+
+    const dead = approveApproval(deps, approvalId, PRINCIPAL, { channel: "panel", typedTotal: "1.00" });
+    expect(dead.state).toBe("REJECTED");
+
+    // And the right total no longer helps -- the approval is gone, not merely
+    // rate-limited.
+    const row = deps.db.prepare("SELECT total_value FROM approvals WHERE id = ?").get(approvalId) as {
+      total_value: number;
+    };
+    const correct = approveApproval(deps, approvalId, PRINCIPAL, {
+      channel: "panel",
+      typedTotal: row.total_value.toFixed(2),
+    });
+    expect(correct.ok).toBe(false);
+    expect(correct.state).toBe("REJECTED");
+  });
+
+  it("counts a wrong total and a wrong code against one budget", async () => {
+    const { approvalId } = await prepare();
+    approveApproval(deps, approvalId, PRINCIPAL, { channel: "panel", typedTotal: "1.00" });
+    const afterCode = approveApproval(deps, approvalId, PRINCIPAL, { channel: "console", code: "000000" });
+    expect(afterCode.attemptsLeft).toBe(MAX_CODE_ATTEMPTS - 2);
+  });
+});
+
+describe("reject reports what it actually rejected", () => {
+  it("refuses to call a consumed purchase cancelled", async () => {
+    const { approvalId } = await prepare();
+    approveApproval(deps, approvalId, PRINCIPAL, { channel: "console", code: codeFromBanner() });
+    await confirmPurchase(deps, approvalId, PRINCIPAL);
+
+    // The row is CONSUMED. Answering ok: true here would tell a person the
+    // purchase they tried to call off is dead when the order already exists.
+    const result = rejectApproval(deps, approvalId, PRINCIPAL);
+    expect(result.ok).toBe(false);
+    expect(result.state).toBe("CONSUMED");
+  });
+
+  it("rejects a pending approval once, and says so only that once", async () => {
+    const { approvalId } = await prepare();
+    expect(rejectApproval(deps, approvalId, PRINCIPAL).ok).toBe(true);
+    expect(rejectApproval(deps, approvalId, PRINCIPAL).ok).toBe(false);
+  });
+
+  it("leaves an approval a second writer already moved alone", async () => {
+    const { approvalId } = await prepare();
+    // Stand in for the other writer: the row moves out from under the read.
+    deps.db.prepare("UPDATE approvals SET state = 'EXPIRED' WHERE id = ?").run(approvalId);
+    const result = approveApproval(deps, approvalId, PRINCIPAL, { channel: "console", code: codeFromBanner() });
+    expect(result.ok).toBe(false);
   });
 });
