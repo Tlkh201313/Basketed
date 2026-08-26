@@ -79,11 +79,7 @@ function countdown(ms) {
   const ss = String(s % 60).padStart(2, "0");
   return '<span class="ring">' + mm + ":" + ss + " left</span>";
 }
-function sparkle() {
-  return '<span style="display:inline-flex;vertical-align:middle;margin-right:6px;width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#8AB4F8 0%,#C58AF9 60%,#F19ED2 100%);align-items:center;justify-content:center"><svg viewBox="0 0 24 24" width="10" height="10" fill="white"><path d="M12 2L13.9 8.1L20 10L13.9 11.9L12 18L10.1 11.9L4 10L10.1 8.1L12 2Z"/></svg></span>';
-}
-
-/* copy buttons, on every page — Gemini pill */
+/* copy buttons, on every page */
 document.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-copy]");
   if (!btn) return;

@@ -332,13 +332,13 @@ table.lines tr.total td { border-top: 1px solid var(--rule); padding-top: 12px; 
 }
 .metric span { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500; }
 
-.gemini-foot {
+.panel-foot {
   margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--rule-soft);
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   color: var(--ink-4); font-size: 12px;
 }
-.gemini-foot .spark-sm { width: 18px; height: 18px; border-radius: 50%; background: var(--accent-grad); display: grid; place-items: center; flex-shrink: 0; }
-.gemini-foot .spark-sm svg { width: 11px; height: 11px; }
+.panel-foot .spark-sm { width: 18px; height: 18px; border-radius: 50%; background: var(--accent-grad); display: grid; place-items: center; flex-shrink: 0; }
+.panel-foot .spark-sm svg { width: 11px; height: 11px; }
 
 /* --------------------------------------------------------- connect grid */
 
