@@ -84,7 +84,7 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # five smoke suites, all offline
-pnpm test         # 143 unit tests
+pnpm test         # 153 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```
@@ -247,6 +247,22 @@ annotations, namespaced names.
   anonymous and the simulated stores have nothing to check it against — so
   connecting Tesco, Costco, Walmart or Amazon holds a credential for an adapter
   that does not exist yet and changes no result you see today.
+- **"Log in with Chrome" (S15), for exactly Tesco, Costco, Walmart and Amazon.**
+  None of them publish a consumer OAuth flow, so the honest alternative to a password-paste
+  box is opening the retailer's own login page in a real browser and letting
+  the human log in themselves. This launches the machine's **already-installed
+  Chrome**, never a downloaded Chromium — nobody using this needed to install
+  anything. Nothing is read until the human clicks "capture": there is no
+  polling for a session cookie to appear and grabbing it the moment it does.
+  Consistent with "no anti-bot circumvention" above, it does **not** hide the
+  automation from the retailer — no `navigator.webdriver` spoofing, no
+  automation-flag stripping — because a fraud system that cannot tell a
+  driven browser from a human is not a line this project will trade the
+  Connect-stores page for. Every one of these four retailers' Terms of
+  Service prohibits automated login, including by the account owner; that
+  risk is disclosed on the button itself, not just here. The captured session
+  is sealed exactly like a pasted credential — same vault, same `reveal()`
+  audit — and no adapter uses it yet.
 - The agent sees only an **opaque account handle**, never anything that could
   become one.
 - **The approval surface is behind a per-process token** printed on the server's
@@ -273,11 +289,12 @@ annotations, namespaced names.
 ## Not built, stated so nobody claims it
 
 Real retailer adapters for Tesco/Costco/Walmart/Amazon (none publish a
-consumer API; the vault holds a credential, nothing yet authenticates with it),
-real retailer OAuth (none of the above publish one — see
-[Connect stores](#security)), the mock IdP, approval channel B (elicitation),
-`compare_products`, the Orders page, MCPB, registry publish, and ChatGPT plugin
-submission. All are designed in the plan and none are built.
+consumer API; the vault holds a credential — pasted or Chrome-captured —
+nothing yet authenticates with it), real retailer OAuth (none of the above
+publish one — see [Connect stores](#security)), a Chrome-login capture for any
+store outside that prototype four, the mock IdP, approval channel B
+(elicitation), `compare_products`, the Orders page, MCPB, registry publish, and
+ChatGPT plugin submission. All are designed in the plan and none are built.
 
 The credential vault is the one item that moved off this list (S14) — see
 Security, above — and the drift guard that used to check it here now checks

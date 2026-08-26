@@ -25,6 +25,12 @@ import type { CredentialKind } from "@basketed/vault";
 
 export type ConnectMethod = CredentialKind;
 
+/** Where "Log in with Chrome" (S15) sends a human, and what domain to read cookies back from. */
+export interface ChromeLogin {
+  url: string;
+  domains: string[];
+}
+
 export interface StoreAuthPolicy {
   /** Empty when there is nothing to connect. */
   methods: ConnectMethod[];
@@ -32,12 +38,15 @@ export interface StoreAuthPolicy {
   oauth: boolean;
   /** One line, shown on the card. Says what a connection here can actually do. */
   reach: string;
+  /** Set only for the retailers this build's Chrome-login flow targets. */
+  chromeLogin: ChromeLogin | null;
 }
 
 const ANONYMOUS: StoreAuthPolicy = {
   methods: [],
   oauth: false,
   reach: "Anonymous. This merchant's agentic endpoint needs no account, so there is nothing to connect.",
+  chromeLogin: null,
 };
 
 /**
@@ -56,17 +65,37 @@ const NO_PUBLIC_API: Record<string, string> = {
   "sim:ikea": "No public API. The unofficial endpoints are undocumented and change without notice.",
 };
 
+/**
+ * The four this build's Chrome-login prototype targets. Real automation of a
+ * real login page, against real Terms of Service that all four prohibit
+ * automated access under -- including, in most of these, by the account
+ * owner's own tooling. That is disclosed on the button itself, not buried
+ * here; see `renderConnect` in pages.ts.
+ */
+const CHROME_LOGIN: Record<string, ChromeLogin> = {
+  "sim:tesco": { url: "https://www.tesco.com/", domains: ["tesco.com"] },
+  "sim:amazon": { url: "https://www.amazon.com/", domains: ["amazon.com"] },
+  "sim:costco": { url: "https://www.costco.com/", domains: ["costco.com"] },
+  "sim:walmart": { url: "https://www.walmart.com/", domains: ["walmart.com"] },
+};
+
 export function authPolicyFor(store: { id: string; mode: string }): StoreAuthPolicy {
   if (store.mode === "native") return ANONYMOUS;
 
   const why = NO_PUBLIC_API[store.id];
   if (why) {
+    const chromeLogin = CHROME_LOGIN[store.id] ?? null;
     return {
       // Password for the account you already have; session token for people
       // who would rather hand over something revocable than a password.
-      methods: ["password", "token"],
+      // Cookie is only offered where a session actually looks like that --
+      // the four stores "Log in with Chrome" (S15) captures one from.
+      methods: chromeLogin ? ["password", "token", "cookie"] : ["password", "token"],
       oauth: false,
-      reach: `${why} Products here are fixtures; a stored credential is held for the adapter that would use it, and buys nothing until one exists.`,
+      reach: chromeLogin
+        ? `${why} Products here are fixtures; a stored credential is held for the adapter that would use it, and buys nothing until one exists. "Log in with Chrome" opens the real site and captures the session yourself -- this is real automation of their real login, which their Terms of Service does not permit even for the account owner.`
+        : `${why} Products here are fixtures; a stored credential is held for the adapter that would use it, and buys nothing until one exists.`,
+      chromeLogin,
     };
   }
 
@@ -74,6 +103,7 @@ export function authPolicyFor(store: { id: string; mode: string }): StoreAuthPol
     methods: ["token"],
     oauth: false,
     reach: "Fixture-backed. A token is held encrypted for a future adapter.",
+    chromeLogin: null,
   };
 }
 

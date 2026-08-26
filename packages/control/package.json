@@ -18,6 +18,7 @@
     "@basketed/core": "workspace:*",
     "@basketed/adapters": "workspace:*",
     "@basketed/commerce": "workspace:*",
-    "@basketed/vault": "workspace:*"
+    "@basketed/vault": "workspace:*",
+    "puppeteer-core": "^25.9.0"
   }
 }

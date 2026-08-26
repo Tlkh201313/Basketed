@@ -249,6 +249,7 @@ if (approvalsEl) {
 const storesEl = $("#stores");
 if (storesEl) {
   function pill(c) {
+    if (c.chrome_login_waiting) return '<span class="pill off">Chrome window open…</span>';
     if (c.broken) return '<span class="pill bad">reconnect needed</span>';
     if (c.connected) return '<span class="pill on">connected' + (c.username ? " as " + esc(c.username) : "") + '</span>';
     return '<span class="pill off">not connected</span>';
@@ -371,5 +372,79 @@ if (connectForm) {
       submitBtn.disabled = false;
     }
   });
+
+  /* Log in with Chrome (S15): a real browser window, nothing captured until asked */
+  const storeId = connectForm.dataset.store;
+  const idleRow = $("[data-chrome-login-idle]");
+  const waitingRow = $("[data-chrome-login-waiting]");
+  const chromeMsg = $("[data-chrome-msg]");
+
+  function showWaiting(text) {
+    if (idleRow) idleRow.hidden = true;
+    if (waitingRow) waitingRow.hidden = false;
+    if (chromeMsg && text) chromeMsg.textContent = text;
+  }
+  function showIdle(text) {
+    if (idleRow) idleRow.hidden = false;
+    if (waitingRow) waitingRow.hidden = true;
+    if (text) {
+      const msg = $("[data-connect-msg]");
+      if (msg) { msg.textContent = text; msg.className = "tiny err"; }
+    }
+  }
+
+  const startBtn = $("[data-chrome-start]");
+  if (startBtn) {
+    startBtn.addEventListener("click", async () => {
+      startBtn.disabled = true;
+      try {
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login", { method: "POST" });
+        const out = await res.json();
+        if (!res.ok) { showIdle(out.error || ("Refused (" + res.status + ").")); return; }
+        showWaiting("A Chrome window is open. Log in there, then click Capture.");
+      } catch (err) {
+        console.error("[basketed] chrome-login start failed: " + err.message);
+        showIdle("Could not reach the server.");
+      } finally {
+        startBtn.disabled = false;
+      }
+    });
+  }
+
+  const captureBtn = $("[data-chrome-capture]");
+  if (captureBtn) {
+    captureBtn.addEventListener("click", async () => {
+      captureBtn.disabled = true;
+      if (chromeMsg) chromeMsg.textContent = "Capturing…";
+      try {
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login/capture", { method: "POST" });
+        const out = await res.json();
+        if (!res.ok) { if (chromeMsg) chromeMsg.textContent = out.error || ("Refused (" + res.status + ")."); return; }
+        showIdle();
+        const msg = $("[data-connect-msg]");
+        if (msg) { msg.textContent = "Connected via Chrome. You can leave this page."; msg.className = "tiny"; msg.style.color = "var(--ok)"; }
+      } catch (err) {
+        console.error("[basketed] chrome-login capture failed: " + err.message);
+        if (chromeMsg) chromeMsg.textContent = "Could not reach the server.";
+      } finally {
+        captureBtn.disabled = false;
+      }
+    });
+  }
+
+  const cancelBtn = $("[data-chrome-cancel]");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", async () => {
+      cancelBtn.disabled = true;
+      try {
+        await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login", { method: "DELETE" });
+      } catch (err) {
+        console.error("[basketed] chrome-login cancel failed: " + err.message);
+      } finally {
+        cancelBtn.disabled = false;
+        showIdle();
+      }
+    });
+  }
 }
 `;

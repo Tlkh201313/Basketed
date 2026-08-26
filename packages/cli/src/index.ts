@@ -18,6 +18,7 @@ import {
   PRIMARY_CLIENTS,
   pathFor,
   snippetFor,
+  closeAllChromeLogins,
   type ControlDeps,
 } from "@basketed/control";
 import type { Runtime } from "@basketed/mcp";
@@ -230,6 +231,16 @@ export async function main(argv: string[]): Promise<void> {
 
   const mayOpen = !flag(argv, "no-open") && process.env["BASKETED_NO_OPEN"] !== "1";
 
+  // A Chrome window opened for the login prototype (S15) is a real OS process,
+  // spawned by Puppeteer as a child of this one -- it does not exit just
+  // because this process does. Ctrl+C on either transport must not leave it
+  // running with a captured session sitting in it.
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.once(sig, () => {
+      void closeAllChromeLogins().finally(() => process.exit(0));
+    });
+  }
+
   if (!http) {
     // stdout belongs to the JSON-RPC stream from here on. Every diagnostic
     // in the whole process goes to stderr; one stray console.log corrupts the
@@ -271,6 +282,7 @@ export async function main(argv: string[]): Promise<void> {
      */
     process.stdin.once("end", () => {
       panel?.close();
+      void closeAllChromeLogins();
       setTimeout(() => process.exit(0), 250).unref();
     });
     return;

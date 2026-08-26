@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, expect, it, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
@@ -18,7 +18,23 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPanelHandler } from "./index.js";
+import { authPolicyFor } from "./connections.js";
 import type { ControlDeps } from "./types.js";
+
+/**
+ * Chrome-login (S15) is real automation of a real browser -- not something a
+ * unit test should actually launch. The route-level contract (auth gating,
+ * 400/404/409/503 paths, and that a captured secret never echoes back) is
+ * what's under test here; `browser-connect.ts` itself is out of scope.
+ */
+vi.mock("./browser-connect.js", () => ({
+  startLogin: vi.fn(async () => ({ ok: true as const })),
+  captureLogin: vi.fn(async () => ({ ok: false as const, error: "not configured for this test" })),
+  cancelLogin: vi.fn(async () => false),
+  stateOf: vi.fn(() => "idle" as const),
+  closeAll: vi.fn(async () => {}),
+}));
+import { startLogin, captureLogin, cancelLogin } from "./browser-connect.js";
 
 /**
  * The test that would have caught it.
@@ -421,7 +437,7 @@ describe("connections (S14)", () => {
     const body = (await res.json()) as { connections: Array<Record<string, unknown>> };
     const tesco = body.connections.find((c) => c["store_id"] === "sim:tesco");
     expect(tesco).toBeTruthy();
-    expect(tesco!["methods"]).toEqual(["password", "token"]);
+    expect(tesco!["methods"]).toEqual(["password", "token", "cookie"]);
     expect(tesco!["connected"]).toBe(false);
     expect(String(tesco!["reach"])).toMatch(/no public/i);
   });
@@ -457,7 +473,9 @@ describe("connections (S14)", () => {
   });
 
   it("refuses a method the store's policy does not allow", async () => {
-    const res = await panel("/api/connections/sim%3Atesco", {
+    // sim:shopee has no Chrome-login capture, so "cookie" is not on offer --
+    // unlike sim:tesco, which is one of the four this build captures sessions for.
+    const res = await panel("/api/connections/sim%3Ashopee", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ method: "cookie", secret: "whatever-value-here" }),
@@ -538,6 +556,127 @@ describe("connections (S14)", () => {
     const html = await (await panel("/connections/sim%3Atesco")).text();
     expect(html).toContain("Connect Tesco");
     expect((await panel("/connections/sim%3Anosuchstore")).status).toBe(404);
+  });
+});
+
+/* -------------------------------------------------------- chrome-login (S15) */
+
+describe("chrome-login (S15)", () => {
+  beforeEach(() => {
+    vi.mocked(startLogin).mockReset().mockResolvedValue({ ok: true });
+    vi.mocked(captureLogin).mockReset();
+    vi.mocked(cancelLogin).mockReset().mockResolvedValue(false);
+  });
+
+  it("unauthenticated start is refused, and never reaches the launcher", async () => {
+    // Same-origin header, no token -- isolates the token check from the Origin check.
+    const res = await raw("/api/connections/sim%3Atesco/chrome-login", {
+      method: "POST",
+      headers: { origin: base },
+    });
+    expect(res.status).toBe(401);
+    expect(startLogin).not.toHaveBeenCalled();
+  });
+
+  it("404s for an unknown store", async () => {
+    const res = await panel("/api/connections/sim%3Anosuchstore/chrome-login", { method: "POST" });
+    expect(res.status).toBe(404);
+  });
+
+  it("400s for a store this build has no Chrome-login capture for", async () => {
+    const res = await panel("/api/connections/sim%3Ashopee/chrome-login", { method: "POST" });
+    expect(res.status).toBe(400);
+    expect(startLogin).not.toHaveBeenCalled();
+  });
+
+  it("starts a login window and reports waiting", async () => {
+    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, waiting: true });
+    expect(startLogin).toHaveBeenCalledWith("sim:tesco", "https://www.tesco.com/");
+  });
+
+  it("a launch failure (no Chrome installed) surfaces as 503, not a crash", async () => {
+    vi.mocked(startLogin).mockResolvedValueOnce({ ok: false, error: "Google Chrome was not found on this machine." });
+    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "POST" });
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/Chrome was not found/);
+  });
+
+  it("capture seals a cookie credential and never echoes the raw session back", async () => {
+    vi.mocked(captureLogin).mockResolvedValueOnce({ ok: true, cookieHeader: "session=super-secret-cookie-value" });
+    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(JSON.stringify(body)).not.toContain("super-secret-cookie-value");
+    expect(body).toMatchObject({ ok: true, store_id: "sim:tesco", method: "cookie" });
+    expect(vault.reveal("sim:tesco")?.secret).toBe("session=super-secret-cookie-value");
+    expect(captureLogin).toHaveBeenCalledWith("sim:tesco", ["tesco.com"]);
+  });
+
+  it("a capture with no window open, or no cookies yet, is a 409, not a 500", async () => {
+    vi.mocked(captureLogin).mockResolvedValueOnce({
+      ok: false,
+      error: 'No login window is open for this store. Click "Log in with Chrome" first.',
+    });
+    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
+    expect(res.status).toBe(409);
+  });
+
+  it("400s a capture for a store this build has no Chrome-login capture for", async () => {
+    const res = await panel("/api/connections/sim%3Ashopee/chrome-login/capture", { method: "POST" });
+    expect(res.status).toBe(400);
+    expect(captureLogin).not.toHaveBeenCalled();
+  });
+
+  it("cancel closes whatever window is open and says so honestly", async () => {
+    vi.mocked(cancelLogin).mockResolvedValueOnce(true);
+    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "DELETE" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, closed: true });
+  });
+
+  it("a broken vault degrades capture to a clear 503, not a lost session", async () => {
+    vi.mocked(captureLogin).mockResolvedValueOnce({ ok: true, cookieHeader: "session=abc" });
+    const broken = { ...deps, vault: degradedVault("disk is full") };
+    handler = createPanelHandler(broken, {
+      root: ROOT,
+      binPath: resolve(ROOT, "packages/cli/bin.js"),
+      origin: base,
+      endpoint: `${base}/mcp`,
+      version: "test",
+      token: TOKEN,
+    });
+    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
+    expect(res.status).toBe(503);
+  });
+});
+
+/* ------------------------- the README does not describe a build we do not have (S15) */
+
+/**
+ * README's Security section names Tesco/Costco/Walmart/Amazon as the four
+ * stores "Log in with Chrome" covers. That is a fact about `connections.ts`'s
+ * policy table, not prose -- so if a fifth store quietly gained (or one of
+ * the four lost) Chrome-login coverage, this fails instead of the README
+ * silently going stale.
+ */
+describe("the README does not describe a Chrome-login build we do not have (S15)", () => {
+  it("names exactly the stores this build's Chrome-login policy covers", async () => {
+    const withChromeLogin = deps.registry
+      .list()
+      .filter((s) => authPolicyFor(s).chromeLogin)
+      .map((s) => s.name)
+      .sort();
+    expect(withChromeLogin).toEqual(["Amazon", "Costco", "Tesco", "Walmart"]);
+
+    const readme = await readFile(resolve(ROOT, "README.md"), "utf8");
+    const bullet = /Log in with Chrome[\s\S]{0,1500}?no adapter uses it yet\./i.exec(readme)?.[0];
+    expect(bullet, "README's Chrome-login bullet was not found where expected").toBeTruthy();
+    for (const name of withChromeLogin) {
+      expect(bullet).toMatch(new RegExp(name));
+    }
   });
 });
 

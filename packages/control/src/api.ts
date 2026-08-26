@@ -12,6 +12,7 @@ import {
 } from "@basketed/commerce";
 import type { CredentialKind } from "@basketed/vault";
 import { authPolicyFor } from "./connections.js";
+import { startLogin, captureLogin, cancelLogin, stateOf } from "./browser-connect.js";
 import type { ControlDeps } from "./types.js";
 
 /**
@@ -164,10 +165,70 @@ export async function handleApi(
             username: held_?.username ?? null,
             connected_at: held_?.createdAt ?? null,
             last_used_at: held_?.lastUsedAt ?? null,
+            chrome_login: policy.chromeLogin !== null,
+            chrome_login_waiting: stateOf(s.id) === "waiting",
           };
         }),
       },
     };
+  }
+
+  /*
+   * The Chrome-login prototype (S15): a real Chrome window on the real site,
+   * a human logging in themselves, and nothing captured until they say so.
+   * Three routes, same shape as the rest of this file -- start, act, cancel.
+   */
+  const chromeStart = /^\/api\/connections\/([^/]+)\/chrome-login$/.exec(path);
+  if (method === "POST" && chromeStart) {
+    const storeId = decodeURIComponent(chromeStart[1]!);
+    const store = deps.registry.list().find((s) => s.id === storeId);
+    if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
+    const policy = authPolicyFor(store);
+    if (!policy.chromeLogin) {
+      return { status: 400, body: { error: `Chrome login is not offered for ${store.name} in this build.` } };
+    }
+    const result = await startLogin(storeId, policy.chromeLogin.url);
+    if (!result.ok) {
+      log(`chrome-login ${storeId} failed to start: ${result.error}`);
+      return { status: 503, body: { error: result.error } };
+    }
+    log(`chrome-login ${storeId}: window opened at ${policy.chromeLogin.url}`);
+    return { status: 200, body: { ok: true, waiting: true } };
+  }
+
+  const chromeCapture = /^\/api\/connections\/([^/]+)\/chrome-login\/capture$/.exec(path);
+  if (method === "POST" && chromeCapture) {
+    const storeId = decodeURIComponent(chromeCapture[1]!);
+    const store = deps.registry.list().find((s) => s.id === storeId);
+    if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
+    const policy = authPolicyFor(store);
+    if (!policy.chromeLogin) {
+      return { status: 400, body: { error: `Chrome login is not offered for ${store.name} in this build.` } };
+    }
+    const captured = await captureLogin(storeId, policy.chromeLogin.domains);
+    if (!captured.ok) {
+      log(`chrome-login ${storeId} capture failed: ${captured.error}`);
+      return { status: 409, body: { error: captured.error } };
+    }
+    try {
+      const saved = deps.vault.connect({ storeId, kind: "cookie", username: null, secret: captured.cookieHeader });
+      log(`chrome-login ${storeId}: session captured and sealed`);
+      return {
+        status: 200,
+        body: { ok: true, store_id: saved.storeId, method: saved.kind, connected_at: saved.createdAt },
+      };
+    } catch (err) {
+      const reason = (err as Error).message;
+      log(`chrome-login ${storeId} could not be saved: ${reason}`);
+      return { status: 503, body: { error: reason } };
+    }
+  }
+
+  const chromeCancel = /^\/api\/connections\/([^/]+)\/chrome-login$/.exec(path);
+  if (method === "DELETE" && chromeCancel) {
+    const storeId = decodeURIComponent(chromeCancel[1]!);
+    const closed = await cancelLogin(storeId);
+    return { status: 200, body: { ok: true, closed } };
   }
 
   const connect = /^\/api\/connections\/([^/]+)$/.exec(path);

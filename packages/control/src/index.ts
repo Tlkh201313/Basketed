@@ -4,10 +4,12 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { handleApi } from "./api.js";
 import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, type StoreRow } from "./pages.js";
+import { stateOf as chromeLoginStateOf } from "./browser-connect.js";
 import type { ControlDeps } from "./types.js";
 
 export * from "./clients.js";
 export type { ControlDeps } from "./types.js";
+export { closeAll as closeAllChromeLogins } from "./browser-connect.js";
 
 /**
  * The control panel (§7), served by the same process and the same port as the
@@ -299,6 +301,7 @@ export function createPanelHandler(
             store: { id: store.id, name: store.name, mode: store.mode, country: store.country, currency: store.currency },
             token: opts.token,
             connected: held ? { method: held.kind, username: held.username, broken: held.broken } : null,
+            chromeWaiting: chromeLoginStateOf(storeId) === "waiting",
           }),
           { "set-cookie": setCookie },
         );

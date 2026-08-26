@@ -358,6 +358,8 @@ export interface ConnectInput {
   token: string;
   /** Set when a credential is already held, so the page can say so. */
   connected: { method: string; username: string | null; broken: boolean } | null;
+  /** True if a Chrome login window is already open for this store (S15). */
+  chromeWaiting: boolean;
 }
 
 /**
@@ -400,6 +402,30 @@ ${
       : " Connecting again replaces it."
   }
 </div>`
+    : ""
+}
+
+${
+  policy.chromeLogin
+    ? `<div class="note" style="border-image: none; border-left-color: var(--danger)">
+  <strong>Log in with Chrome</strong> opens a real, visible Chrome window on the real
+  ${esc(input.store.name)} site. Nothing is automated about the login itself &mdash; you type your
+  own credentials into ${esc(input.store.name)}'s own page, the same as always. What IS automation
+  is Basketed reading back the session afterward, on your say-so, and that is real automated access
+  to a site whose Terms of Service does not permit it &mdash; including, for most of these
+  retailers, when the account owner is the one running it. Excessive use can get the account
+  flagged or restricted. This is at your own risk.
+</div>
+<div class="row" data-chrome-login-idle${input.chromeWaiting ? " hidden" : ""}>
+  <button class="act go" type="button" data-chrome-start>Log in with Chrome</button>
+</div>
+<div class="row" data-chrome-login-waiting${input.chromeWaiting ? "" : " hidden"} style="gap:10px">
+  <button class="act go" type="button" data-chrome-capture>I'm logged in &mdash; capture session</button>
+  <button class="act no" type="button" data-chrome-cancel>Cancel</button>
+  <span class="tiny muted" data-chrome-msg>A Chrome window is open. Log in there, then click Capture.</span>
+</div>
+<hr class="tear">
+<p class="tiny muted" style="margin:0 0 16px">Or enter it yourself instead:</p>`
     : ""
 }
 
