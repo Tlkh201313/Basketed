@@ -1,9 +1,10 @@
 import { CLIENTS, PRIMARY_CLIENTS, pathFor, snippetFor, type SnippetInput } from "./clients.js";
 import { STYLE } from "./style.js";
 import { SCRIPT } from "./script.js";
+import { authPolicyFor, secretLabel, methodLabel, type ConnectMethod } from "./connections.js";
 
 /**
- * The two pages the demo rests on (§8 S6): Home/Install and Approvals.
+ * The panel's pages: Install, Connect stores, Approvals. Originally the two (§8 S6): Home/Install and Approvals.
  *
  * Server-rendered from template literals. No Vite, no React, no build step —
  * §9 risk 2 says the UI always overruns, and the cut rule at T−4:15 says ship
@@ -25,7 +26,30 @@ function esc(s: unknown): string {
  * proved it holds the token. `renderLocked()` is what an unauthenticated GET
  * gets, and it deliberately goes through neither this function nor SCRIPT.
  */
-function shell(title: string, active: "home" | "approvals", main: string, token: string): string {
+type Page = "home" | "connections" | "approvals";
+
+/** Inline, so the panel needs no icon font, no sprite file and no network. */
+const ICON: Record<string, string> = {
+  home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>`,
+  plug: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>`,
+  lock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>`,
+  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`,
+  theme: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.5 1.5M17.6 17.6l1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/></svg>`,
+};
+
+function navItem(href: string, label: string, icon: string, on: boolean): string {
+  return `<a href="${href}" class="${on ? "on" : ""}">${ICON[icon]}<span>${esc(label)}</span></a>`;
+}
+
+/**
+ * The frame every page hangs in.
+ *
+ * A left rail rather than a top bar since S14: the panel gained a third
+ * section and a fourth is coming, and a rail is where a person expects to
+ * find "the other pages" in a console they keep open.
+ */
+function shell(title: string, active: Page, main: string, token: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -34,16 +58,34 @@ function shell(title: string, active: "home" | "approvals", main: string, token:
 <meta name="referrer" content="no-referrer">
 <title>${esc(title)} · Basketed</title>
 <style>${STYLE}</style>
+<script>
+  // Before first paint: a stored choice wins, otherwise the OS decides. Here
+  // rather than in SCRIPT because that runs after the body and would flash.
+  try { var t = localStorage.getItem("basketed-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 </head>
 <body>
-<header class="top"><div class="wrap">
-  <a class="mark" href="/">basket<span>ed</span></a>
-  <nav>
-    <a href="/" class="${active === "home" ? "on" : ""}">Install</a>
-    <a href="/approvals" class="${active === "approvals" ? "on" : ""}">Approvals</a>
-  </nav>
-</div></header>
-<main class="wrap">${main}</main>
+<div class="app">
+  <aside class="rail">
+    <a class="mark" href="/">basket<span>ed</span><b>local</b></a>
+    <nav>
+      ${navItem("/", "Install", "home", active === "home")}
+      ${navItem("/connections", "Connect stores", "plug", active === "connections")}
+      ${navItem("/approvals", "Approvals", "check", active === "approvals")}
+    </nav>
+    <div class="foot">
+      <button class="theme" data-theme-toggle type="button">${ICON["theme"]}<span data-theme-label>System theme</span></button>
+      <div class="who">
+        <span class="dot">B</span>
+        <div>
+          <div class="tiny" style="font-weight:600">This machine</div>
+          <small>nothing leaves it</small>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <main class="sheet">${main}</main>
+</div>
 <script>window.__BASKETED_TOKEN__ = ${JSON.stringify(token)};</script>
 <script>${SCRIPT}</script>
 </body>
@@ -201,6 +243,186 @@ ${copyBlock(input.endpoint)}`
 </div>
 
 <p class="tiny muted">${esc(input.summary)}</p>
+`,
+    input.token,
+  );
+}
+
+/* ------------------------------------------------------------ connections */
+
+export interface StoreRow {
+  id: string;
+  name: string;
+  mode: string;
+  country?: string;
+  currency?: string;
+}
+
+export interface ConnectionsInput {
+  stores: StoreRow[];
+  token: string;
+}
+
+/** Two letters, so a card reads as a store with no logo to show. */
+function monogram(name: string): string {
+  const parts = name.split(/[\s&-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? parts[0]?.[1] ?? "")).toUpperCase();
+}
+
+/**
+ * The store list, as connectable things.
+ *
+ * Rendered server-side with `data-` attributes the script filters on, so the
+ * tabs and the search box need no client-side state that could drift from the
+ * server. Only the connected/not badge is filled in from /api/connections,
+ * because that is the one thing which changes without a page load.
+ */
+export function renderConnections(input: ConnectionsInput): string {
+  const card = (s: StoreRow) => {
+    const policy = authPolicyFor(s);
+    const connectable = policy.methods.length > 0;
+    return `<article class="appcard" data-store="${esc(s.id)}" data-name="${esc(s.name.toLowerCase())}" data-connectable="${connectable}">
+  <div class="head">
+    <span class="tile">${esc(monogram(s.name))}</span>
+    <div style="min-width:0">
+      <div class="name">${esc(s.name)}</div>
+      <div class="where">${esc(s.id)}${s.country ? ` · ${esc(s.country)}` : ""}</div>
+    </div>
+    <span class="stamp ${s.mode === "native" ? "live" : "sim"}" style="margin-left:auto">${esc(s.mode)}</span>
+  </div>
+  <p class="reach">${policy.reach}</p>
+  <div class="foot">
+    <span data-status><span class="pill off">checking</span></span>
+    <span class="right">${
+      connectable
+        ? `<button class="act sm no" data-disconnect hidden>Disconnect</button>
+           <a class="act sm go" href="/connections/${encodeURIComponent(s.id)}" style="text-decoration:none">Connect</a>`
+        : `<span class="tiny muted">no account needed</span>`
+    }</span>
+  </div>
+</article>`;
+  };
+
+  return shell(
+    "Connect stores",
+    "connections",
+    `
+<h1>Connect stores</h1>
+<p class="lede">
+  A credential added here is sealed with AES-256-GCM under a key on this machine and handed to
+  nothing but the request interceptor. <strong>No agent can read it back</strong> &mdash; there is no
+  tool that returns one and no route that serves one, not even to this page.
+</p>
+
+<div class="locknote">
+  ${ICON["lock"]}
+  <div>
+    None of Tesco, Costco, Walmart or Amazon publish a consumer OAuth flow, so nobody can offer a
+    real &ldquo;Sign in with&rdquo; button for them &mdash; what you connect is the account you
+    already have, held encrypted. Their catalogues stay fixtures until an adapter exists that can
+    use it. Shopify merchants need no account at all.
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="tabs">
+    <button data-tab="all" class="on" type="button">All</button>
+    <button data-tab="connected" type="button">Connected</button>
+  </div>
+  <div class="finder">
+    ${ICON["search"]}
+    <input type="search" data-find placeholder="Search stores" aria-label="Search stores">
+  </div>
+</div>
+
+<div class="appgrid" id="stores">${input.stores.map(card).join("")}</div>
+<div class="empty" id="nostores" hidden>Nothing matches that.</div>
+`,
+    input.token,
+  );
+}
+
+export interface ConnectInput {
+  store: StoreRow;
+  token: string;
+  /** Set when a credential is already held, so the page can say so. */
+  connected: { method: string; username: string | null; broken: boolean } | null;
+}
+
+/**
+ * The login page for one store.
+ *
+ * A real form at a real URL rather than a dialog: it survives a refresh, it can
+ * be linked, and it keeps the secret out of any page that also renders state
+ * fetched from the API.
+ */
+export function renderConnect(input: ConnectInput): string {
+  const policy = authPolicyFor(input.store);
+  const methods = policy.methods;
+  const field = (m: ConnectMethod) => `
+  <div data-fields="${m}" hidden>
+    ${
+      m === "password"
+        ? `<label class="lab" for="username">Email or username</label>
+    <input class="field" id="username" data-username type="text" autocomplete="off" spellcheck="false">`
+        : ""
+    }
+    <label class="lab" for="secret-${m}">${secretLabel(m)}</label>
+    <input class="field" id="secret-${m}" data-secret type="password" autocomplete="off" spellcheck="false">
+  </div>`;
+
+  return shell(
+    `Connect ${input.store.name}`,
+    "connections",
+    `
+<p class="tiny muted"><a href="/connections">&larr; All stores</a></p>
+<h1>Connect ${esc(input.store.name)}</h1>
+<p class="lede">${policy.reach}</p>
+
+${
+  input.connected
+    ? `<div class="note">
+  Already connected${input.connected.username ? ` as <span class="num">${esc(input.connected.username)}</span>` : ""}
+  via <span class="num">${esc(input.connected.method)}</span>.${
+    input.connected.broken
+      ? " <strong>The stored bytes no longer decrypt with the current key</strong> &mdash; connect again to replace them."
+      : " Connecting again replaces it."
+  }
+</div>`
+    : ""
+}
+
+<div class="locknote">
+  ${ICON["lock"]}
+  <div>
+    This form posts to this machine only. The value is sealed on arrival and never rendered, logged
+    or returned by any route &mdash; including this one. The agent sharing this machine can reach
+    this port, but not the console where the token that unlocked this page was printed.
+  </div>
+</div>
+
+<form class="form" data-connect-form data-store="${esc(input.store.id)}">
+  ${
+    methods.length > 1
+      ? `<label class="lab" for="method">How</label>
+  <select class="field" id="method" data-method>
+    ${methods.map((m) => `<option value="${m}">${methodLabel(m)}</option>`).join("")}
+  </select>`
+      : `<input type="hidden" data-method value="${esc(methods[0] ?? "")}">`
+  }
+  ${methods.map(field).join("")}
+  <div class="row" style="margin-top:20px">
+    <button class="act go" type="submit">Connect</button>
+    <span class="tiny muted" data-connect-msg></span>
+  </div>
+</form>
+
+<hr class="tear">
+<p class="tiny muted">
+  What this buys today: the credential is held, and the store shows as connected. Basketed will not
+  pretend it can shop with it &mdash; ${esc(input.store.name)} results stay stamped
+  <span class="num">simulated</span> until an adapter exists that authenticates with it.
+</p>
 `,
     input.token,
   );

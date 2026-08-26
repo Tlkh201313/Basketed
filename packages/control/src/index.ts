@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { handleApi } from "./api.js";
-import { renderApprovals, renderHome, renderLocked } from "./pages.js";
+import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, type StoreRow } from "./pages.js";
 import type { ControlDeps } from "./types.js";
 
 export * from "./clients.js";
@@ -169,12 +169,19 @@ export function createPanelHandler(
   let benchmark: Benchmark | undefined;
   const panelOrigin = new URL(opts.origin).origin;
   const setCookie = `${PANEL_TOKEN_COOKIE}=${encodeURIComponent(opts.token)}; Path=/; SameSite=Strict; HttpOnly`;
+  const log = (msg: string): void => deps.purchase.ctx.log(`panel: ${msg}`);
 
   return async (req, res) => {
     const url = new URL(req.url ?? "/", panelOrigin);
     const path = url.pathname;
     const method = (req.method ?? "GET").toUpperCase();
+    // Never the token itself, on either side of the compare -- this line is
+    // meant to answer "why was I refused" from the server's own console
+    // without ever putting a secret in that answer.
     const authed = tokenMatches(suppliedToken(req, url), opts.token);
+    if (!authed && (path.startsWith("/api/") || path === "/" || path === "/approvals" || path.startsWith("/approvals/") || path === "/connections" || path.startsWith("/connections/"))) {
+      log(`401 ${method} ${path} (${suppliedToken(req, url) ? "token did not match" : "no token supplied"})`);
+    }
 
     if (path.startsWith("/api/")) {
       /*
@@ -184,6 +191,7 @@ export function createPanelHandler(
        * the only part of this a local process cannot satisfy.
        */
       if (method !== "GET" && !originMatches(req.headers.origin, panelOrigin)) {
+        log(`403 ${method} ${path} (Origin was ${req.headers.origin ? JSON.stringify(req.headers.origin) : "absent"})`);
         send(res, 403, "application/json", JSON.stringify({ error: "Cross-origin request refused." }));
         return true;
       }
@@ -212,18 +220,34 @@ export function createPanelHandler(
           return {};
         }
       };
-      const result = await handleApi(deps, method, path, body);
+      let result;
+      try {
+        result = await handleApi(deps, method, path, body);
+      } catch (err) {
+        // A route that throws must still answer -- an agent-facing 500 with a
+        // logged reason beats a hung socket or a stack trace nobody sees.
+        const reason = (err as Error).message;
+        log(`500 ${method} ${path}: ${reason}`);
+        send(res, 500, "application/json", JSON.stringify({ error: "Internal error. See the server's console." }));
+        return true;
+      }
       if (!result) {
         send(res, 404, "application/json", JSON.stringify({ error: `No route ${method} ${path}.` }));
         return true;
       }
+      if (result.status >= 500) log(`${result.status} ${method} ${path}`);
       send(res, result.status, "application/json", JSON.stringify(result.body));
       return true;
     }
 
     const isPanelPage =
       method === "GET" &&
-      (path === "/" || path === "/index.html" || path === "/approvals" || path.startsWith("/approvals/"));
+      (path === "/" ||
+        path === "/index.html" ||
+        path === "/approvals" ||
+        path.startsWith("/approvals/") ||
+        path === "/connections" ||
+        path.startsWith("/connections/"));
 
     if (isPanelPage) {
       // The locked page carries no token, so an agent that GETs the panel
@@ -237,6 +261,47 @@ export function createPanelHandler(
         // An approve_url points at a specific approval; the page loads the list
         // and the card is already there, so the id needs no special handling.
         send(res, 200, "text/html; charset=utf-8", renderApprovals(opts.token), { "set-cookie": setCookie });
+        return true;
+      }
+
+      if (path === "/connections") {
+        const stores: StoreRow[] = deps.registry.list().map((s) => ({
+          id: s.id,
+          name: s.name,
+          mode: s.mode,
+          country: s.country,
+          currency: s.currency,
+        }));
+        send(res, 200, "text/html; charset=utf-8", renderConnections({ stores, token: opts.token }), {
+          "set-cookie": setCookie,
+        });
+        return true;
+      }
+
+      if (path.startsWith("/connections/")) {
+        const storeId = decodeURIComponent(path.slice("/connections/".length));
+        const store = deps.registry.list().find((s) => s.id === storeId);
+        if (!store) {
+          send(
+            res,
+            404,
+            "text/html; charset=utf-8",
+            `<!doctype html><meta charset="utf-8"><p>No such store: ${storeId.replace(/[<>&]/g, "")}. <a href="/connections">Back to Connect stores.</a></p>`,
+          );
+          return true;
+        }
+        const held = deps.vault.get(storeId);
+        send(
+          res,
+          200,
+          "text/html; charset=utf-8",
+          renderConnect({
+            store: { id: store.id, name: store.name, mode: store.mode, country: store.country, currency: store.currency },
+            token: opts.token,
+            connected: held ? { method: held.kind, username: held.username, broken: held.broken } : null,
+          }),
+          { "set-cookie": setCookie },
+        );
         return true;
       }
 

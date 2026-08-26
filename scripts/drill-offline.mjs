@@ -75,6 +75,9 @@ const child = spawn(
       NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import "${GUARD}"`.trim(),
       BASKETED_SNAPSHOTS: "1",
       BASKETED_DB: join(DB_DIR, "drill.db"),
+      // The drill reaches an approval, and opening a browser mid-drill would be
+      // both a surprise and a second thing to explain on stage.
+      BASKETED_NO_OPEN: "1",
     },
   },
 );

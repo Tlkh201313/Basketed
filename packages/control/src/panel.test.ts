@@ -13,6 +13,10 @@ import {
   type PurchaseDeps,
 } from "@basketed/commerce";
 import type { FxTable } from "@basketed/core";
+import { openVault, degradedVault, type Vault } from "@basketed/vault";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createPanelHandler } from "./index.js";
 import type { ControlDeps } from "./types.js";
 
@@ -41,6 +45,7 @@ let deps: ControlDeps;
 let purchase: PurchaseDeps;
 let handler!: ReturnType<typeof createPanelHandler>;
 let approvalId: string;
+let vault: Vault;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -82,7 +87,11 @@ beforeEach(async () => {
     summary: "1 store (simulated)",
     version: "test",
     redactionAlarms: () => 0,
+    // A real vault on a throwaway key, so the connection tests exercise the
+    // actual crypto rather than a stub that cannot fail the way it can.
+    vault: openVault(purchase.db, { keyPath: join(mkdtempSync(join(tmpdir(), "bk-key-")), "master.key") }),
   };
+  vault = deps.vault;
 
   handler = createPanelHandler(deps, {
     root: ROOT,
@@ -390,6 +399,145 @@ describe("attached to a stdio server, with no MCP endpoint of its own", () => {
     });
     expect(evil.status).toBe(403);
     expect(loadGuardrails(purchase.db).perOrderCap).toBe(42);
+  });
+});
+
+/* ------------------------------------------------------------ connections */
+
+/**
+ * Approval channel A had ONE gate: the panel token. The vault adds a second
+ * thing behind that same gate, and the point of this suite is that "behind
+ * the same gate" is actually true -- every /api/connections route refuses the
+ * same way /api/approvals always has, and on top of that, nothing here ever
+ * echoes a secret back, not even to a caller that just supplied one.
+ */
+describe("connections (S14)", () => {
+  it("lists every registered store with a real auth policy, unauthenticated refused", async () => {
+    const noToken = await raw("/api/connections");
+    expect(noToken.status).toBe(401);
+
+    const res = await panel("/api/connections");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { connections: Array<Record<string, unknown>> };
+    const tesco = body.connections.find((c) => c["store_id"] === "sim:tesco");
+    expect(tesco).toBeTruthy();
+    expect(tesco!["methods"]).toEqual(["password", "token"]);
+    expect(tesco!["connected"]).toBe(false);
+    expect(String(tesco!["reach"])).toMatch(/no public/i);
+  });
+
+  it("connecting a store seals the secret and returns metadata only", async () => {
+    const res = await panel("/api/connections/sim%3Atesco", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "password", username: "me@example.com", secret: "hunter2plaintext" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(JSON.stringify(body)).not.toContain("hunter2plaintext");
+    expect(body).toMatchObject({ ok: true, store_id: "sim:tesco", method: "password", username: "me@example.com" });
+
+    expect(vault.reveal("sim:tesco")?.secret).toBe("hunter2plaintext");
+
+    const list = (await (await panel("/api/connections")).json()) as {
+      connections: Array<Record<string, unknown>>;
+    };
+    const tesco = list.connections.find((c) => c["store_id"] === "sim:tesco");
+    expect(tesco?.["connected"]).toBe(true);
+    expect(JSON.stringify(tesco)).not.toContain("hunter2plaintext");
+  });
+
+  it("refuses a store that does not exist", async () => {
+    const res = await panel("/api/connections/sim%3Anosuchstore", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "token", secret: "whatever-value-here" }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("refuses a method the store's policy does not allow", async () => {
+    const res = await panel("/api/connections/sim%3Atesco", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "cookie", secret: "whatever-value-here" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses a password connection with no username -- there is nothing to reconnect as", async () => {
+    const res = await panel("/api/connections/sim%3Atesco", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "password", secret: "whatever-value-here" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("refuses an empty secret", async () => {
+    const res = await panel("/api/connections/sim%3Atesco", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "token", secret: "   " }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("a cross-origin POST is refused before the token is even checked", async () => {
+    const res = await fetch(`${base}/api/connections/sim%3Atesco`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-basketed-token": TOKEN, origin: "http://evil.example" },
+      body: JSON.stringify({ method: "token", secret: "whatever-value-here" }),
+    });
+    expect(res.status).toBe(403);
+    expect(vault.get("sim:tesco")).toBeNull();
+  });
+
+  it("disconnect forgets it, and forgetting twice says so honestly", async () => {
+    await panel("/api/connections/sim%3Acostco", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "token", secret: "whatever-value-goes-here" }),
+    });
+    const first = await panel("/api/connections/sim%3Acostco", { method: "DELETE" });
+    expect(first.status).toBe(200);
+    expect(vault.get("sim:costco")).toBeNull();
+
+    const second = await panel("/api/connections/sim%3Acostco", { method: "DELETE" });
+    expect(second.status).toBe(404);
+  });
+
+  it("a broken vault degrades the route to a clear 503, not a 500 or a crash", async () => {
+    const broken = { ...deps, vault: degradedVault("disk is full") };
+    handler = createPanelHandler(broken, {
+      root: ROOT,
+      binPath: resolve(ROOT, "packages/cli/bin.js"),
+      origin: base,
+      endpoint: `${base}/mcp`,
+      version: "test",
+      token: TOKEN,
+    });
+    const res = await panel("/api/connections/sim%3Atesco", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "token", secret: "whatever-value-here" }),
+    });
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/disk is full/);
+  });
+
+  it("the Connect-stores page renders once authed, and is locked otherwise", async () => {
+    expect((await raw("/connections")).status).toBe(401);
+    const html = await (await panel("/connections")).text();
+    expect(html).toContain("sim:tesco");
+    expect(html).toContain("Connect stores");
+  });
+
+  it("the per-store page renders a form, and 404s for an unknown store", async () => {
+    const html = await (await panel("/connections/sim%3Atesco")).text();
+    expect(html).toContain("Connect Tesco");
+    expect((await panel("/connections/sim%3Anosuchstore")).status).toBe(404);
   });
 });
 

@@ -10,6 +10,8 @@ import {
   spentInWindow,
   type CartMandate,
 } from "@basketed/commerce";
+import type { CredentialKind } from "@basketed/vault";
+import { authPolicyFor } from "./connections.js";
 import type { ControlDeps } from "./types.js";
 
 /**
@@ -78,6 +80,7 @@ export async function handleApi(
 ): Promise<ApiResult | null> {
   const purchase = deps.purchase;
   const now = Date.now();
+  const log = (msg: string): void => purchase.ctx.log(`panel: ${msg}`);
 
   if (method === "GET" && path === "/api/state") {
     const g = loadGuardrails(purchase.db);
@@ -128,6 +131,96 @@ export async function handleApi(
   if (method === "POST" && reject) {
     const result = rejectApproval(purchase, decodeURIComponent(reject[1]!), deps.principal);
     return { status: result.ok ? 200 : 409, body: result };
+  }
+
+  /*
+   * Connections (S14).
+   *
+   * Everything served here is metadata: store, method, username, timestamps.
+   * There is deliberately no route that returns a secret, not even to the
+   * panel -- once a credential is in the vault the only thing that ever sees
+   * it again is the request interceptor, inside the process.
+   */
+  if (method === "GET" && path === "/api/connections") {
+    const held = new Map(deps.vault.list().map((c) => [c.storeId, c]));
+    return {
+      status: 200,
+      body: {
+        connections: deps.registry.list().map((s) => {
+          const policy = authPolicyFor(s);
+          const held_ = held.get(s.id) ?? null;
+          return {
+            store_id: s.id,
+            name: s.name,
+            mode: s.mode,
+            country: s.country,
+            currency: s.currency,
+            methods: policy.methods,
+            oauth: policy.oauth,
+            reach: policy.reach,
+            connected: held_ !== null && !held_.broken,
+            broken: held_?.broken ?? false,
+            method: held_?.kind ?? null,
+            username: held_?.username ?? null,
+            connected_at: held_?.createdAt ?? null,
+            last_used_at: held_?.lastUsedAt ?? null,
+          };
+        }),
+      },
+    };
+  }
+
+  const connect = /^\/api\/connections\/([^/]+)$/.exec(path);
+  if (connect && (method === "POST" || method === "DELETE")) {
+    const storeId = decodeURIComponent(connect[1]!);
+    const store = deps.registry.list().find((s) => s.id === storeId);
+    if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
+
+    if (method === "DELETE") {
+      const forgotten = deps.vault.forget(storeId);
+      return { status: forgotten ? 200 : 404, body: { ok: forgotten, store_id: storeId } };
+    }
+
+    const policy = authPolicyFor(store);
+    if (policy.methods.length === 0) {
+      return { status: 400, body: { error: `${store.name} needs no account: its endpoint is anonymous.` } };
+    }
+
+    const payload = await body();
+    const kind = String(payload["method"] ?? "") as CredentialKind;
+    if (!policy.methods.includes(kind)) {
+      return { status: 400, body: { error: `${store.name} accepts: ${policy.methods.join(", ")}.` } };
+    }
+
+    const secret = String(payload["secret"] ?? "");
+    const username = payload["username"] === undefined ? null : String(payload["username"]);
+    if (!secret.trim()) return { status: 400, body: { error: "Nothing was entered." } };
+    if (kind === "password" && !username?.trim()) {
+      return { status: 400, body: { error: "A password connection needs the account it belongs to." } };
+    }
+
+    try {
+      const saved = deps.vault.connect({ storeId, kind, username, secret });
+      log(`connected ${storeId} via ${kind}`);
+      // Metadata back, never an echo of what was just sent.
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          store_id: saved.storeId,
+          method: saved.kind,
+          username: saved.username,
+          connected_at: saved.createdAt,
+        },
+      };
+    } catch (err) {
+      // Covers both a bad master key (degradedVault always throws here) and
+      // any crypto failure -- either way the human gets a reason, not a blank
+      // 500, and it lands on stderr for whoever is debugging this machine.
+      const reason = (err as Error).message;
+      log(`connect ${storeId} failed: ${reason}`);
+      return { status: 503, body: { error: reason } };
+    }
   }
 
   if (method === "GET" && path === "/api/orders") {

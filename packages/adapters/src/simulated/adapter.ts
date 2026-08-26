@@ -40,7 +40,7 @@ interface SeedFile {
 
 /**
  * Fixture-backed adapter for retailers with no lawful automated route
- * (Tesco, Amazon, Costco, Shopee, Taobao, IKEA -- §4).
+ * (Tesco, Amazon, Costco, Walmart, Shopee, Taobao, IKEA -- §4).
  *
  * It implements the IDENTICAL interface to the real adapters, so the purchase
  * gate, the approval flow, the guardrails and the redaction layer are all

@@ -25,7 +25,7 @@ is the other way in: same panel, plus a Streamable HTTP endpoint on `/mcp`.
 | | |
 |---|---|
 | **Cross-retailer basket behind a mandatory human approval gate** | Nobody has shipped this. Official merchant servers are one-retailer and stop at a checkout URL; community shopping servers automate purchases with no approval at all. The middle was empty. |
-| **Everything runs on your machine** | There is no Basketed server to breach, and no credential held anywhere to breach it for. After the May 2026 Composio breach — ~5,241 API keys and ~5,001 OAuth tokens taken from a store holding ~1.7M live credentials — a hosted shopping agent is a target by construction. The [credential vault](#security) that would hold retailer tokens is designed and **not built**; neither shipped adapter authenticates as anybody, so today there is nothing in it. |
+| **Everything runs on your machine** | There is no Basketed server to breach. After the May 2026 Composio breach — ~5,241 API keys and ~5,001 OAuth tokens taken from a store holding ~1.7M live credentials — a hosted shopping agent is a target by construction. The [credential vault](#security) is sealed with AES-256-GCM under a key that never leaves this machine, and **the model cannot read it** — there is no tool and no route that returns a secret. Neither shipped adapter authenticates as anybody yet, so today the vault is empty unless you put something in it from the Connect stores page. |
 | **A published token benchmark for e-commerce MCP** | **91.9%** fewer tokens than a naive MCP server, **99.3%** fewer than browsing the storefronts, on one real shopping task — and the figure *includes* our own 3,144-token tool-definition overhead. Method in [`docs/BENCHMARK.md`](docs/BENCHMARK.md). |
 
 ---
@@ -64,8 +64,14 @@ installs into has a shell, so "the agent speaks MCP and cannot reach `/api`" was
 never true on its own — a local process can call any port on 127.0.0.1 and forge
 any header. The panel is therefore behind a token minted per process and printed
 on that same console — on both transports, so a client that launched Basketed
-over stdio still has channel A. When a cart needs a person, the link to that
-exact approval is printed there too, and the browser is opened once. `/api` also
+over stdio still has channel A.
+
+On stdio the panel also **opens in your browser when the server starts**. That
+is not a convenience: a client captures its MCP server's stderr, so the link is
+written where no human will ever read it, and a panel nobody can reach is not a
+channel. The tab is the channel there. One tab per process; `--no-open` (or
+`BASKETED_NO_OPEN=1`) turns it off, and the tab polls, so a cart that needs you
+later shows up in the tab that is already open. `/api` also
 refuses any request whose `Origin` is not exactly the panel's, and refuses a
 mutating request that sends none, which is what keeps a web page from driving the
 panel through your browser.
@@ -78,7 +84,7 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # five smoke suites, all offline
-pnpm test         # 116 unit tests
+pnpm test         # 143 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```
@@ -227,13 +233,20 @@ annotations, namespaced names.
 
 ## Security
 
-- **Basketed holds no retailer credential today.** The Shopify UCP transport is
-  anonymous and the simulated stores have nothing to authenticate to, so there
-  is no token to leak. The vault that would seal one — AES-256-GCM, AAD-bound to
-  its account handle, returning a *configured client* rather than a credential —
-  is designed and **not built**; `packages/vault` is an empty placeholder and
-  says so. This bullet used to be written in the present tense, which claimed a
-  defence that did not exist.
+- **The credential vault is built.** `packages/vault` seals each stored secret
+  with AES-256-GCM under a 32-byte key at `~/.basketed/master.key` (mode 0600).
+  There is exactly one function that returns plaintext — `reveal()` — and it is
+  called from nowhere except the request interceptor that attaches a header to
+  an outbound fetch; a test walks the workspace for other call sites and fails
+  if one appears. The panel — behind the same per-process token as everything
+  else in this list — writes to it and reads back metadata only. **No MCP tool
+  receives a credential, ever**: `AdapterCtx` has no field one could travel in.
+  A bad or missing key file degrades the Connect-stores page; it never takes
+  the MCP server down, so a client cannot fail to start because of this file.
+  Neither shipped adapter authenticates with what is stored — Shopify UCP is
+  anonymous and the simulated stores have nothing to check it against — so
+  connecting Tesco, Costco, Walmart or Amazon holds a credential for an adapter
+  that does not exist yet and changes no result you see today.
 - The agent sees only an **opaque account handle**, never anything that could
   become one.
 - **The approval surface is behind a per-process token** printed on the server's
@@ -259,15 +272,17 @@ annotations, namespaced names.
 
 ## Not built, stated so nobody claims it
 
-The credential vault, provider adapters, real retailer OAuth, the mock IdP,
-approval channel B (elicitation), `compare_products`, Stores/Settings/Orders
-pages, MCPB, registry publish, and ChatGPT plugin submission. All are designed
-in the plan and none are built. The pitch is *here is the architecture, and the
-two adapters plus the gate that prove it*.
+Real retailer adapters for Tesco/Costco/Walmart/Amazon (none publish a
+consumer API; the vault holds a credential, nothing yet authenticates with it),
+real retailer OAuth (none of the above publish one — see
+[Connect stores](#security)), the mock IdP, approval channel B (elicitation),
+`compare_products`, the Orders page, MCPB, registry publish, and ChatGPT plugin
+submission. All are designed in the plan and none are built.
 
-`packages/vault` exists as an empty package with a comment explaining what it
-would hold. An empty seam is honest; a README written in the present tense
-about it was not.
+The credential vault is the one item that moved off this list (S14) — see
+Security, above — and the drift guard that used to check it here now checks
+the opposite: that this file stops disclaiming it exactly when it stops being
+true.
 
 `docs/` — [BENCHMARK](docs/BENCHMARK.md)
 

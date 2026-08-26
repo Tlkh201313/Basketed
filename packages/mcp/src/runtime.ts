@@ -9,6 +9,7 @@ import {
   type AdapterCtx,
 } from "@basketed/adapters";
 import { openDb, type PurchaseDeps } from "@basketed/commerce";
+import { openVault, degradedVault, type Vault } from "@basketed/vault";
 import { createPolicy, type Policy } from "./policy.js";
 
 /**
@@ -23,6 +24,16 @@ import { createPolicy, type Policy } from "./policy.js";
 export interface Runtime {
   registry: StoreRegistry;
   ctx: AdapterCtx;
+  /**
+   * Retailer credentials, encrypted at rest.
+   *
+   * Present on the runtime so the PANEL can write to it. Nothing on the MCP
+   * side reads it: tool handlers never see a `Vault`, and the one function
+   * that returns plaintext is called only by the request interceptor. Handing
+   * an adapter a credential is not possible by construction -- `AdapterCtx`
+   * has no field it could travel in.
+   */
+  vault: Vault;
   redactor: Redactor;
   ledger: TokenLedger;
   /**
@@ -156,6 +167,23 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
 
   const fx = JSON.parse(await readFile(resolve(root, "fixtures/fx.json"), "utf8")) as FxTable;
   const db = openDb(opts.dbPath);
+
+  // Every stored credential is handed to the redaction net as it is loaded, so
+  // a value that somehow reaches a response is caught on the way out and
+  // raises an alarm. It is the backstop, not the defence -- see vault/index.ts.
+  //
+  // Never let a bad key file take MCP down with it: search, cart and purchase
+  // have nothing to do with this file, and a client that cannot start its MCP
+  // server because ~/.basketed/master.key would not read is a much bigger
+  // failure than a Connect-stores page that says so and refuses writes.
+  let vault: Vault;
+  try {
+    vault = openVault(db, { watch: (secret) => redactor.watch(secret) });
+  } catch (err) {
+    const reason = (err as Error).message;
+    log(`vault unavailable, connections disabled: ${reason}`);
+    vault = degradedVault(reason);
+  }
   const announce =
     opts.announce ?? ((lines: string[]) => process.stderr.write(`${lines.join("\n")}\n`));
 
@@ -165,6 +193,7 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
   return {
     registry,
     ctx,
+    vault,
     redactor,
     ledger: new TokenLedger(),
     principal: `local:${userInfo().username}`,

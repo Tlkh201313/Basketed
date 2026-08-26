@@ -74,6 +74,18 @@
       ],
       "note": "No official product API.",
       "searchUrl": "https://www.ikea.com/gb/en/search/?q="
+    },
+    {
+      "id": "sim:walmart",
+      "name": "Walmart",
+      "country": "US",
+      "currency": "USD",
+      "categories": [
+        "grocery",
+        "general"
+      ],
+      "note": "US general merchandise. No consumer shopping API; Walmart's public APIs are seller and affiliate only.",
+      "searchUrl": "https://www.walmart.com/search?q="
     }
   ],
   "products": [
@@ -1486,6 +1498,118 @@
         "cat": "furniture",
         "brand": "IKEA",
         "material": "oak"
+      }
+    },
+    {
+      "store": "sim:walmart",
+      "nativeId": "walmart-2000",
+      "name": "Great Value Classic Roast Ground Coffee — 30.5oz",
+      "price": {
+        "value": 8.42,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.4,
+        "count": 1820
+      },
+      "url": "https://www.walmart.com/search?q=Great%20Value%20Classic%20Roast%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Great Value",
+        "size": "30.5oz"
+      }
+    },
+    {
+      "store": "sim:walmart",
+      "nativeId": "walmart-2001",
+      "name": "Folgers Classic Roast Ground Coffee — 25.9oz",
+      "price": {
+        "value": 10.98,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.6,
+        "count": 3140
+      },
+      "url": "https://www.walmart.com/search?q=Folgers%20Classic%20Roast%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Folgers",
+        "size": "25.9oz"
+      }
+    },
+    {
+      "store": "sim:walmart",
+      "nativeId": "walmart-2002",
+      "name": "Starbucks Pike Place Ground Roast — 18oz",
+      "price": {
+        "value": 14.24,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.7,
+        "count": 907
+      },
+      "url": "https://www.walmart.com/search?q=Starbucks%20Pike%20Place%20Ground%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Starbucks",
+        "size": "18oz"
+      }
+    },
+    {
+      "store": "sim:walmart",
+      "nativeId": "walmart-2003",
+      "name": "Mainstays 12-Cup Drip Brewer",
+      "price": {
+        "value": 24.88,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.1,
+        "count": 512
+      },
+      "url": "https://www.walmart.com/search?q=Mainstays%2012-Cup%20Coffee%20Maker",
+      "attrs": {
+        "cat": "general",
+        "brand": "Mainstays"
+      }
+    },
+    {
+      "store": "sim:walmart",
+      "nativeId": "walmart-2004",
+      "name": "Great Value Whole Bean Colombian Roast — 32oz",
+      "price": {
+        "value": 12.62,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.3,
+        "count": 688
+      },
+      "url": "https://www.walmart.com/search?q=Great%20Value%20Whole%20Bean%20Colombian%20Coffee",
+      "attrs": {
+        "cat": "grocery",
+        "brand": "Great Value",
+        "size": "32oz"
+      }
+    },
+    {
+      "store": "sim:walmart",
+      "nativeId": "walmart-2005",
+      "name": "Keurig K-Classic Single Serve Brewer",
+      "price": {
+        "value": 89.0,
+        "currency": "USD"
+      },
+      "rating": {
+        "score": 4.5,
+        "count": 2260
+      },
+      "url": "https://www.walmart.com/search?q=Keurig%20K-Classic%20Single%20Serve%20Brewer",
+      "attrs": {
+        "cat": "general",
+        "brand": "Keurig"
       }
     }
   ]

@@ -52,9 +52,12 @@ all, and a test asserts the import graph stays that way.
 
 The panel comes up on BOTH transports, so plugging Basketed into a client is
 all the setup there is. Its link carries a token minted per process and printed
-only on this console -- the same surface the 6-digit code goes to. When a cart
-needs a human, the link to that exact approval is printed here and the browser
-is opened once.
+only on this console -- the same surface the 6-digit code goes to.
+
+On stdio the panel opens in your browser when the server starts, because a
+client swallows this console and nobody would ever see the link. On http it
+opens only with --open, because you are looking at the console already. One tab
+per process either way, and --no-open stops it.
 
 Environment:
   BASKETED_PANEL_PORT=n  preferred panel port (default 8787, falls back to any)
@@ -87,6 +90,7 @@ function controlDeps(runtime: Runtime): ControlDeps {
     summary: runtime.summary,
     version: SERVER_INFO.version,
     redactionAlarms: () => runtime.redactor.alarms(),
+    vault: runtime.vault,
   };
 }
 
@@ -132,18 +136,31 @@ interface PanelHandle {
 
 /**
  * Wire the panel to a runtime: token-free base for `approve_url`, tokened link
- * for the console, and one browser tab when a cart first needs a person.
+ * for the console, and the one browser tab this process is allowed to open.
  *
- * The browser opens at APPROVAL time rather than at startup on purpose. A
- * client launches its MCP servers whenever it starts, and a tab on every launch
- * is the kind of thing people disable the whole feature to stop. A cart waiting
- * on a human is the one moment the panel is worth interrupting for -- and once
- * a tab is open it polls every five seconds, so later approvals appear in it
- * without another one.
+ * `openAtStartup` is true for stdio and follows `--open` for http, and the
+ * asymmetry is the whole point. On http a person is looking at the console the
+ * link was printed on. On stdio nobody is: the client swallows the server's
+ * stderr, so the link is written somewhere no human will ever read, and the
+ * panel might as well not exist. Opening the tab IS the channel there.
+ *
+ * Either way it is one tab per process. After that the panel polls every five
+ * seconds, so an approval that arrives later appears in the tab that is already
+ * open rather than spawning another one. `--no-open` turns all of it off.
  */
-function attachPanel(runtime: Runtime, panel: PanelHandle, mayOpen: boolean): void {
+function attachPanel(
+  runtime: Runtime,
+  panel: PanelHandle,
+  opts: { mayOpen: boolean; openAtStartup: boolean },
+): void {
   if (!runtime.purchase) return;
+  const mayOpen = opts.mayOpen;
   let opened = false;
+
+  if (mayOpen && opts.openAtStartup) {
+    opened = true;
+    openBrowser(panel.url("/"));
+  }
 
   runtime.purchase.panelBase = panel.origin;
   runtime.purchase.summon = (approvalId) => {
@@ -288,7 +305,7 @@ export async function main(argv: string[]): Promise<void> {
   });
 
   const panelHandle: PanelHandle = { origin, token: panelToken, url: panelUrl };
-  attachPanel(runtime, panelHandle, mayOpen);
+  attachPanel(runtime, panelHandle, { mayOpen, openAtStartup: flag(argv, "open") });
 
   const server = createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0];
@@ -361,7 +378,7 @@ export async function main(argv: string[]): Promise<void> {
         `[basketed] MCP endpoint  ${origin}/mcp\n` +
         `[basketed] health        ${origin}/healthz\n`,
     );
-    if (flag(argv, "open") && mayOpen) openBrowser(panelUrl("/"));
+    // The tab, if one was asked for, is opened by attachPanel above.
   });
 }
 
@@ -440,7 +457,7 @@ async function startStdioPanel(runtime: Runtime, root: string, mayOpen: boolean)
       for (const socket of sockets) socket.destroy();
     },
   };
-  attachPanel(runtime, panel, mayOpen);
+  attachPanel(runtime, panel, { mayOpen, openAtStartup: true });
   return panel;
 }
 
@@ -556,6 +573,9 @@ async function runDoctor(argv: string[]): Promise<void> {
 }
 
 function openBrowser(url: string): void {
+  // Said out loud, because a tab appearing by itself should be explainable --
+  // and because on stdio this line is the only trace a human could ever find.
+  process.stderr.write(`[basketed] opening the panel in your browser (--no-open to stop that)\n`);
   const cmd =
     process.platform === "win32"
       ? { file: "cmd", args: ["/c", "start", "", url] }

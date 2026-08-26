@@ -134,6 +134,10 @@ try {
   check("on the port we asked for", url.port === "8796" || url.port !== "", `port ${url.port}`);
   check("an approvals deep link too", /\[basketed\] approvals\s+\S+\?t=/.test(stderr));
   check("the panel says the token is console-only", stderr.includes("no agent can read it"));
+  // BASKETED_NO_OPEN is set above. Without it this process opens the panel by
+  // itself -- which is the point on stdio, where nobody can read the console --
+  // so the one thing a test can assert is that the opt-out is honoured.
+  check("BASKETED_NO_OPEN really means no browser", !stderr.includes("opening the panel in your browser"));
 
   const locked = await fetch(`${BASE}/`);
   check("the panel without the token is locked", locked.status === 401, `status ${locked.status}`);

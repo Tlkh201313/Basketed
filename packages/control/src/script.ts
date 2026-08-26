@@ -7,6 +7,7 @@
  */
 export const SCRIPT = String.raw`
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.prototype.slice.call(document.querySelectorAll(sel));
 
 /*
  * Every /api call goes through here so none can be written without the token.
@@ -15,12 +16,51 @@ const $ = (sel) => document.querySelector(sel);
  * in development rather than silently relying on ambient credentials.
  */
 const TOKEN = window.__BASKETED_TOKEN__ || "";
+
+/*
+ * Every call goes through here, and every call is logged to the console on
+ * failure -- a 401 here means the token this tab loaded with is stale (the
+ * server behind it restarted and printed a new one), and "why did my click
+ * just do nothing" should have an answer in devtools, not silence.
+ */
 function api(path, init) {
   const opts = init || {};
   return fetch(path, Object.assign({}, opts, {
     headers: Object.assign({}, opts.headers || {}, { "x-basketed-token": TOKEN }),
-  }));
+  })).then((res) => {
+    if (res.status === 401) {
+      console.error("[basketed] 401 from " + path + " -- this tab's token is stale. Reload from the link the server just printed.");
+    } else if (!res.ok) {
+      console.error("[basketed] " + res.status + " from " + path);
+    }
+    return res;
+  }).catch((err) => {
+    console.error("[basketed] " + path + " did not reach the server: " + err.message);
+    throw err;
+  });
 }
+
+/* theme: explicit choice beats OS, and persists per browser (S14) */
+(function () {
+  const btn = $("[data-theme-toggle]");
+  if (!btn) return;
+  const label = $("[data-theme-label]");
+  function apply(mode) {
+    if (mode) document.documentElement.dataset.theme = mode;
+    else delete document.documentElement.dataset.theme;
+    if (label) label.textContent = mode === "dark" ? "Dark" : mode === "light" ? "Light" : "System theme";
+  }
+  let stored = null;
+  try { stored = localStorage.getItem("basketed-theme"); } catch (e) { /* private window */ }
+  apply(stored);
+  btn.addEventListener("click", function () {
+    const order = [null, "dark", "light"];
+    const next = order[(order.indexOf(stored) + 1) % order.length];
+    stored = next;
+    try { if (next) localStorage.setItem("basketed-theme", next); else localStorage.removeItem("basketed-theme"); } catch (e) { /* private window */ }
+    apply(next);
+  });
+})();
 
 function money(m) {
   if (!m) return "";
@@ -204,5 +244,134 @@ if (approvalsEl) {
   // A five-minute TTL needs a visible clock, so the page re-reads rather than
   // letting a card sit there looking live after it has expired.
   setInterval(refresh, 5000);
+}
+
+/* ----------------------------------------------------------- connections */
+
+const storesEl = $("#stores");
+if (storesEl) {
+  function pill(c) {
+    if (c.broken) return '<span class="pill bad">reconnect needed</span>';
+    if (c.connected) return '<span class="pill on">connected' + (c.username ? " as " + esc(c.username) : "") + '</span>';
+    return '<span class="pill off">not connected</span>';
+  }
+
+  async function refreshStatus() {
+    let data;
+    try {
+      const res = await api("/api/connections");
+      if (!res.ok) throw new Error("status " + res.status);
+      data = await res.json();
+    } catch (err) {
+      console.error("[basketed] could not load connection status: " + err.message);
+      storesEl.querySelectorAll("[data-status]").forEach((el) => {
+        el.innerHTML = '<span class="pill bad">could not check</span>';
+      });
+      return;
+    }
+    const byId = new Map(data.connections.map((c) => [c.store_id, c]));
+    storesEl.querySelectorAll("[data-store]").forEach((card) => {
+      const c = byId.get(card.dataset.store);
+      if (!c) return;
+      const status = card.querySelector("[data-status]");
+      if (status) status.innerHTML = pill(c);
+      const disc = card.querySelector("[data-disconnect]");
+      if (disc) disc.hidden = !c.connected && !c.broken;
+    });
+  }
+
+  storesEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-disconnect]");
+    if (!btn) return;
+    const card = btn.closest("[data-store]");
+    btn.disabled = true;
+    try {
+      const res = await api("/api/connections/" + encodeURIComponent(card.dataset.store), { method: "DELETE" });
+      if (!res.ok) throw new Error("status " + res.status);
+    } catch (err) {
+      console.error("[basketed] disconnect failed: " + err.message);
+    } finally {
+      btn.disabled = false;
+      refreshStatus();
+    }
+  });
+
+  /* tabs and search are pure client-side filters over server-rendered cards */
+  let activeTab = "all";
+  function applyFilter() {
+    const q = ($("[data-find]").value || "").trim().toLowerCase();
+    let shown = 0;
+    storesEl.querySelectorAll("[data-store]").forEach((card) => {
+      const matchesTab = activeTab === "all" || card.querySelector("[data-status] .pill.on, [data-status] .pill.bad");
+      const matchesText = !q || card.dataset.name.indexOf(q) !== -1 || card.dataset.store.toLowerCase().indexOf(q) !== -1;
+      const show = Boolean(matchesTab) && matchesText;
+      card.hidden = !show;
+      if (show) shown += 1;
+    });
+    $("#nostores").hidden = shown !== 0;
+  }
+  $$(".tabs button").forEach((btn) => btn.addEventListener("click", () => {
+    activeTab = btn.dataset.tab;
+    $$(".tabs button").forEach((b) => b.classList.toggle("on", b === btn));
+    applyFilter();
+  }));
+  $("[data-find]").addEventListener("input", applyFilter);
+
+  refreshStatus().then(applyFilter);
+  setInterval(() => refreshStatus().then(applyFilter), 8000);
+}
+
+const connectForm = $("[data-connect-form]");
+if (connectForm) {
+  const methodSel = $("[data-method]");
+  function syncFields() {
+    const method = methodSel.value || methodSel.getAttribute("value");
+    $$("[data-fields]").forEach((el) => { el.hidden = el.dataset.fields !== method; });
+  }
+  if (methodSel && methodSel.tagName === "SELECT") methodSel.addEventListener("change", syncFields);
+  syncFields();
+
+  connectForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $("[data-connect-msg]");
+    const submitBtn = connectForm.querySelector("button[type=submit]");
+    const method = methodSel.value || methodSel.getAttribute("value");
+    const secretEl = connectForm.querySelector('[data-fields="' + method + '"] [data-secret]');
+    const usernameEl = connectForm.querySelector('[data-fields="' + method + '"] [data-username]');
+    const secret = secretEl ? secretEl.value : "";
+
+    if (!secret.trim()) {
+      msg.textContent = "Enter something first.";
+      msg.className = "tiny err";
+      return;
+    }
+
+    submitBtn.disabled = true;
+    msg.textContent = "Connecting…";
+    msg.className = "tiny muted";
+    try {
+      const res = await api("/api/connections/" + encodeURIComponent(connectForm.dataset.store), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method: method, secret: secret, username: usernameEl ? usernameEl.value : undefined }),
+      });
+      const out = await res.json();
+      if (!res.ok) {
+        msg.textContent = out.error || ("Refused (" + res.status + ").");
+        msg.className = "tiny err";
+        return;
+      }
+      if (secretEl) secretEl.value = "";
+      msg.textContent = "Connected" + (out.username ? " as " + out.username : "") + ". You can leave this page.";
+      msg.className = "tiny";
+      msg.style.color = "var(--ok)";
+    } catch (err) {
+      console.error("[basketed] connect failed: " + err.message);
+      msg.textContent = "Could not reach the server. Is it still running?";
+      msg.className = "tiny err";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
 }
 `;

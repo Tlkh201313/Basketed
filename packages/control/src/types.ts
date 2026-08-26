@@ -1,5 +1,6 @@
 import type { PurchaseDeps } from "@basketed/commerce";
 import type { StoreRegistry } from "@basketed/adapters";
+import type { Vault } from "@basketed/vault";
 
 /**
  * What the panel needs, declared here rather than imported from `@basketed/mcp`.
@@ -21,4 +22,12 @@ export interface ControlDeps {
   version: string;
   /** How many times the redaction net has fired. A non-zero count is a bug. */
   redactionAlarms: () => number;
+  /**
+   * Retailer credentials.
+   *
+   * The panel is the ONLY surface that writes here, and it reads back metadata
+   * only -- `reveal()` is never called from a route. That is what makes the
+   * vault reachable by a human and not by the agent sharing the machine.
+   */
+  vault: Vault;
 }

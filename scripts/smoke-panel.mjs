@@ -28,7 +28,12 @@ function check(label, condition, detail = "") {
 const child = spawn(
   process.execPath,
   [resolve(ROOT, "packages/cli/bin.js"), "serve", "--http", "--port", String(PORT), "--snapshots"],
-  { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BASKETED_DB: join(DB_DIR, "panel.db") } },
+  // NO_OPEN: see smoke-purchase -- this one reaches an approval too.
+  {
+    cwd: ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, BASKETED_DB: join(DB_DIR, "panel.db"), BASKETED_NO_OPEN: "1" },
+  },
 );
 
 let stderr = "";

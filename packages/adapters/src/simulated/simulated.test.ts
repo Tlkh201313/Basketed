@@ -15,7 +15,15 @@ beforeAll(async () => {
 describe("simulated stores", () => {
   it("covers the retailers with no lawful automated route", () => {
     const ids = adapters.map((a) => a.manifest.id).sort();
-    expect(ids).toEqual(["sim:amazon", "sim:costco", "sim:ikea", "sim:shopee", "sim:taobao", "sim:tesco"]);
+    expect(ids).toEqual([
+      "sim:amazon",
+      "sim:costco",
+      "sim:ikea",
+      "sim:shopee",
+      "sim:taobao",
+      "sim:tesco",
+      "sim:walmart",
+    ]);
   });
 
   it("stamps EVERY result as simulated -- provenance is never softened", async () => {
