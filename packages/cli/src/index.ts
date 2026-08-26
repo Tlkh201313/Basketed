@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import {
@@ -9,10 +10,12 @@ import {
   SERVER_INFO,
   ALL_TOOL_NAMES,
 } from "@basketed/mcp";
-import { createPanelHandler } from "@basketed/control";
+import { createPanelHandler, CLIENTS, PRIMARY_CLIENTS, pathFor, snippetFor } from "@basketed/control";
 import { findRoot } from "./root.js";
+import { installClient, findClient, expandPath } from "./install.js";
 
 export { findRoot };
+export * from "./install.js";
 
 const USAGE = `basketed ${SERVER_INFO.version}
 
@@ -20,6 +23,11 @@ const USAGE = `basketed ${SERVER_INFO.version}
   basketed serve --fast-mode      skip per-call confirmation for READ-ONLY tools only
   basketed serve --http [--port]  MCP over Streamable HTTP + control panel (port 8787)
   basketed serve --http --open    ...and open the panel in your browser
+  basketed install [--client X]   Write the MCP config for an agent client
+  basketed install --all          ...for every client with a known file
+  basketed install --dry-run      ...show the diff and write nothing
+  basketed clients                List every supported client and its config path
+  basketed doctor                 Check the install end to end
   basketed tools                  Print the tool surface and exit
 
 Both transports are dual-era: they answer the 2026-07-28 stateless dialect and
@@ -57,6 +65,25 @@ export async function main(argv: string[]): Promise<void> {
   if (command === "tools") {
     process.stdout.write(`${ALL_TOOL_NAMES.join("\n")}\n`);
     return;
+  }
+
+  if (command === "clients") {
+    for (const c of CLIENTS) {
+      const primary = (PRIMARY_CLIENTS as readonly string[]).includes(c.id) ? "*" : " ";
+      process.stdout.write(
+        `${primary} ${c.id.padEnd(15)} ${c.key.padEnd(16)} ${c.format.padEnd(5)} ${pathFor(c, process.platform)}\n`,
+      );
+    }
+    process.stdout.write("\n* = verified by hand. Others are generated from the same table.\n");
+    return;
+  }
+
+  if (command === "install") {
+    return runInstall(argv);
+  }
+
+  if (command === "doctor") {
+    return runDoctor(argv);
   }
 
   if (command !== "serve") {
@@ -151,6 +178,117 @@ export async function main(argv: string[]): Promise<void> {
     );
     if (flag(argv, "open")) openBrowser(origin);
   });
+}
+
+/* ------------------------------------------------------------- install */
+
+function runInstall(argv: string[]): void {
+  const root = findRoot();
+  const binPath = resolve(root, "packages/cli/bin.js");
+  const dryRun = flag(argv, "dry-run");
+  const wanted = value(argv, "client");
+
+  const targets = flag(argv, "all")
+    ? CLIENTS
+    : wanted
+      ? [findClient(wanted)].filter((c): c is NonNullable<typeof c> => Boolean(c))
+      : CLIENTS.filter((c) => (PRIMARY_CLIENTS as readonly string[]).includes(c.id));
+
+  if (!targets.length) {
+    process.stderr.write(
+      `Unknown client "${wanted}". Run \`basketed clients\` to see the list.\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  process.stdout.write(
+    `${dryRun ? "Would write" : "Writing"} MCP config for ${targets.length} client(s).\n` +
+      `Server: node ${binPath} serve --stdio\n\n`,
+  );
+
+  for (const spec of targets) {
+    const report = installClient(spec, { binPath, dryRun, cwd: process.cwd(), ...(value(argv, "path") ? { path: value(argv, "path")! } : {}) });
+    process.stdout.write(`${spec.name}\n  ${report.action.toUpperCase()}  ${report.path}\n`);
+    // Nothing is ever written silently: the backup path and the diff both print.
+    if (report.backup) process.stdout.write(`  backup   ${report.backup}\n`);
+    if (report.note) process.stdout.write(`  note     ${report.note}\n`);
+    if (report.preview) {
+      for (const line of report.preview.split("\n")) process.stdout.write(`  ${line}\n`);
+    }
+    if (spec.gotcha) process.stdout.write(`  !        ${spec.gotcha}\n`);
+    process.stdout.write("\n");
+  }
+
+  process.stdout.write(
+    dryRun
+      ? "Nothing was written. Drop --dry-run to apply.\n"
+      : "Restart the client, then ask it to list its tools — basket_* should be there.\n",
+  );
+}
+
+/* -------------------------------------------------------------- doctor */
+
+async function runDoctor(argv: string[]): Promise<void> {
+  const root = findRoot();
+  let bad = 0;
+  const say = (ok: boolean, label: string, detail = "") => {
+    if (!ok) bad += 1;
+    process.stdout.write(`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}\n`);
+  };
+
+  process.stdout.write("basketed doctor\n\n");
+  say(Number(process.versions.node.split(".")[0]) >= 22, "Node >= 22 (node:sqlite)", process.versions.node);
+  say(existsSync(resolve(root, "fixtures/stores.pinned.json")), "project root found", root);
+  say(existsSync(resolve(root, "packages/cli/dist/index.js")), "built", "run `pnpm build` if this fails");
+
+  const runtime = await createRuntime({ root, snapshots: true });
+  say(runtime.registry.list().length > 0, "stores load", runtime.summary);
+  say(Boolean(runtime.purchase), "purchase gate initialised");
+  say(!runtime.policy.fastMode, "fast mode off by default");
+
+  const port = Number(value(argv, "port") ?? 8787);
+  const free = await new Promise<boolean>((res) => {
+    const probe = createServer();
+    probe.once("error", () => res(false));
+    probe.once("listening", () => probe.close(() => res(true)));
+    probe.listen(port, "127.0.0.1");
+  });
+  say(free, `port ${port} is free`, free ? "" : "something is already listening");
+
+  // The project-scoped config in this repo is the safest demo target: it needs
+  // no write to anything in the user's home directory.
+  const projectConfig = resolve(root, ".mcp.json");
+  if (existsSync(projectConfig)) {
+    say(readFileSync(projectConfig, "utf8").includes("basketed"), "project .mcp.json is wired", projectConfig);
+  }
+
+  process.stdout.write("\nclients\n");
+  for (const spec of CLIENTS.filter((c) => (PRIMARY_CLIENTS as readonly string[]).includes(c.id))) {
+    if (!spec.path) continue;
+    const path = expandPath(pathFor(spec, process.platform), process.cwd());
+    const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+
+    if (!text.includes("basketed")) {
+      // Not installed is a thing to DO, not a thing that is broken. Reporting
+      // it as a failure would make `doctor` cry wolf on a clean machine and
+      // train people to ignore the one line that matters.
+      process.stdout.write(
+        `  --    ${spec.name.padEnd(15)} not installed — \`basketed install --client ${spec.id}\`\n`,
+      );
+      continue;
+    }
+
+    say(true, `${spec.name} is wired`, path);
+    // Kiro's autoApprove would let a user silently pre-approve a tool call.
+    // A money-adjacent tool in that list defeats the entire purchase gate.
+    if (/autoApprove/.test(text) && /cart_prepare|purchase_confirm/.test(text)) {
+      say(false, `${spec.name} autoApprove lists a money-adjacent tool`, "remove it — this defeats the approval gate");
+    }
+  }
+
+  process.stdout.write(bad === 0 ? "\nAll checks passed.\n" : `\n${bad} check(s) failed.\n`);
+  if (bad > 0) process.exitCode = 1;
 }
 
 function openBrowser(url: string): void {

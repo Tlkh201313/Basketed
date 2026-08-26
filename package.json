@@ -18,12 +18,15 @@
     "serve:http": "node packages/cli/bin.js serve --http",
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
     "smoke:purchase": "node scripts/smoke-purchase.mjs",
-    "smoke": "node scripts/smoke-mcp.mjs && node scripts/smoke-purchase.mjs && node scripts/smoke-panel.mjs",
+    "smoke": "node scripts/smoke-mcp.mjs && node scripts/smoke-purchase.mjs && node scripts/smoke-panel.mjs && node scripts/smoke-install.mjs",
     "preflight": "node scripts/preflight.mjs",
     "probe:stores": "node scripts/probe-stores.mjs",
     "bench": "node scripts/bench.mjs",
     "smoke:panel": "node scripts/smoke-panel.mjs",
-    "panel": "node packages/cli/bin.js serve --http --open"
+    "panel": "node packages/cli/bin.js serve --http --open",
+    "smoke:install": "node scripts/smoke-install.mjs",
+    "doctor": "node packages/cli/bin.js doctor",
+    "install:mcp": "node packages/cli/bin.js install"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
