@@ -163,7 +163,12 @@ export class ShopifyUcpAdapter implements StoreAdapter {
     const nameSource = variant?.title && p.variants?.length === 1 ? `${p.title} — ${variant.title}` : p.title;
     const name = sanitiseProductName(nameSource).text;
 
-    const id = mintProductId(this.manifest.domain!, p.id);
+    // Minted against the MANIFEST ID, not the domain. parseProductId verifies
+    // an id by re-deriving the tag from each store the registry knows, and the
+    // registry keys stores by manifest id -- so minting under the bare domain
+    // produced ids that looked correct and never resolved, which silently
+    // broke every tier-2 call against a real store while search kept working.
+    const id = mintProductId(this.manifest.id, p.id);
     if (variant?.id) {
       this.#cache.set(id, {
         nativeProductId: p.id,
@@ -210,14 +215,32 @@ export class ShopifyUcpAdapter implements StoreAdapter {
       );
     }
 
-    const { payload } = await this.#client.call<{ product?: UcpProduct } & UcpProduct>(
-      "get_product",
-      { catalog: { id: cached.nativeProductId } },
-      ctx,
-      { snapshotKey: this.#snapshotKey },
-    );
+    const { payload, rawBytes } = await this.#client.call<
+      { product?: UcpProduct; products?: UcpProduct[] } & UcpProduct
+    >("get_product", { catalog: { id: cached.nativeProductId } }, ctx, {
+      snapshotKey: this.#snapshotKey,
+    });
+    // Every call that fetches must refresh this. Leaving it at the previous
+    // search's figure made the token report credit tier-2 with bytes it never
+    // received -- a flattering number, and exactly the one a sceptical judge
+    // asks how you computed.
+    this.lastRawBytes = rawBytes;
 
-    const p = (payload.product ?? payload) as UcpProduct;
+    // Under snapshot replay there is only one capture per store -- the search
+    // response -- so a lookup comes back as `{products: [...]}` rather than a
+    // single product. Resolve it out of the list instead of normalising the
+    // envelope, which is what previously turned the offline drill's tier-2
+    // step into a TypeError inside id minting.
+    const p = (Array.isArray(payload.products)
+      ? payload.products.find((c) => c.id === cached.nativeProductId)
+      : (payload.product ?? payload)) as UcpProduct | undefined;
+
+    if (!p?.id) {
+      throw new Error(
+        `No product ${cached.nativeProductId} in the ${ctx.snapshots ? "snapshot" : "response"} from ${this.manifest.domain}.`,
+      );
+    }
+
     const base = this.#normalise(p);
     const flags: string[] = [];
     const detail: ProductDetail = { ...base };

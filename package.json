@@ -14,12 +14,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --build --force",
+    "serve": "node packages/cli/bin.js serve --stdio",
+    "serve:http": "node packages/cli/bin.js serve --http",
+    "smoke:mcp": "node scripts/smoke-mcp.mjs",
     "preflight": "node scripts/preflight.mjs",
     "probe:stores": "node scripts/probe-stores.mjs",
-    "bench": "node --experimental-strip-types scripts/bench.ts"
+    "bench": "node scripts/bench.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "js-tiktoken": "^1.0.21",
     "typescript": "^5.7.2",
     "vitest": "^4.1.11"
   }

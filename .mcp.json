@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "basketed": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["packages/cli/bin.js", "serve", "--stdio"],
+      "env": {}
+    }
+  }
+}
