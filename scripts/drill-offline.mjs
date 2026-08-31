@@ -16,7 +16,7 @@
  * unavailable rather than quietly vanishing from the results.
  */
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -28,7 +28,13 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const DB_DIR = mkdtempSync(join(tmpdir(), "basketed-drill-"));
 
 /** Captured at Day-0. Everything else is expected to be dark. */
-const SNAPSHOTTED = ["shp:deathwishcoffee.com", "shp:chubbiesshorts.com", "shp:tonyschocolonely.com"];
+let SNAPSHOTTED;
+try {
+  const pinned = JSON.parse(readFileSync(resolve(ROOT, "fixtures/stores.pinned.json"), "utf8"));
+  SNAPSHOTTED = pinned.stores.slice(0, 3).map((s) => `shp:${s.domain}`);
+} catch {
+  SNAPSHOTTED = ["shp:deathwishcoffee.com", "shp:chubbiesshorts.com", "shp:tonyschocolonely.com"];
+}
 const CART_STORE = "shp:deathwishcoffee.com";
 
 let failures = 0;

@@ -130,10 +130,11 @@ export class AmazonAdapter implements StoreAdapter {
 
   async search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]> {
     void ctx;
+    this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `${SEARCH_URL}?${new URLSearchParams({ k: q.query })}`;
     const { html } = await this.#render(url);
-    this.lastRawBytes += html.length;
+    this.lastRawBytes = html.length;
 
     const $ = cheerio.load(html);
     const cards = $('div[data-component-type="s-search-result"]');
@@ -188,7 +189,7 @@ export class AmazonAdapter implements StoreAdapter {
     }
 
     const { html } = await this.#render(`${DETAIL_URL}${cached.asin}`);
-    this.lastRawBytes += html.length;
+    this.lastRawBytes = html.length;
     const $ = cheerio.load(html);
 
     const titleRaw = $("#productTitle").text().trim();

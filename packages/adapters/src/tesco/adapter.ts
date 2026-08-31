@@ -163,6 +163,7 @@ export class TescoAdapter implements StoreAdapter {
   }
 
   async search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]> {
+    this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `${SEARCH_URL}?${new URLSearchParams({
       distchannel: "ghs",
@@ -173,8 +174,13 @@ export class TescoAdapter implements StoreAdapter {
     const res = await ctx.http(url, { headers: { "User-Agent": USER_AGENT } });
     if (!res.ok) throw new Error(`Tesco search returned HTTP ${res.status}.`);
     const bodyText = await res.text();
-    this.lastRawBytes += bodyText.length;
-    const payload = JSON.parse(bodyText) as TescoSearchResponse;
+    this.lastRawBytes = bodyText.length;
+    let payload: TescoSearchResponse;
+    try {
+      payload = JSON.parse(bodyText) as TescoSearchResponse;
+    } catch {
+      throw new Error(`Tesco search returned non-JSON HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
+    }
     const tpnbs = (payload.uk?.ghs?.products?.results ?? [])
       .map((r) => r.tpnb)
       .filter((t): t is number => typeof t === "number")
@@ -209,7 +215,12 @@ export class TescoAdapter implements StoreAdapter {
     if (!res.ok) throw new Error(`Tesco product lookup returned HTTP ${res.status}.`);
     const bodyText = await res.text();
     this.lastRawBytes += bodyText.length;
-    const envelopes = JSON.parse(bodyText) as Array<TescoGraphQLEnvelope<{ product?: TescoProductNode }>>;
+    let envelopes: Array<TescoGraphQLEnvelope<{ product?: TescoProductNode }>>;
+    try {
+      envelopes = JSON.parse(bodyText) as Array<TescoGraphQLEnvelope<{ product?: TescoProductNode }>>;
+    } catch {
+      throw new Error(`Tesco product lookup non-JSON HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
+    }
     const pairs: Array<{ tpnb: number; node: TescoProductNode }> = [];
     envelopes.forEach((e, i) => {
       const node = e.data?.product;
@@ -246,6 +257,7 @@ export class TescoAdapter implements StoreAdapter {
   }
 
   async detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail> {
+    this.lastRawBytes = 0;
     const cached = this.#cache.get(id);
     if (!cached) {
       throw new Error("Unknown product id for Tesco. Ids are server-minted; search first, then request detail.");
@@ -269,6 +281,7 @@ export class TescoAdapter implements StoreAdapter {
    * cart -- when the token is missing, expired, or insufficient.
    */
   async buildCart(items: Array<{ id: string; quantity: number }>, ctx: AdapterCtx): Promise<RawCart> {
+    this.lastRawBytes = 0;
     const resolved = items.map((i) => {
       const cached = this.#cache.get(i.id);
       if (!cached) throw new Error(`Unknown product id "${i.id}" for Tesco.`);
@@ -298,6 +311,11 @@ export class TescoAdapter implements StoreAdapter {
       ctx,
     );
 
+    const updates = (update as unknown as { updates?: { items?: Array<{ id?: string; successful?: boolean }> } }).updates?.items ?? [];
+    const failed = updates.filter((u) => u.successful === false);
+    if (failed.length) {
+      throw new Error(`Tesco refused ${failed.map((f) => f.id).join(", ")}: out of stock or limit — remove and retry`);
+    }
     const currency = this.manifest.currency;
     const upstream = update.items ?? [];
     const byId = new Map(resolved.map((r) => [r.cached.tescoId, r]));
@@ -358,7 +376,12 @@ export class TescoAdapter implements StoreAdapter {
     if (!res.ok) throw new Error(`Tesco basket API returned HTTP ${res.status}.`);
     const bodyText = await res.text();
     this.lastRawBytes += bodyText.length;
-    const envelopes = JSON.parse(bodyText) as Array<TescoGraphQLEnvelope<{ basket?: TescoBasket }>>;
+    let envelopes: Array<TescoGraphQLEnvelope<{ basket?: TescoBasket }>>;
+    try {
+      envelopes = JSON.parse(bodyText) as Array<TescoGraphQLEnvelope<{ basket?: TescoBasket }>>;
+    } catch {
+      throw new Error(`Tesco basket API non-JSON HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
+    }
     const envelope = envelopes[0];
     if (!envelope) throw new Error("Tesco basket API returned an empty response.");
     if (envelope.errors?.length) {

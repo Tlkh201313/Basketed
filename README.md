@@ -84,7 +84,7 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # five smoke suites, all offline
-pnpm test         # 179 unit tests
+pnpm test         # 188 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```

@@ -10,7 +10,7 @@
       "categories": [
         "grocery"
       ],
-      "note": "UK grocery. No public product API; Tesco is reachable only via a licensed data provider.",
+      "note": "Fixture twin of tsc:tesco (native). Offline drill data; real Tesco is via search.api.tesco.com + xapi.tesco.com.",
       "searchUrl": "https://www.tesco.com/groceries/en-GB/search?query="
     },
     {
@@ -23,7 +23,7 @@
         "electronics",
         "grocery"
       ],
-      "note": "Product Advertising API retired May 2026. Provider-sourced in the day-two roadmap.",
+      "note": "Fixture twin of amz:amazon (native stealth-browser). Offline drill data.",
       "searchUrl": "https://www.amazon.com/s?k="
     },
     {
@@ -72,7 +72,7 @@
       "categories": [
         "furniture"
       ],
-      "note": "No official product API.",
+      "note": "Fixture twin of ikea:ikea (native stealth-browser). Offline drill data.",
       "searchUrl": "https://www.ikea.com/gb/en/search/?q="
     },
     {

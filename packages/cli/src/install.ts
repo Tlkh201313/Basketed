@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve, join } from "node:path";
-import { CLIENTS, pathFor, snippetFor, type ClientSpec } from "@basketed/control";
+import { CLIENTS, CLIENT_ALIASES, pathFor, snippetFor, type ClientSpec } from "@basketed/control";
 
 /**
  * `basketed install` (§7b).
@@ -204,5 +204,6 @@ export function installClient(spec: ClientSpec, opts: InstallOptions): InstallRe
 }
 
 export function findClient(id: string): ClientSpec | undefined {
-  return CLIENTS.find((c) => c.id === id || c.name.toLowerCase() === id.toLowerCase());
+  const canonical = CLIENT_ALIASES[id.toLowerCase()] ?? id;
+  return CLIENTS.find((c) => c.id === canonical || c.name.toLowerCase() === canonical.toLowerCase());
 }

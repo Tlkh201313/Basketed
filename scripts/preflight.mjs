@@ -28,9 +28,14 @@ const bad = (m) => {
   console.log(`  FAIL  ${m}`);
 };
 
+function fetchWithTimeout(url, init = {}) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 12_000);
+  return fetch(url, { ...init, signal: ac.signal }).finally(() => clearTimeout(t));
+}
 console.log("\n1. UCP agent profile");
 try {
-  const res = await fetch(PROFILE, { headers: { "user-agent": UA } });
+  const res = await fetchWithTimeout(PROFILE, { headers: { "user-agent": UA } });
   const ct = res.headers.get("content-type") ?? "";
   const cc = res.headers.get("cache-control") ?? "";
   res.ok ? ok(`reachable (${res.status})`) : bad(`unreachable (${res.status})`);
@@ -54,7 +59,7 @@ try {
   const results = await Promise.all(
     pinned.stores.map(async (s) => {
       try {
-        const res = await fetch(s.endpoint, {
+        const res = await fetchWithTimeout(s.endpoint, {
           method: "POST",
           headers: { "content-type": "application/json", accept: "application/json", "user-agent": UA },
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),

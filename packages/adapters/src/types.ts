@@ -13,14 +13,14 @@ import type {
  *
  * Note what AdapterCtx does NOT carry: no token, no secret, no ability to
  * resolve an account handle. That is the trust boundary from §2 expressed as a
- * type, and it holds today for the strongest possible reason: there is no
- * credential anywhere to hand over. Neither shipped adapter authenticates as
- * anybody.
+ * type.
  *
- * When there is one, the vault (designed, not built -- see `packages/vault`)
- * applies auth as a request interceptor on `http` before the adapter is handed
- * it, so an adapter -- including a future third-party one -- still cannot read
- * a credential even by accident. The type is what keeps that option open.
+ * When a vault entry exists, `authorizedFetch` in `packages/vault` applies
+ * auth as a request interceptor on `http` before the adapter is handed it, so
+ * an adapter -- including a future third-party one -- still cannot read a
+ * credential even by accident. Real Tesco (`tsc:tesco`) seals a bearer for
+ * `xapi.tesco.com` this way; Shopify UCP and the simulated stores remain
+ * anonymous and ignore it.
  */
 export interface AdapterCtx {
   /** Pre-authenticated fetch. Auth is already applied; the adapter just calls it. */
@@ -114,5 +114,10 @@ export function implementedTiers(adapter: StoreAdapter): CapabilityTier[] {
  */
 export function overclaimedTiers(adapter: StoreAdapter): CapabilityTier[] {
   const actual = new Set<string>(implementedTiers(adapter));
-  return adapter.manifest.capabilities.filter((t) => !actual.has(t));
+  const over = adapter.manifest.capabilities.filter((t) => !actual.has(t));
+  // checkout is never claimable at our tier (Shopify gates behind hand-granted token)
+  if ((adapter.manifest.capabilities as string[]).includes("checkout") && !over.includes("checkout" as CapabilityTier)) {
+    over.push("checkout" as CapabilityTier);
+  }
+  return [...new Set(over)];
 }

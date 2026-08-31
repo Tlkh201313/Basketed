@@ -100,6 +100,7 @@ export class TargetAdapter implements StoreAdapter {
   }
 
   async search(q: SearchQuery, _ctx: AdapterCtx): Promise<Product[]> {
+    this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `https://www.target.com/s?${new URLSearchParams({ searchTerm: q.query })}`;
 
@@ -132,6 +133,7 @@ export class TargetAdapter implements StoreAdapter {
   }
 
   async detail(id: string, include: Include[], _ctx: AdapterCtx): Promise<ProductDetail> {
+    this.lastRawBytes = 0;
     const cached = this.#cache.get(id);
     if (!cached) {
       throw new Error("Unknown product id for Target. Ids are server-minted; search first, then request detail.");
