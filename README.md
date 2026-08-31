@@ -84,7 +84,7 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # five smoke suites, all offline
-pnpm test         # 188 unit tests
+pnpm test         # 203 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```
@@ -120,14 +120,14 @@ Every adapter declares two independent things, and neither may be overstated.
 
 | Mode | Meaning |
 |---|---|
-| `native` | the retailer's own live page or endpoint reaching a real signed-out shopper — Shopify UCP; (S16) real Tesco: `search.api.tesco.com` / `xapi.tesco.com`, the same requests tesco.com's own frontend makes, ported and verified live, not scraped; and (S17) real Amazon/IKEA/Target: no JSON API exists for any of the three, so a stealth browser renders their own public search/detail pages and the adapter parses what a signed-out visitor would see — still `native` because the label describes *whose* data it is, not *how* it was fetched |
+| `native` | the retailer's own live page or endpoint reaching a real signed-out shopper — Shopify UCP; (S16) real Tesco: `search.api.tesco.com` / `xapi.tesco.com`, the same requests tesco.com's own frontend makes, ported and verified live, not scraped; and (S17) real Amazon/IKEA/Target + (S21) real Etsy/eBay/Best Buy: no JSON API exists for any of the six, so a stealth browser renders their own public search/detail pages and the adapter parses what a signed-out visitor would see — still `native` because the label describes *whose* data it is, not *how* it was fetched |
 | `provider` | real retailer data via a licensed commercial provider *(designed, not built)* |
 | `connected` | the user's own account via real retailer OAuth *(designed, not built)* |
 | `simulated` | fixture-backed and stamped **SIMULATED** |
 
 | Tier | Who has it |
 |---|---|
-| `discovery` `detail` | every adapter, plus real Tesco, and (S17) real Amazon, IKEA, Target |
+| `discovery` `detail` | every adapter, plus real Tesco, and (S17) real Amazon, IKEA, Target and (S21) real Etsy, eBay, Best Buy |
 | `cart` | Shopify UCP, simulated, and real Tesco (via a bearer token pasted from the shopper's own tesco.com session — see [Connect stores](#security)) |
 | `handoff` | Shopify UCP, real Tesco (`tesco.com/groceries/.../trolley`, real basket) |
 | `checkout` | **nobody.** Shopify gates payment completion behind a hand-granted merchant token with no public application; Tesco's basket API is unofficial and this project does not touch card data regardless. Interface defined, not implemented. |
@@ -140,9 +140,9 @@ outside Tesco's Terms of Service, same as any unofficial API client. `sim:tesco`
 is untouched by this and stays exactly what it always was: fixture data, still
 what the offline drill runs against, still real-network-free.
 
-**Amazon, IKEA and Target (S17) do circumvent anti-bot detection.** Shopify UCP
+**Amazon, IKEA, Target (S17) and Etsy, eBay, Best Buy (S21) do circumvent anti-bot detection.** Shopify UCP
 and Tesco are plain, unmodified HTTP calls — no anti-bot layer to get past. For
-these three there is no JSON API and no HTTP-only path in either: `patchright`
+these six there is no JSON API and no HTTP-only path in either: `patchright`
 (a stealth-patched Chromium) renders the retailer's own public search/detail
 pages the way a real signed-out browser would, specifically to defeat
 fingerprinting that would otherwise reject a plain client outright. That is a
@@ -151,7 +151,7 @@ nothing at all for three of the internet's most-shopped stores — scoped hard
 to unauthenticated public pages: no login, no session automation, no cart, so
 "the user is the actor" still holds for anything these adapters touch. Cart-tier
 automation would require a signed-in session and is out of scope for exactly
-that reason.
+that reason. Etsy, eBay and Best Buy use the same engine and same scope.
 
 Costco and Walmart were tried and refused: both sit behind Akamai/PerimeterX
 configurations the same stealth browser could not get past cleanly enough to
@@ -160,7 +160,7 @@ bypassed (a webpack bundle name that looked like real product markup), then
 re-verified and found genuinely blocked — its `search_items` API returns a
 risk-control error regardless of stealth config — so it also stayed `simulated`.
 Retailers behind a challenge we did not get past are `provider` or `simulated`;
-this is not a line we pretend not to have crossed for the three we did.
+this is not a line we pretend not to have crossed for the six we did.
 
 **`HANDED_OFF` never claims success.** When the route ends in a URL a human
 completes themselves, we genuinely do not know the outcome, and the order says
@@ -351,7 +351,8 @@ Tesco is the one retailer adapter that moved off this list (S16) — see
 "Where the data comes from", above: real search, real detail, and a real
 basket behind the shopper's own pasted session token. Amazon, IKEA and Target
 discovery/detail moved off this list too (S17) — real search and product data,
-no basket. Costco, Walmart and Shopee stay here in full: none has an
+no basket — and Etsy, eBay and Best Buy discovery/detail moved off this list
+in the same way (S21). Costco, Walmart and Shopee stay here in full: none has an
 equivalent real endpoint or a stealth-browser path this project could get
 past cleanly, and `sim:amazon`'s cart stays here alongside them — see [Connect
 stores](#security) for what a Chrome-login session on those three can and
