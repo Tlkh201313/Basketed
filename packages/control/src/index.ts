@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { handleApi } from "./api.js";
 import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, type StoreRow } from "./pages.js";
-import { stateOf as chromeLoginStateOf } from "./browser-connect.js";
+import { stateOf as chromeLoginStateOf, chromeMode } from "./browser-connect.js";
 import type { ControlDeps } from "./types.js";
 
 export * from "./clients.js";
@@ -103,12 +103,37 @@ function send(
     // The panel is opened with `?t=<token>`. Without this, following the one
     // outbound link on the page would hand that token to the merchant.
     "referrer-policy": "no-referrer",
+    // `font-src 'self'` is the ONE thing open here beyond the origin itself,
+    // and it is open to this process only: the three families are committed
+    // under packages/control/fonts and served from /fonts below. A Google
+    // Fonts @import would have needed `style-src https://fonts.googleapis.com`
+    // AND `font-src https://fonts.gstatic.com`, and would have told a third
+    // party, on every page load, that this machine is running Basketed.
+    // There is deliberately no `img-src`: store logos would mean fetching a
+    // retailer favicon, which is the same leak in a smaller hat, so the store
+    // cards use monograms and this page still fetches nothing off-machine.
     "content-security-policy":
-      "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; base-uri 'none'",
+      "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'",
     ...extra,
   });
   res.end(body);
 }
+
+/**
+ * The three self-hosted faces, served unauthenticated on purpose.
+ *
+ * They have to be: `renderLocked()` carries no token by design, and a locked
+ * page rendered in Times New Roman would be the panel's first impression on
+ * anyone who opened it wrong. These are public OFL font binaries — an agent
+ * that GETs one learns that this build ships Source Serif 4, and nothing else.
+ * The allowlist is exact-match, so the path can never walk out of the folder.
+ */
+const FONT_DIR = resolve(import.meta.dirname, "../fonts");
+const FONTS = new Set([
+  "source-serif-4-latin.woff2",
+  "instrument-sans-latin.woff2",
+  "jetbrains-mono-latin.woff2",
+]);
 
 /** Constant-time compare, so a wrong token leaks nothing about the right one. */
 function tokenMatches(supplied: string | null, expected: string): boolean {
@@ -183,6 +208,34 @@ export function createPanelHandler(
     const authed = tokenMatches(suppliedToken(req, url), opts.token);
     if (!authed && (path.startsWith("/api/") || path === "/" || path === "/approvals" || path.startsWith("/approvals/") || path === "/connections" || path.startsWith("/connections/"))) {
       log(`401 ${method} ${path} (${suppliedToken(req, url) ? "token did not match" : "no token supplied"})`);
+    }
+
+    // Before the auth gate: the locked page needs its type too, and a font
+    // binary is not a secret. Immutable because the filename is versioned by
+    // hand — a new subset gets a new name rather than a new body.
+    if (method === "GET" && path.startsWith("/fonts/")) {
+      const name = path.slice("/fonts/".length);
+      if (!FONTS.has(name)) {
+        send(res, 404, "text/plain; charset=utf-8", "No such font.");
+        return true;
+      }
+      let bytes: Buffer;
+      try {
+        bytes = await readFile(resolve(FONT_DIR, name));
+      } catch {
+        // A missing file is a build problem, not a runtime failure: style.ts's
+        // fallback stacks render the same design in Georgia and Consolas.
+        log(`404 GET ${path} (not on disk — the panel will fall back to system fonts)`);
+        send(res, 404, "text/plain; charset=utf-8", "Font not installed.");
+        return true;
+      }
+      res.writeHead(200, {
+        "content-type": "font/woff2",
+        "cache-control": "public, max-age=31536000, immutable",
+        "x-content-type-options": "nosniff",
+      });
+      res.end(bytes);
+      return true;
     }
 
     if (path.startsWith("/api/")) {
@@ -301,7 +354,10 @@ export function createPanelHandler(
             store: { id: store.id, name: store.name, mode: store.mode, country: store.country, currency: store.currency },
             token: opts.token,
             connected: held ? { method: held.kind, username: held.username, broken: held.broken } : null,
-            chromeWaiting: chromeLoginStateOf(storeId) === "waiting",
+            // "logged_in" is still a window waiting to be captured, so both
+            // non-idle states render the waiting card.
+            chromeWaiting: chromeLoginStateOf(storeId) !== "idle",
+            chrome: await chromeMode(),
           }),
           { "set-cookie": setCookie },
         );

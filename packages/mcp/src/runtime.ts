@@ -6,6 +6,9 @@ import {
   StoreRegistry,
   SimulatedAdapter,
   TescoAdapter,
+  AmazonAdapter,
+  IkeaAdapter,
+  TargetAdapter,
   loadPinnedShopifyStores,
   type AdapterCtx,
 } from "@basketed/adapters";
@@ -168,6 +171,25 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
     loaded.push("tsc:tesco");
   } catch (err) {
     log(`tesco adapter unavailable: ${(err as Error).message}`);
+  }
+
+  // Real Amazon, IKEA, Target (S17). Discovery/detail only -- a stealth
+  // browser renders their own public pages, there is no credential to hand
+  // out for any of the three, and none of them has a fixture/snapshot mode,
+  // so (like Tesco) they always call the real network and drill-offline.mjs
+  // excludes them by store id rather than expecting them to replay.
+  for (const build of [
+    () => new AmazonAdapter(),
+    () => new IkeaAdapter(),
+    () => new TargetAdapter(),
+  ]) {
+    try {
+      const adapter = build();
+      registry.register(adapter);
+      loaded.push(adapter.manifest.id);
+    } catch (err) {
+      log(`scrape adapter unavailable: ${(err as Error).message}`);
+    }
   }
 
   const redactor = createRedactor((report) => {

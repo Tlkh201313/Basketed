@@ -84,7 +84,7 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # five smoke suites, all offline
-pnpm test         # 160 unit tests
+pnpm test         # 179 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```
@@ -120,14 +120,14 @@ Every adapter declares two independent things, and neither may be overstated.
 
 | Mode | Meaning |
 |---|---|
-| `native` | the retailer's own official endpoint — Shopify UCP, and (S16) real Tesco: `search.api.tesco.com` / `xapi.tesco.com`, the same requests tesco.com's own frontend makes, ported and verified live, not scraped |
+| `native` | the retailer's own live page or endpoint reaching a real signed-out shopper — Shopify UCP; (S16) real Tesco: `search.api.tesco.com` / `xapi.tesco.com`, the same requests tesco.com's own frontend makes, ported and verified live, not scraped; and (S17) real Amazon/IKEA/Target: no JSON API exists for any of the three, so a stealth browser renders their own public search/detail pages and the adapter parses what a signed-out visitor would see — still `native` because the label describes *whose* data it is, not *how* it was fetched |
 | `provider` | real retailer data via a licensed commercial provider *(designed, not built)* |
 | `connected` | the user's own account via real retailer OAuth *(designed, not built)* |
 | `simulated` | fixture-backed and stamped **SIMULATED** |
 
 | Tier | Who has it |
 |---|---|
-| `discovery` `detail` | every adapter, plus real Tesco |
+| `discovery` `detail` | every adapter, plus real Tesco, and (S17) real Amazon, IKEA, Target |
 | `cart` | Shopify UCP, simulated, and real Tesco (via a bearer token pasted from the shopper's own tesco.com session — see [Connect stores](#security)) |
 | `handoff` | Shopify UCP, real Tesco (`tesco.com/groceries/.../trolley`, real basket) |
 | `checkout` | **nobody.** Shopify gates payment completion behind a hand-granted merchant token with no public application; Tesco's basket API is unofficial and this project does not touch card data regardless. Interface defined, not implemented. |
@@ -140,12 +140,27 @@ outside Tesco's Terms of Service, same as any unofficial API client. `sim:tesco`
 is untouched by this and stays exactly what it always was: fixture data, still
 what the offline drill runs against, still real-network-free.
 
-**No scraper, and no anti-bot circumvention.** Cloudflare challenges, WAF
-fingerprinting and CAPTCHAs are access controls the operator deliberately
-enabled. Defeating them destroys the "the user is the actor" defence that makes
-agentic shopping defensible at all, and it breaks constantly. Retailers behind
-one are `provider` or `simulated`. This is not a capability we ship disabled —
-it is one we do not build.
+**Amazon, IKEA and Target (S17) do circumvent anti-bot detection.** Shopify UCP
+and Tesco are plain, unmodified HTTP calls — no anti-bot layer to get past. For
+these three there is no JSON API and no HTTP-only path in either: `patchright`
+(a stealth-patched Chromium) renders the retailer's own public search/detail
+pages the way a real signed-out browser would, specifically to defeat
+fingerprinting that would otherwise reject a plain client outright. That is a
+real, deliberate anti-bot bypass, done because the alternative was building
+nothing at all for three of the internet's most-shopped stores — scoped hard
+to unauthenticated public pages: no login, no session automation, no cart, so
+"the user is the actor" still holds for anything these adapters touch. Cart-tier
+automation would require a signed-in session and is out of scope for exactly
+that reason.
+
+Costco and Walmart were tried and refused: both sit behind Akamai/PerimeterX
+configurations the same stealth browser could not get past cleanly enough to
+trust, so both stayed `simulated`. Shopee was tried, briefly misread as
+bypassed (a webpack bundle name that looked like real product markup), then
+re-verified and found genuinely blocked — its `search_items` API returns a
+risk-control error regardless of stealth config — so it also stayed `simulated`.
+Retailers behind a challenge we did not get past are `provider` or `simulated`;
+this is not a line we pretend not to have crossed for the three we did.
 
 **`HANDED_OFF` never claims success.** When the route ends in a URL a human
 completes themselves, we genuinely do not know the outcome, and the order says
@@ -253,24 +268,48 @@ annotations, namespaced names.
   the MCP server down, so a client cannot fail to start because of this file.
   Neither shipped adapter authenticates with what is stored — Shopify UCP is
   anonymous and the simulated stores have nothing to check it against — so
-  connecting Tesco, Costco, Walmart or Amazon holds a credential for an adapter
-  that does not exist yet and changes no result you see today.
-- **"Log in with Chrome" (S15), for exactly Tesco, Costco, Walmart and Amazon.**
-  None of them publish a consumer OAuth flow, so the honest alternative to a password-paste
-  box is opening the retailer's own login page in a real browser and letting
-  the human log in themselves. This launches the machine's **already-installed
-  Chrome**, never a downloaded Chromium — nobody using this needed to install
-  anything. Nothing is read until the human clicks "capture": there is no
-  polling for a session cookie to appear and grabbing it the moment it does.
-  Consistent with "no anti-bot circumvention" above, it does **not** hide the
-  automation from the retailer — no `navigator.webdriver` spoofing, no
-  automation-flag stripping — because a fraud system that cannot tell a
-  driven browser from a human is not a line this project will trade the
-  Connect-stores page for. Every one of these four retailers' Terms of
-  Service prohibits automated login, including by the account owner; that
-  risk is disclosed on the button itself, not just here. The captured session
-  is sealed exactly like a pasted credential — same vault, same `reveal()`
-  audit — and no adapter uses it yet.
+  connecting Costco, Walmart, Shopee, Taobao or `sim:amazon` holds a credential
+  for an adapter that does not exist yet and changes no result you see today.
+  Real Tesco (`tsc:tesco`) is the exception: what it seals is the bearer its
+  basket adapter actually calls with. (`sim:amazon` is the sign-in target — not
+  the real `amz:amazon` discovery/detail adapter below, which needs no
+  credential at all.)
+- **Connect signs you in at the store, in a browser — there is no password box
+  (S19), and it is the browser you already have open (S20). Covers Amazon,
+  Costco, IKEA, Shopee, Taobao, Tesco and Walmart.**
+  None of them publish a consumer OAuth flow, so the alternative to a
+  password-paste box is not a nicer password-paste box: it is opening the
+  retailer's own login page in the browser you already use and letting you sign
+  in there. Basketed has **no field anywhere that accepts a retailer password**,
+  and the route refuses one even if a policy offered it — a test asserts both.
+
+  Connect is a plain `<a target="_blank">`, so the tab opens in **the same
+  browser window the panel is running in**, with the accounts already in it.
+  Nothing is launched and nothing about the login is automated. If you are
+  already signed in, the connection finishes on its own; if you are not, you
+  land on the retailer's sign-in page and it finishes the moment you are
+  through.
+
+  Reading the session back out of that tab is the half an outside program
+  cannot do, and should not be able to: since Chrome 136,
+  `--remote-debugging-port` is ignored against the default profile
+  ([Chrome for Developers](https://developer.chrome.com/blog/remote-debugging-port))
+  exactly so that no process can lift another profile's cookies. Basketed does
+  not route around that — no profile copying, no decrypting Chrome's cookie
+  store, no injection. It goes in the sanctioned way instead: a small extension
+  (`packages/extension`, load-unpacked, ~120 lines) that reads the session from
+  the inside, talks to `127.0.0.1` and nothing else, stores nothing, and
+  refuses any local page that cannot prove it holds the panel token. Without
+  the extension the tab still opens — the panel then offers a Basketed-driven
+  window on its own persistent profile, which does auto-capture, rather than
+  spinning forever.
+
+  Every one of these retailers' Terms of Service prohibits automated access,
+  including by the account owner; that risk is disclosed on the Connect page
+  itself, not just here. What is sealed is what the store's adapter can
+  actually use: the cookie jar, or — for real Tesco, whose basket API is a
+  bearer API — the `Authorization` token its own frontend sends to
+  `xapi.tesco.com`, read out of the signed-in tab instead of asked for by hand.
 - The agent sees only an **opaque account handle**, never anything that could
   become one.
 - **The approval surface is behind a per-process token** printed on the server's
@@ -289,26 +328,32 @@ annotations, namespaced names.
   Handle Hijacking).
 - Redaction layer over every response, as a net rather than the defence. A hit
   is a bug; the panel shows the count.
-- We never touch card data (out of PCI scope), never store retailer passwords,
-  and ship no scraper.
+- We never touch card data (out of PCI scope) and never store retailer
+  passwords in the clear. We do ship a scraper (S17, Amazon/IKEA/Target
+  discovery and detail) — see "Where the data comes from" for exactly what it
+  does and does not touch: no login, no session, no cart.
 
 ---
 
 ## Not built, stated so nobody claims it
 
-Real retailer adapters for Costco/Walmart/Amazon (none publish a consumer API;
-the vault holds a credential — pasted or Chrome-captured — nothing yet
-authenticates with it), real retailer OAuth (none of the four publish one —
-see [Connect stores](#security)), a Chrome-login capture for any store outside
-that prototype four, the mock IdP, approval channel B (elicitation),
+Real retailer *cart* adapters for Costco/Walmart/Amazon (none publish a
+consumer API; the vault holds a credential — pasted or Chrome-captured —
+nothing yet authenticates with it), real retailer OAuth (none of the four
+publish one — see [Connect stores](#security)), a Chrome-login capture for
+any store outside that prototype four, real Shopee/Costco/Walmart discovery
+(all three were tried this session — see "Where the data comes from" — and
+stayed `simulated`), the mock IdP, approval channel B (elicitation),
 `compare_products`, the Orders page, MCPB, registry publish, and ChatGPT
 plugin submission. All are designed in the plan and none are built.
 
 Tesco is the one retailer adapter that moved off this list (S16) — see
 "Where the data comes from", above: real search, real detail, and a real
-basket behind the shopper's own pasted session token. Costco, Walmart and
-Amazon stay here because none of the three has an equivalent unofficial-but-
-real endpoint Tesco's frontend happens to expose — see [Connect
+basket behind the shopper's own pasted session token. Amazon, IKEA and Target
+discovery/detail moved off this list too (S17) — real search and product data,
+no basket. Costco, Walmart and Shopee stay here in full: none has an
+equivalent real endpoint or a stealth-browser path this project could get
+past cleanly, and `sim:amazon`'s cart stays here alongside them — see [Connect
 stores](#security) for what a Chrome-login session on those three can and
 cannot do instead.
 

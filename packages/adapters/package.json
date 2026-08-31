@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@basketed/core": "workspace:*",
+    "cheerio": "^1.2.0",
+    "patchright": "^1.62.2",
     "zod": "^4.4.3"
   }
 }

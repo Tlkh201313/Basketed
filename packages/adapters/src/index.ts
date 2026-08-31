@@ -6,3 +6,6 @@ export * from "./shopify-ucp/index.js";
 export * from "./shopify-ucp/load.js";
 export * from "./simulated/index.js";
 export * from "./tesco/index.js";
+export * from "./amazon/index.js";
+export * from "./ikea/index.js";
+export * from "./target/index.js";

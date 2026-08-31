@@ -12,7 +12,8 @@ import {
 } from "@basketed/commerce";
 import type { CredentialKind } from "@basketed/vault";
 import { authPolicyFor } from "./connections.js";
-import { startLogin, captureLogin, cancelLogin, stateOf } from "./browser-connect.js";
+import { startLogin, captureLogin, cancelLogin, stateOf, statusOf } from "./browser-connect.js";
+import { openConnect, pendingFor, closeConnect, finish, statusFor } from "./handoff.js";
 import type { ControlDeps } from "./types.js";
 
 /**
@@ -166,7 +167,8 @@ export async function handleApi(
             connected_at: held_?.createdAt ?? null,
             last_used_at: held_?.lastUsedAt ?? null,
             chrome_login: policy.chromeLogin !== null,
-            chrome_login_waiting: stateOf(s.id) === "waiting",
+            chrome_login_waiting: stateOf(s.id) !== "idle",
+            chrome_login_logged_in: stateOf(s.id) === "logged_in",
           };
         }),
       },
@@ -187,13 +189,32 @@ export async function handleApi(
     if (!policy.chromeLogin) {
       return { status: 400, body: { error: `Chrome login is not offered for ${store.name} in this build.` } };
     }
-    const result = await startLogin(storeId, policy.chromeLogin.url);
+    const result = await startLogin(storeId, policy.chromeLogin);
     if (!result.ok) {
-      log(`chrome-login ${storeId} failed to start: ${result.error}`);
+      log(`connect ${storeId} could not open a tab: ${result.error}`);
       return { status: 503, body: { error: result.error } };
     }
-    log(`chrome-login ${storeId}: window opened at ${policy.chromeLogin.url}`);
-    return { status: 200, body: { ok: true, waiting: true } };
+    log(
+      `connect ${storeId}: tab opened at ${policy.chromeLogin.url}` +
+        (result.attached ? " in the browser already running" : " in Basketed's Chrome profile") +
+        (result.logged_in ? " (already signed in)" : ""),
+    );
+    return {
+      status: 200,
+      body: { ok: true, waiting: true, logged_in: result.logged_in, attached: result.attached },
+    };
+  }
+
+  /*
+   * Status for the open window (S18). The panel polls this so it can notice
+   * the login finishing by itself. It reports a boolean and a clock and
+   * nothing else -- no cookie names, no values, nothing that would turn a
+   * status poll into a way to read the session.
+   */
+  const chromeStatus = /^\/api\/connections\/([^/]+)\/chrome-login$/.exec(path);
+  if (method === "GET" && chromeStatus) {
+    const storeId = decodeURIComponent(chromeStatus[1]!);
+    return { status: 200, body: statusOf(storeId) };
   }
 
   const chromeCapture = /^\/api\/connections\/([^/]+)\/chrome-login\/capture$/.exec(path);
@@ -207,19 +228,38 @@ export async function handleApi(
     }
     const captured = await captureLogin(storeId, policy.chromeLogin.domains);
     if (!captured.ok) {
-      log(`chrome-login ${storeId} capture failed: ${captured.error}`);
+      log(`connect ${storeId} capture failed: ${captured.error}`);
       return { status: 409, body: { error: captured.error } };
     }
+    /*
+     * Seal what the store's adapter can actually use (S19). A bearer store's
+     * cookie jar is the WRONG credential -- sealing it would look like success
+     * here and fail at the first basket call -- so a store that asked for a
+     * bearer and did not get one is a 409, not a silent downgrade.
+     */
+    const wantsBearer = policy.chromeLogin.bearer !== undefined;
+    if (wantsBearer && !captured.bearer) {
+      return {
+        status: 409,
+        body: {
+          error:
+            `Signed in, but ${store.name} has not issued a session token yet. ` +
+            `Browse to your basket in the open tab, then press Connect again.`,
+        },
+      };
+    }
+    const kind: CredentialKind = wantsBearer ? "token" : "cookie";
+    const secret = wantsBearer ? captured.bearer! : captured.cookieHeader;
     try {
-      const saved = deps.vault.connect({ storeId, kind: "cookie", username: null, secret: captured.cookieHeader });
-      log(`chrome-login ${storeId}: session captured and sealed`);
+      const saved = deps.vault.connect({ storeId, kind, username: null, secret });
+      log(`connect ${storeId}: session captured and sealed as ${kind}`);
       return {
         status: 200,
         body: { ok: true, store_id: saved.storeId, method: saved.kind, connected_at: saved.createdAt },
       };
     } catch (err) {
       const reason = (err as Error).message;
-      log(`chrome-login ${storeId} could not be saved: ${reason}`);
+      log(`connect ${storeId} could not be saved: ${reason}`);
       return { status: 503, body: { error: reason } };
     }
   }
@@ -229,6 +269,116 @@ export async function handleApi(
     const storeId = decodeURIComponent(chromeCancel[1]!);
     const closed = await cancelLogin(storeId);
     return { status: 200, body: { ok: true, closed } };
+  }
+
+  /*
+   * Connect in the browser the user is already using (S20).
+   *
+   * The tab is NOT opened here. The panel is already a page in that browser,
+   * so it opens the retailer with a plain target="_blank" link -- their
+   * window, their profile, their logins, no automation involved. All this
+   * route does is leave a note saying a sign-in is in flight, which the
+   * Basketed extension (running in that same browser) reads so it can post
+   * the finished session back. See handoff.ts for why it has to work this
+   * way round.
+   */
+  const browserConnect = /^\/api\/connections\/([^/]+)\/browser-connect$/.exec(path);
+  if (browserConnect) {
+    const storeId = decodeURIComponent(browserConnect[1]!);
+    const store = deps.registry.list().find((s) => s.id === storeId);
+    if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
+
+    if (method === "GET") return { status: 200, body: statusFor(storeId) };
+    if (method === "DELETE") return { status: 200, body: { ok: true, closed: closeConnect(storeId) } };
+
+    if (method === "POST") {
+      const policy = authPolicyFor(store);
+      if (!policy.chromeLogin) {
+        return { status: 400, body: { error: `${store.name} needs no account: there is nothing to sign in to.` } };
+      }
+      const note = openConnect({
+        storeId,
+        storeName: store.name,
+        url: policy.chromeLogin.url,
+        domains: policy.chromeLogin.domains,
+        authCookies: policy.chromeLogin.authCookies,
+        bearerMatch: policy.chromeLogin.bearer ?? null,
+      });
+      log(`connect ${storeId}: waiting on a sign-in at ${note.url}`);
+      return { status: 200, body: { ok: true, url: note.url, waiting: true } };
+    }
+  }
+
+  /*
+   * How the extension proves the page that just messaged it is really the
+   * panel (S20).
+   *
+   * The extension's content script runs on every 127.0.0.1 page, and
+   * localhost is shared ground -- any local page could otherwise ask it to
+   * hand over tesco.com's cookies. So the ask must carry the panel token,
+   * and the extension checks it HERE before it reads a single cookie. Same
+   * gate as everything else in this file; answering at all is the answer.
+   */
+  if (method === "GET" && path === "/api/extension/verify") {
+    return { status: 200, body: { ok: true, panel: "basketed" } };
+  }
+
+  /*
+   * The extension posting back a session it read from the user's own browser.
+   *
+   * Gated three ways: the panel token like every other route, a policy that
+   * actually has somewhere to sign in, and an OPEN note for this store. The
+   * last one matters -- without it, anything holding the token could seal an
+   * arbitrary string against any store at any time, with no user action
+   * anywhere near it.
+   */
+  const extCapture = /^\/api\/connections\/([^/]+)\/extension-capture$/.exec(path);
+  if (method === "POST" && extCapture) {
+    const storeId = decodeURIComponent(extCapture[1]!);
+    const store = deps.registry.list().find((s) => s.id === storeId);
+    if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
+    const policy = authPolicyFor(store);
+    if (!policy.chromeLogin) {
+      return { status: 400, body: { error: `${store.name} needs no account: there is nothing to sign in to.` } };
+    }
+    const note = pendingFor(storeId);
+    if (!note) {
+      return { status: 409, body: { error: "No sign-in is in flight for this store. Press Connect first." } };
+    }
+
+    const payload = await body();
+    const cookieHeader = String(payload["cookie_header"] ?? "").trim();
+    const bearer = String(payload["bearer"] ?? "").trim();
+    const wantsBearer = policy.chromeLogin.bearer !== undefined;
+    if (wantsBearer && !bearer) {
+      return {
+        status: 409,
+        body: {
+          error:
+            `Signed in, but ${store.name} has not issued a session token yet. ` +
+            `Open your basket in that tab and it will finish by itself.`,
+        },
+      };
+    }
+    if (!wantsBearer && !cookieHeader) {
+      return { status: 409, body: { error: `Not signed in at ${store.name} yet.` } };
+    }
+
+    const kind: CredentialKind = wantsBearer ? "token" : "cookie";
+    try {
+      const saved = deps.vault.connect({ storeId, kind, username: null, secret: wantsBearer ? bearer : cookieHeader });
+      finish(storeId, "extension");
+      closeConnect(storeId);
+      log(`connect ${storeId}: sealed as ${kind}, captured from the user's own browser`);
+      return {
+        status: 200,
+        body: { ok: true, store_id: saved.storeId, method: saved.kind, connected_at: saved.createdAt },
+      };
+    } catch (err) {
+      const reason = (err as Error).message;
+      log(`connect ${storeId} could not be saved: ${reason}`);
+      return { status: 503, body: { error: reason } };
+    }
   }
 
   const connect = /^\/api\/connections\/([^/]+)$/.exec(path);

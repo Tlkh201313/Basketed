@@ -40,26 +40,37 @@ function api(path, init) {
   });
 }
 
-/* theme: explicit choice beats OS, and persists per browser (S14) */
+/*
+ * theme: explicit choice beats OS, and persists per browser (S14).
+ *
+ * Three buttons rather than one cycling button, because "System theme" as the
+ * label of a button that will next give you Dark told you the current state
+ * and the next state with the same three words. The label element survives as
+ * the screen-reader announcement of which of the three is live.
+ */
 (function () {
-  const btn = $("[data-theme-toggle]");
-  if (!btn) return;
+  const btns = $$("[data-theme-toggle]");
+  if (!btns.length) return;
   const label = $("[data-theme-label]");
   function apply(mode) {
     if (mode) document.documentElement.dataset.theme = mode;
     else delete document.documentElement.dataset.theme;
     if (label) label.textContent = mode === "dark" ? "Dark" : mode === "light" ? "Light" : "System theme";
+    btns.forEach((b) => {
+      const on = (b.dataset.themeToggle || "auto") === (mode || "auto");
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
   }
   let stored = null;
   try { stored = localStorage.getItem("basketed-theme"); } catch (e) { /* private window */ }
   apply(stored);
-  btn.addEventListener("click", function () {
-    const order = [null, "dark", "light"];
-    const next = order[(order.indexOf(stored) + 1) % order.length];
+  btns.forEach((btn) => btn.addEventListener("click", function () {
+    const next = btn.dataset.themeToggle === "auto" ? null : btn.dataset.themeToggle;
     stored = next;
     try { if (next) localStorage.setItem("basketed-theme", next); else localStorage.removeItem("basketed-theme"); } catch (e) { /* private window */ }
     apply(next);
-  });
+  }));
 })();
 
 function money(m) {
@@ -72,22 +83,45 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/*
+ * The one element on the mandate card allowed to change colour, because it is
+ * the only thing on it that is running out. Under a minute it turns clay.
+ */
 function countdown(ms) {
-  if (ms <= 0) return '<span class="ring cold">expired</span>';
+  if (ms <= 0) return '<span class="clock dead">expired</span>';
   const s = Math.floor(ms / 1000);
   const mm = String(Math.floor(s / 60)).padStart(2, "0");
   const ss = String(s % 60).padStart(2, "0");
-  return '<span class="ring">' + mm + ":" + ss + " left</span>";
+  return '<span class="clock' + (s < 60 ? " soon" : "") + '">' + mm + ":" + ss + " left</span>";
 }
-/* copy buttons, on every page */
+/* client rows open in place; the drawer is a sibling, not a child, of the row */
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-expand]");
+  if (!btn) return;
+  const panel = btn.closest("[data-copy-scope]").querySelector("[data-exp]");
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  btn.textContent = panel.hidden ? "Config" : "Hide";
+  btn.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
+});
+
+/*
+ * copy buttons, on every page.
+ *
+ * Scoped rather than sibling-based: on a client row the button is in the row
+ * and the <code> it copies is in the drawer below, so walking up to the
+ * enclosing [data-copy-scope] is what makes them the same thing.
+ */
 document.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-copy]");
   if (!btn) return;
-  const code = btn.parentElement.querySelector("code");
+  const scope = btn.closest("[data-copy-scope]") || btn.parentElement;
+  const code = scope.querySelector("code");
+  if (!code) return;
   try {
     await navigator.clipboard.writeText(code.textContent);
     const was = btn.textContent;
-    btn.textContent = "copied ✓";
+    btn.textContent = "Copied ✓";
     btn.classList.add("flash");
     setTimeout(() => { btn.textContent = was; btn.classList.remove("flash"); }, 1400);
   } catch {
@@ -104,36 +138,46 @@ const approvalsEl = $("#approvals");
 if (approvalsEl) {
   let expected = new Map();
 
+  /*
+   * The mandate card is assembled from numeric and enumerated fields only,
+   * plus the product name Basketed already normalised. Nothing a merchant
+   * wrote reaches this markup, and nothing an agent wrote reaches it at all --
+   * that is the whole point of the screen, so keep it that way when editing.
+   */
   function card(a) {
     expected.set(a.id, a.total.value.toFixed(2));
     const lines = a.line_items
-      .map((li) => '<tr><td>' + esc(li.quantity) + ' &times; ' + esc(li.name) +
-        '</td><td class="money">' + money(li.unit_price) + '</td></tr>')
+      .map((li) => '<tr><td><span class="q">' + esc(li.quantity) + ' &times;</span> ' + esc(li.name) +
+        '</td><td>' + money(li.unit_price) + '</td></tr>')
       .join("");
     const adj = a.adjustments
-      .map((x) => '<tr><td class="muted">' + esc(x.label) + '</td><td class="money muted">' +
+      .map((x) => '<tr class="adj"><td>' + esc(x.label) + '</td><td>' +
         money(x.amount) + '</td></tr>')
       .join("");
     const stamp = a.mode === "simulated"
-      ? '<span class="stamp sim">simulated</span>'
-      : '<span class="stamp wait">awaiting you</span>';
+      ? '<span class="pill sim">demo order</span>'
+      : '<span class="pill wait">awaiting you</span>';
 
-    return '<div class="card" data-id="' + esc(a.id) + '">' +
-      '<div class="row between"><strong>' + esc(a.store_id) + '</strong>' + stamp + '</div>' +
-      '<table class="lines">' + lines + adj +
-        '<tr class="total"><td>Total</td><td class="money">' + money(a.total) + '</td></tr>' +
-      '</table>' +
-      '<div class="row between">' +
-        '<div class="row">' +
-          '<input class="total" placeholder="' + a.total.value.toFixed(2) + '" data-total>' +
-          '<button class="act go" data-approve disabled>Approve</button>' +
-          '<button class="act no" data-reject>Reject</button>' +
-        '</div>' +
+    return '<div class="mandate" data-id="' + esc(a.id) + '">' +
+      '<div class="mhead">' +
+        '<span class="store">' + esc(a.store_id) + '</span>' +
+        '<span class="ref">account <span class="num">' + esc(a.account_handle) + '</span></span>' +
+        stamp +
         countdown(a.expires_in_ms) +
       '</div>' +
-      '<div class="err" data-err></div>' +
-      '<p class="tiny muted" style="margin:10px 0 0">Account ' + esc(a.account_handle) +
-        '. Nothing has been charged. Typing the total is the authorisation.</p>' +
+      '<table class="lines">' + lines + adj +
+        '<tr class="sum"><td>Total</td><td>' + money(a.total) + '</td></tr>' +
+      '</table>' +
+      '<div class="strip" data-strip>' +
+        '<span class="ask">Type <span class="num">' + a.total.value.toFixed(2) +
+          '</span> to authorise</span>' +
+        '<input class="typed" placeholder="' + a.total.value.toFixed(2) + '" data-total ' +
+          'inputmode="decimal" autocomplete="off" aria-label="Type the total to authorise">' +
+        '<button class="btn pri" data-approve disabled>Approve</button>' +
+        '<button class="btn danger" data-reject>Reject</button>' +
+        '<span class="why">Nothing has been charged. Typing the total is the authorisation.</span>' +
+      '</div>' +
+      '<div class="err" data-err style="padding:0 18px 12px"></div>' +
     '</div>';
   }
 
@@ -146,41 +190,50 @@ if (approvalsEl) {
 
     const orders = await (await api("/api/orders")).json();
     $("#orders").innerHTML = orders.orders.length
-      ? orders.orders.map(order).join("")
+      ? '<div class="orders">' + orders.orders.map(order).join("") + '</div>'
       : '<div class="empty">No orders yet.</div>';
 
     const state = await (await api("/api/state")).json();
     const g = state.guardrails;
+    const alarms = state.redaction_alarms;
     $("#guardrails").innerHTML =
-      'Caps: <span class="num">' + g.perOrderCap.toFixed(2) + " " + g.homeCurrency +
-      '</span> per order, <span class="num">' + g.dailyCap.toFixed(2) + " " + g.homeCurrency +
-      '</span> per 24h (<span class="num">' + g.spent_24h.toFixed(2) +
-      '</span> used). Checked at confirm, never at prepare. Stores: <span class="num">' +
-      (g.allowedStores.length ? g.allowedStores.map(esc).join(", ") : "any registered store") +
-      '</span>. Redaction alarms: <span class="num">' +
-      state.redaction_alarms + "</span>.";
+      tile("per order", g.perOrderCap.toFixed(2) + " " + g.homeCurrency) +
+      tile("per 24h", g.dailyCap.toFixed(2) + " " + g.homeCurrency) +
+      tile("used in 24h", g.spent_24h.toFixed(2) + " " + g.homeCurrency) +
+      tile("allowed stores", g.allowedStores.length ? String(g.allowedStores.length) : "any") +
+      // Zero is the only good number here, so zero is the only one shown in
+      // green -- an alarm count styled like every other figure is a count
+      // nobody reads.
+      tile("redaction alarms", String(alarms), alarms > 0 ? "risk" : "good");
+  }
+
+  function tile(label, value, tone) {
+    return '<div class="tile2"><span class="eyebrow">' + esc(label) + '</span>' +
+      '<b' + (tone ? ' class="' + tone + '"' : "") + '>' + esc(value) + '</b></div>';
   }
 
   function order(o) {
     const handed = o.state === "HANDED_OFF";
     const cls = o.state === "PLACED" || o.state === "CONFIRMED" ? "ok"
-      : handed ? "unknown" : o.state === "FAILED" ? "dead" : "unknown";
-    return '<div class="card" data-order="' + esc(o.id) + '">' +
-      '<div class="row between">' +
-        '<div><strong>' + esc(o.store_id) + '</strong> <span class="tiny muted num">' + esc(o.id) + '</span></div>' +
-        '<span class="stamp ' + cls + '">' + esc(o.state.toLowerCase().replace("_", " ")) + '</span>' +
+      : handed ? "wait" : o.state === "FAILED" ? "bad" : "neutral";
+    return '<div class="orow" data-order="' + esc(o.id) + '">' +
+      '<div class="line">' +
+        '<span class="store">' + esc(o.store_id) + '</span>' +
+        '<span class="oid">' + esc(o.id) + '</span>' +
+        '<span class="pill ' + cls + '">' + esc(o.state.toLowerCase().replace("_", " ")) + '</span>' +
+        '<span class="amt">' + o.total_value.toFixed(2) + " " + esc(o.total_currency) + '</span>' +
       '</div>' +
-      '<div class="row between" style="margin-top:8px">' +
-        '<span class="money">' + o.total_value.toFixed(2) + " " + esc(o.total_currency) + '</span>' +
-        (o.handoff_url ? '<a href="' + esc(o.handoff_url) + '" target="_blank" rel="noreferrer">finish at the merchant &rarr;</a>' : "") +
-      '</div>' +
+      (o.handoff_url
+        ? '<div class="line" style="margin-top:8px"><a href="' + esc(o.handoff_url) +
+          '" target="_blank" rel="noreferrer">finish at the merchant &rarr;</a></div>'
+        : "") +
       (handed
-        ? '<p class="tiny muted" style="margin:10px 0 0">Handed off &mdash; outcome unknown. ' +
+        ? '<p class="said">Handed off &mdash; outcome unknown. ' +
           'Basketed never took payment and has no way to know whether you completed it. ' +
           'Only you can say.</p>' +
-          '<div class="row" style="margin-top:8px">' +
-            '<button class="act" data-outcome="CONFIRMED">I completed it</button>' +
-            '<button class="act no" data-outcome="CANCELLED">I did not</button>' +
+          '<div class="line" style="margin-top:10px">' +
+            '<button class="btn sm" data-outcome="CONFIRMED">I completed it</button>' +
+            '<button class="btn sm danger" data-outcome="CANCELLED">I did not</button>' +
           '</div>'
         : "") +
     '</div>';
@@ -194,6 +247,12 @@ if (approvalsEl) {
     const want = expected.get(card.dataset.id);
     card.querySelector("[data-approve]").disabled =
       input.value.replace(/[^\d.]/g, "") !== want;
+    // The border is a mirror of the line above, never a second opinion: it
+    // reads the same disabled flag rather than re-deciding what "matches"
+    // means.
+    const matched = !card.querySelector("[data-approve]").disabled;
+    input.classList.toggle("yes", matched);
+    input.classList.toggle("no", !matched && input.value.length > 0);
   });
 
   approvalsEl.addEventListener("click", async (e) => {
@@ -214,9 +273,9 @@ if (approvalsEl) {
       // Approved, not executed. The agent still has to call purchase_confirm,
       // and it will now succeed exactly once.
       errEl.textContent = "";
-      card.querySelector(".row.between:last-of-type").innerHTML =
-        '<span class="stamp ok">approved</span>' +
-        '<span class="tiny muted">Tell your agent to confirm. Single-use.</span>';
+      card.querySelector("[data-strip]").innerHTML =
+        '<span class="pill ok">approved</span>' +
+        '<span class="ask">Tell your agent to confirm. Single-use.</span>';
       return;
     }
 
@@ -249,9 +308,13 @@ if (approvalsEl) {
 const storesEl = $("#stores");
 if (storesEl) {
   function pill(c) {
-    if (c.chrome_login_waiting) return '<span class="pill off">Chrome window open…</span>';
+    if (c.chrome_login_logged_in) return '<span class="pill wait">signed in — finishing…</span>';
+    if (c.chrome_login_waiting) return '<span class="pill off">signing in…</span>';
     if (c.broken) return '<span class="pill bad">reconnect needed</span>';
     if (c.connected) return '<span class="pill on">connected' + (c.username ? " as " + esc(c.username) : "") + '</span>';
+    // A store with no account to sign in to is not "not connected" -- it is
+    // finished. Saying otherwise reads as a step the reader still has to take.
+    if (!c.methods || !c.methods.length) return '<span class="pill ok">ready</span>';
     return '<span class="pill off">not connected</span>';
   }
 
@@ -297,6 +360,7 @@ if (storesEl) {
 
   /* tabs and search are pure client-side filters over server-rendered cards */
   let activeTab = "all";
+  const countEl = $("[data-count]");
   function applyFilter() {
     const q = ($("[data-find]").value || "").trim().toLowerCase();
     let shown = 0;
@@ -308,143 +372,339 @@ if (storesEl) {
       if (show) shown += 1;
     });
     $("#nostores").hidden = shown !== 0;
+    if (countEl) countEl.textContent = shown;
   }
-  $$(".tabs button").forEach((btn) => btn.addEventListener("click", () => {
+  $$("[data-tab]").forEach((btn) => btn.addEventListener("click", () => {
     activeTab = btn.dataset.tab;
-    $$(".tabs button").forEach((b) => b.classList.toggle("on", b === btn));
+    $$("[data-tab]").forEach((b) => b.classList.toggle("on", b === btn));
     applyFilter();
   }));
   $("[data-find]").addEventListener("input", applyFilter);
+
+  /* the mono "/" in the search box is a promise, so make it true */
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    e.preventDefault();
+    $("[data-find]").focus();
+  });
 
   refreshStatus().then(applyFilter);
   setInterval(() => refreshStatus().then(applyFilter), 8000);
 }
 
-const connectForm = $("[data-connect-form]");
-if (connectForm) {
-  const methodSel = $("[data-method]");
-  function syncFields() {
-    const method = methodSel.value || methodSel.getAttribute("value");
-    $$("[data-fields]").forEach((el) => { el.hidden = el.dataset.fields !== method; });
+/*
+ * The connect page (S19). One button, no fields.
+ *
+ * Everything the old form did -- pick a method, type a secret, post it here --
+ * is gone: the only way to connect a store is now to sign in at the store, in
+ * a real browser tab, on the retailer's own page. This script decides when to
+ * open that tab and when the sign-in has finished; it never handles a
+ * credential, because there is no longer one on this page to handle.
+ */
+/* ------------------------------------------------- connecting a store (S20)
+ *
+ * The tab is opened by the browser, not by us: every Connect control is a
+ * real <a target="_blank">, so the click lands in THIS browser window, with
+ * the logins already in it. Nothing here launches anything.
+ *
+ * Reading the session back out of that tab is the half Chrome will not let an
+ * outside program do -- since Chrome 136 the remote-debugging port is ignored
+ * on the default profile, deliberately, so that no process can lift another
+ * profile's cookies. The sanctioned way in is from the inside, so the
+ * Basketed extension does that part and this code asks it. No extension, no
+ * capture: the card says so and offers the Basketed-window route, instead of
+ * spinning forever pretending.
+ */
+function extensionPresent() {
+  return document.documentElement.getAttribute("data-basketed-extension") === "1";
+}
+
+/*
+ * One round trip to the extension. The token goes with it because the
+ * extension refuses to read a cookie for a local page that cannot prove it is
+ * the panel -- localhost is shared ground, and "a page on 127.0.0.1" is not
+ * an identity.
+ */
+function askExtension(cfg) {
+  return new Promise((resolve) => {
+    if (!extensionPresent()) { resolve(null); return; }
+    const id = "bk" + Math.random().toString(36).slice(2);
+    let timer = null;
+    function onReply(e) {
+      const d = e.data;
+      if (e.source !== window || !d || d.source !== "basketed-extension" || d.id !== id) return;
+      window.removeEventListener("message", onReply);
+      clearTimeout(timer);
+      resolve(d.reply || null);
+    }
+    window.addEventListener("message", onReply);
+    timer = setTimeout(() => { window.removeEventListener("message", onReply); resolve(null); }, 4000);
+    window.postMessage({
+      source: "basketed-panel",
+      type: "capture",
+      id: id,
+      token: TOKEN,
+      domains: cfg.domains,
+      authCookies: cfg.authCookies,
+      bearerMatch: cfg.bearerMatch,
+    }, window.location.origin);
+  });
+}
+
+function connectConfig(el) {
+  function parse(raw) { try { return JSON.parse(raw || "[]"); } catch (err) { return []; } }
+  return {
+    storeId: el.dataset.store,
+    name: el.dataset.name || el.dataset.store,
+    domains: parse(el.dataset.domains),
+    authCookies: parse(el.dataset.authCookies),
+    bearerMatch: el.dataset.bearer || "",
+    loginUrl: el.dataset.loginUrl || "",
+  };
+}
+
+/* One attempt: ask the extension, and seal whatever it found. */
+async function tryCapture(cfg) {
+  const reply = await askExtension(cfg);
+  if (!reply) return { state: "no-extension" };
+  if (!reply.ok) return { state: "no-extension", error: reply.error };
+  if (!reply.signedIn) return { state: "signed-out" };
+  let res;
+  try {
+    res = await api("/api/connections/" + encodeURIComponent(cfg.storeId) + "/extension-capture", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cookie_header: reply.cookieHeader, bearer: reply.bearer }),
+    });
+  } catch (err) {
+    return { state: "waiting", error: "Could not reach the server." };
   }
-  if (methodSel && methodSel.tagName === "SELECT") methodSel.addEventListener("change", syncFields);
-  syncFields();
+  if (res.ok) return { state: "connected" };
+  const out = await res.json().catch(() => ({}));
+  // 409 is "signed in, but the credential is not there yet" -- keep waiting.
+  return { state: res.status === 409 ? "waiting" : "failed", error: out.error };
+}
 
-  connectForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const msg = $("[data-connect-msg]");
-    const submitBtn = connectForm.querySelector("button[type=submit]");
-    const method = methodSel.value || methodSel.getAttribute("value");
-    const secretEl = connectForm.querySelector('[data-fields="' + method + '"] [data-secret]');
-    const usernameEl = connectForm.querySelector('[data-fields="' + method + '"] [data-username]');
-    const secret = secretEl ? secretEl.value : "";
+const pumps = new Map();
 
-    if (!secret.trim()) {
-      msg.textContent = "Enter something first.";
-      msg.className = "tiny err";
+function stopPump(storeId) {
+  const t = pumps.get(storeId);
+  if (t) { clearInterval(t); pumps.delete(storeId); }
+}
+
+/* The connect card, when we are on the store's own page. Absent on the list. */
+const connectPage = $("[data-connect-page]");
+const idleRow = $("[data-connect-idle]");
+const waitingRow = $("[data-connect-waiting]");
+const statusEl = $("[data-connect-status]");
+const signinLink = $("[data-connect-signin]");
+const extMissing = $("[data-ext-missing]");
+
+function say(text) { if (statusEl) statusEl.textContent = text; }
+
+function showWaiting() {
+  if (idleRow) idleRow.hidden = true;
+  if (waitingRow) waitingRow.hidden = false;
+}
+function showIdle() {
+  if (idleRow) idleRow.hidden = false;
+  if (waitingRow) waitingRow.hidden = true;
+  if (signinLink) signinLink.hidden = true;
+}
+
+function watchConnect(cfg) {
+  stopPump(cfg.storeId);
+  showWaiting();
+  say("Waiting for " + cfg.name + " in the other tab...");
+
+  async function tick() {
+    const out = await tryCapture(cfg);
+    if (out.state === "connected") {
+      stopPump(cfg.storeId);
+      say("Connected. Reading this page again...");
+      setTimeout(() => location.reload(), 900);
       return;
     }
+    if (out.state === "no-extension") {
+      stopPump(cfg.storeId);
+      if (extMissing) extMissing.hidden = false;
+      say("The tab is open. Basketed cannot read it back without the extension.");
+      return;
+    }
+    if (out.state === "signed-out") {
+      say("Not signed in at " + cfg.name + " yet - sign in in that tab and this finishes itself.");
+      if (signinLink) signinLink.hidden = false;
+      return;
+    }
+    if (out.state === "failed") {
+      stopPump(cfg.storeId);
+      say(out.error || "That did not work.");
+      return;
+    }
+    if (out.error) say(out.error);
+  }
 
-    submitBtn.disabled = true;
-    msg.textContent = "Connecting…";
-    msg.className = "tiny muted";
+  void tick();
+  pumps.set(cfg.storeId, setInterval(tick, 2500));
+}
+
+/*
+ * Delegated, so one handler serves the store page and every card on the list.
+ * The click's own navigation opens the tab; this only registers that a
+ * sign-in is in flight and starts watching for it to finish.
+ */
+document.addEventListener("click", (e) => {
+  const el = e.target.closest ? e.target.closest("[data-connect-open]") : null;
+  if (!el) return;
+  const cfg = connectConfig(el);
+  api("/api/connections/" + encodeURIComponent(cfg.storeId) + "/browser-connect", { method: "POST" })
+    .catch((err) => console.error("[basketed] connect could not be registered: " + err.message));
+  watchConnect(cfg);
+});
+
+const cancelWait = $("[data-connect-cancel]");
+if (cancelWait) {
+  cancelWait.addEventListener("click", async () => {
+    const el = $("[data-connect-open]");
+    const storeId = el ? el.dataset.store : null;
+    if (storeId) {
+      stopPump(storeId);
+      try {
+        await api("/api/connections/" + encodeURIComponent(storeId) + "/browser-connect", { method: "DELETE" });
+      } catch (err) {
+        console.error("[basketed] could not stop waiting: " + err.message);
+      }
+    }
+    showIdle();
+  });
+}
+
+/*
+ * The fallback for a browser with no extension in it: a window Basketed does
+ * drive, on its own persistent profile. Sign in once there and it stays
+ * signed in. Same capture route, same vault, same disclosure -- only the
+ * window differs.
+ */
+if (connectPage) {
+  const storeId = connectPage.dataset.store;
+  const chromeWaitRow = $("[data-chrome-login-waiting]");
+  const chromeMsg = $("[data-chrome-msg]");
+  const captureBtn = $("[data-chrome-capture]");
+  const startBtn = $("[data-chrome-start]");
+  let watch = null;
+  let capturing = false;
+
+  function stopWatch() { if (watch) { clearInterval(watch); watch = null; } }
+
+  function watchForLogin() {
+    stopWatch();
+    watch = setInterval(async () => {
+      if (capturing) return;
+      try {
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login");
+        if (!res.ok) return;
+        const out = await res.json();
+        if (out.state === "idle") { stopWatch(); return; }
+        if (out.logged_in) { stopWatch(); await runCapture(); }
+      } catch (err) {
+        console.error("[basketed] sign-in status failed: " + err.message);
+      }
+    }, 1500);
+  }
+
+  async function runCapture() {
+    if (capturing) return;
+    capturing = true;
+    if (captureBtn) captureBtn.disabled = true;
+    if (chromeMsg) chromeMsg.textContent = "Signed in. Finishing...";
     try {
-      const res = await api("/api/connections/" + encodeURIComponent(connectForm.dataset.store), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ method: method, secret: secret, username: usernameEl ? usernameEl.value : undefined }),
-      });
+      const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login/capture", { method: "POST" });
       const out = await res.json();
       if (!res.ok) {
-        msg.textContent = out.error || ("Refused (" + res.status + ").");
-        msg.className = "tiny err";
+        if (chromeMsg) chromeMsg.textContent = out.error || ("Refused (" + res.status + ").");
+        watchForLogin();
         return;
       }
-      if (secretEl) secretEl.value = "";
-      msg.textContent = "Connected" + (out.username ? " as " + out.username : "") + ". You can leave this page.";
-      msg.className = "tiny";
-      msg.style.color = "var(--ok)";
+      stopWatch();
+      if (chromeMsg) chromeMsg.textContent = "Connected. Reading this page again...";
+      setTimeout(() => location.reload(), 900);
     } catch (err) {
-      console.error("[basketed] connect failed: " + err.message);
-      msg.textContent = "Could not reach the server. Is it still running?";
-      msg.className = "tiny err";
+      console.error("[basketed] capture failed: " + err.message);
+      if (chromeMsg) chromeMsg.textContent = "Could not reach the server.";
     } finally {
-      submitBtn.disabled = false;
-    }
-  });
-
-  /* Log in with Chrome (S15): a real browser window, nothing captured until asked */
-  const storeId = connectForm.dataset.store;
-  const idleRow = $("[data-chrome-login-idle]");
-  const waitingRow = $("[data-chrome-login-waiting]");
-  const chromeMsg = $("[data-chrome-msg]");
-
-  function showWaiting(text) {
-    if (idleRow) idleRow.hidden = true;
-    if (waitingRow) waitingRow.hidden = false;
-    if (chromeMsg && text) chromeMsg.textContent = text;
-  }
-  function showIdle(text) {
-    if (idleRow) idleRow.hidden = false;
-    if (waitingRow) waitingRow.hidden = true;
-    if (text) {
-      const msg = $("[data-connect-msg]");
-      if (msg) { msg.textContent = text; msg.className = "tiny err"; }
+      capturing = false;
+      if (captureBtn) captureBtn.disabled = false;
     }
   }
 
-  const startBtn = $("[data-chrome-start]");
   if (startBtn) {
     startBtn.addEventListener("click", async () => {
       startBtn.disabled = true;
+      if (chromeWaitRow) chromeWaitRow.hidden = false;
+      if (chromeMsg) chromeMsg.textContent = "Opening a Basketed window...";
       try {
         const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login", { method: "POST" });
         const out = await res.json();
-        if (!res.ok) { showIdle(out.error || ("Refused (" + res.status + ").")); return; }
-        showWaiting("A Chrome window is open. Log in there, then click Capture.");
+        if (!res.ok) {
+          if (chromeMsg) chromeMsg.textContent = out.error || ("Refused (" + res.status + ").");
+          return;
+        }
+        if (out.logged_in) {
+          if (chromeMsg) chromeMsg.textContent = "That profile is already signed in. Finishing...";
+          await runCapture();
+        } else {
+          if (chromeMsg) chromeMsg.textContent = "A Basketed window is open. Sign in there - this page notices when you are done.";
+          watchForLogin();
+        }
       } catch (err) {
-        console.error("[basketed] chrome-login start failed: " + err.message);
-        showIdle("Could not reach the server.");
+        console.error("[basketed] could not open the window: " + err.message);
+        if (chromeMsg) chromeMsg.textContent = "Could not reach the server.";
       } finally {
         startBtn.disabled = false;
       }
     });
   }
 
-  const captureBtn = $("[data-chrome-capture]");
-  if (captureBtn) {
-    captureBtn.addEventListener("click", async () => {
-      captureBtn.disabled = true;
-      if (chromeMsg) chromeMsg.textContent = "Capturing…";
-      try {
-        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login/capture", { method: "POST" });
-        const out = await res.json();
-        if (!res.ok) { if (chromeMsg) chromeMsg.textContent = out.error || ("Refused (" + res.status + ")."); return; }
-        showIdle();
-        const msg = $("[data-connect-msg]");
-        if (msg) { msg.textContent = "Connected via Chrome. You can leave this page."; msg.className = "tiny"; msg.style.color = "var(--ok)"; }
-      } catch (err) {
-        console.error("[basketed] chrome-login capture failed: " + err.message);
-        if (chromeMsg) chromeMsg.textContent = "Could not reach the server.";
-      } finally {
-        captureBtn.disabled = false;
-      }
-    });
-  }
+  if (captureBtn) captureBtn.addEventListener("click", () => void runCapture());
 
   const cancelBtn = $("[data-chrome-cancel]");
   if (cancelBtn) {
     cancelBtn.addEventListener("click", async () => {
       cancelBtn.disabled = true;
+      stopWatch();
       try {
         await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login", { method: "DELETE" });
       } catch (err) {
-        console.error("[basketed] chrome-login cancel failed: " + err.message);
+        console.error("[basketed] cancel failed: " + err.message);
       } finally {
         cancelBtn.disabled = false;
-        showIdle();
+        if (chromeWaitRow) chromeWaitRow.hidden = true;
       }
     });
   }
+
+  // A window left open by an earlier visit is still live on the server.
+  if (chromeWaitRow && !chromeWaitRow.hidden) watchForLogin();
+}
+
+
+/* Disconnect, from the store's own page. Outside the block above because a
+ * store can hold a credential after its policy stopped offering a way to add
+ * one -- and a held credential must always have a way out. */
+const forgetBtn = $("[data-connect-forget]");
+if (forgetBtn) {
+  forgetBtn.addEventListener("click", async () => {
+    forgetBtn.disabled = true;
+    try {
+      const res = await api("/api/connections/" + encodeURIComponent(forgetBtn.dataset.store), { method: "DELETE" });
+      if (!res.ok) throw new Error("status " + res.status);
+      location.reload();
+    } catch (err) {
+      console.error("[basketed] disconnect failed: " + err.message);
+      forgetBtn.disabled = false;
+    }
+  });
 }
 `;
