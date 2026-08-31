@@ -23,7 +23,9 @@ import type { AdapterCtx, StoreAdapter } from "../types.js";
  * browser as Amazon/IKEA/Target.
  *
  * Still `mode: "native"` — eBay's own live data, not proxied.
- * No login, no cart (cart would need a signed-in session).
+ * Cart is local (no retailer API) and handoff goes to https://cart.ebay.com —
+ * the human completes checkout. No payment is completed by Basketed
+ * (HANDED_OFF/unknown).
  */
 
 const SEARCH_BASE = "https://www.ebay.com/sch/i.html";
@@ -68,6 +70,7 @@ interface Cached {
   itemId: string;
   url: string;
   name: string;
+  price: { value: number; currency: string };
 }
 
 export interface EbayAdapterOptions {
@@ -91,7 +94,7 @@ export class EbayAdapter implements StoreAdapter {
       categories: ["general", "electronics", "apparel"],
       mode: "native",
       auth: "none",
-      capabilities: ["discovery", "detail"],
+      capabilities: ["discovery", "detail", "cart", "handoff"],
       domain: "ebay.com",
     };
   }
@@ -134,7 +137,7 @@ export class EbayAdapter implements StoreAdapter {
 
       const name = sanitiseProductName(titleRaw).text;
       const id = mintProductId(this.manifest.id, itemId);
-      this.#cache.set(id, { itemId, url: absoluteUrl, name });
+      this.#cache.set(id, { itemId, url: absoluteUrl, name, price });
 
       const image = card.find('img.s-item__image-img').first().attr('src') ?? card.find('img').first().attr('src') ?? undefined;
 
@@ -211,5 +214,37 @@ export class EbayAdapter implements StoreAdapter {
     if (include.includes("stock")) detail.stock = html.toLowerCase().includes("out of stock") ? "out_of_stock" : "in_stock";
     detail._meta = { provenance: PROVENANCE_NOTE };
     return detail;
+  }
+
+  async buildCart(items: Array<{ id: string; quantity: number }>, _ctx: AdapterCtx): Promise<import("../types.js").RawCart> {
+    this.lastRawBytes = 0;
+    const lineItems = items.map((i) => {
+      const cached = this.#cache.get(i.id);
+      if (!cached) throw new Error(`Unknown product id "${i.id}" for eBay.`);
+      return {
+        id: i.id,
+        variantId: cached.itemId,
+        quantity: i.quantity,
+        name: cached.name,
+        unitPrice: { value: cached.price.value, currency: cached.price.currency },
+      };
+    });
+    const currency = lineItems[0]?.unitPrice.currency ?? this.manifest.currency;
+    const subtotal = Number(lineItems.reduce((sum, li) => sum + li.unitPrice.value * li.quantity, 0).toFixed(2));
+    // Handoff is the shopper's own eBay cart — they complete checkout themselves.
+    // No payment is completed by Basketed; outcome is HANDED_OFF/unknown.
+    return {
+      cartId: `ebay_cart_${Date.now().toString(36)}`,
+      lineItems,
+      subtotal: { value: subtotal, currency },
+      total: { value: subtotal, currency },
+      adjustments: [],
+      handoffUrl: "https://cart.ebay.com",
+    };
+  }
+
+  async handoff(cartId: string, _ctx: AdapterCtx): Promise<{ handoffUrl: string }> {
+    void cartId;
+    return { handoffUrl: "https://cart.ebay.com" };
   }
 }

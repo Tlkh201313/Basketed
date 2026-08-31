@@ -22,7 +22,9 @@ import type { AdapterCtx, StoreAdapter } from "../types.js";
  * adapter renders the page in stealth Chromium and parses the DOM.
  *
  * `mode: "native"` — Best Buy's own live data, same as Amazon/Target/eBay/Etsy.
- * No login, no cart (cart would need a signed-in session + anti-bot bypass).
+ * Cart is local (no retailer API) and handoff goes to https://www.bestbuy.com/cart —
+ * the human completes checkout. No payment is completed by Basketed
+ * (HANDED_OFF/unknown).
  */
 
 const SEARCH_BASE = "https://www.bestbuy.com/site/searchpage.jsp";
@@ -61,6 +63,7 @@ interface Cached {
   sku: string;
   url: string;
   name: string;
+  price: { value: number; currency: string };
 }
 
 export interface BestBuyAdapterOptions {
@@ -84,7 +87,7 @@ export class BestBuyAdapter implements StoreAdapter {
       categories: ["electronics", "general"],
       mode: "native",
       auth: "none",
-      capabilities: ["discovery", "detail"],
+      capabilities: ["discovery", "detail", "cart", "handoff"],
       domain: "bestbuy.com",
     };
   }
@@ -150,7 +153,7 @@ export class BestBuyAdapter implements StoreAdapter {
 
       const name = sanitiseProductName(titleRaw).text;
       const id = mintProductId(this.manifest.id, sku);
-      this.#cache.set(id, { sku, url: absoluteUrl, name });
+      this.#cache.set(id, { sku, url: absoluteUrl, name, price });
 
       const image = card.find('img').first().attr('src') ?? card.find('img').first().attr('data-src') ?? undefined;
 
@@ -226,5 +229,35 @@ export class BestBuyAdapter implements StoreAdapter {
     if (include.includes("stock")) detail.stock = html.toLowerCase().includes("sold out") ? "out_of_stock" : "in_stock";
     detail._meta = { provenance: PROVENANCE_NOTE };
     return detail;
+  }
+
+  async buildCart(items: Array<{ id: string; quantity: number }>, _ctx: AdapterCtx): Promise<import("../types.js").RawCart> {
+    this.lastRawBytes = 0;
+    const lineItems = items.map((i) => {
+      const cached = this.#cache.get(i.id);
+      if (!cached) throw new Error(`Unknown product id "${i.id}" for Best Buy.`);
+      return {
+        id: i.id,
+        variantId: cached.sku,
+        quantity: i.quantity,
+        name: cached.name,
+        unitPrice: { value: cached.price.value, currency: cached.price.currency },
+      };
+    });
+    const currency = lineItems[0]?.unitPrice.currency ?? this.manifest.currency;
+    const subtotal = Number(lineItems.reduce((sum, li) => sum + li.unitPrice.value * li.quantity, 0).toFixed(2));
+    return {
+      cartId: `bby_cart_${Date.now().toString(36)}`,
+      lineItems,
+      subtotal: { value: subtotal, currency },
+      total: { value: subtotal, currency },
+      adjustments: [],
+      handoffUrl: "https://www.bestbuy.com/cart",
+    };
+  }
+
+  async handoff(cartId: string, _ctx: AdapterCtx): Promise<{ handoffUrl: string }> {
+    void cartId;
+    return { handoffUrl: "https://www.bestbuy.com/cart" };
   }
 }

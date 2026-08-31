@@ -38,10 +38,10 @@ function ctx(): AdapterCtx {
 }
 
 describe("real eBay adapter", () => {
-  it("is native discovery/detail only", () => {
+  it("is native discovery/detail/cart/handoff", () => {
     const a = new EbayAdapter({ render: fakeRender({}) });
     expect(a.manifest.mode).toBe("native");
-    expect(a.manifest.capabilities).toEqual(["discovery", "detail"]);
+    expect(a.manifest.capabilities).toEqual(["discovery", "detail", "cart", "handoff"]);
   });
 
   it("search parses s-item cards", async () => {
@@ -81,5 +81,17 @@ describe("real eBay adapter", () => {
   it("refuses unknown id", async () => {
     const a = new EbayAdapter({ render: fakeRender({}) });
     await expect(a.detail("bk_ebay-ebay_nope_00000000", [], ctx())).rejects.toThrow(/server-minted/);
+  });
+
+  it("buildCart creates a local cart with handoff to ebay cart", async () => {
+    const searchHtml = searchPage([card({ itemId: "123456789012", title: "Wireless Earbuds ANC", price: "$29.99" })]);
+    const a = new EbayAdapter({ render: fakeRender({ "ebay.com/sch": searchHtml }) });
+    const [p] = await a.search({ query: "earbuds" }, ctx());
+    const cart = await a.buildCart!([{ id: p!.id, quantity: 2 }], ctx());
+    expect(cart.lineItems).toHaveLength(1);
+    expect(cart.total.value).toBe(59.98);
+    expect(cart.handoffUrl).toBe("https://cart.ebay.com");
+    const h = await a.handoff!(cart.cartId, ctx());
+    expect(h.handoffUrl).toBe("https://cart.ebay.com");
   });
 });

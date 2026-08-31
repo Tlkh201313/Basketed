@@ -128,8 +128,8 @@ Every adapter declares two independent things, and neither may be overstated.
 | Tier | Who has it |
 |---|---|
 | `discovery` `detail` | every adapter, plus real Tesco, and (S17) real Amazon, IKEA, Target and (S21) real Etsy, eBay, Best Buy |
-| `cart` | Shopify UCP, simulated, and real Tesco (via a bearer token pasted from the shopper's own tesco.com session — see [Connect stores](#security)) |
-| `handoff` | Shopify UCP, real Tesco (`tesco.com/groceries/.../trolley`, real basket) |
+| `cart` | Shopify UCP, simulated, real Tesco (bearer, see [Connect stores](#security)), and (S22) real eBay/Best Buy (local cart, no retailer API — see below) |
+| `handoff` | Shopify UCP, real Tesco (`tesco.com/groceries/.../trolley`), eBay (`cart.ebay.com`), Best Buy (`bestbuy.com/cart`) — local handoff, human completes checkout (`HANDED_OFF/unknown`) |
 | `checkout` | **nobody.** Shopify gates payment completion behind a hand-granted merchant token with no public application; Tesco's basket API is unofficial and this project does not touch card data regardless. Interface defined, not implemented. |
 
 **Real Tesco is not a licensed integration.** `search.api.tesco.com` and
@@ -151,7 +151,11 @@ nothing at all for three of the internet's most-shopped stores — scoped hard
 to unauthenticated public pages: no login, no session automation, no cart, so
 "the user is the actor" still holds for anything these adapters touch. Cart-tier
 automation would require a signed-in session and is out of scope for exactly
-that reason. Etsy, eBay and Best Buy use the same engine and same scope.
+that reason. Etsy, eBay and Best Buy use the same engine and same scope; eBay
+and Best Buy now expose a **local billing handoff** (S22) — `cart` built
+locally from cached search prices, `handoff` to `cart.ebay.com` /
+`bestbuy.com/cart` where the human pays. No retailer cart API is called and no
+payment is completed by Basketed (`HANDED_OFF/unknown`).
 
 Costco and Walmart were tried and refused: both sit behind Akamai/PerimeterX
 configurations the same stealth browser could not get past cleanly enough to
@@ -329,17 +333,19 @@ annotations, namespaced names.
 - Redaction layer over every response, as a net rather than the defence. A hit
   is a bug; the panel shows the count.
 - We never touch card data (out of PCI scope) and never store retailer
-  passwords in the clear. We do ship a scraper (S17, Amazon/IKEA/Target
-  discovery and detail) — see "Where the data comes from" for exactly what it
-  does and does not touch: no login, no session, no cart.
+  passwords in the clear. We do ship a scraper (S17/S21, Amazon/IKEA/Target
+  + Etsy/eBay/Best Buy discovery and detail) — see "Where the data comes
+  from" for exactly what it does and does not touch: no login, no session.
+  eBay/Best Buy add a local cart+handoff (S22) — no retailer cart API is
+  called, human completes checkout.
 
 ---
 
 ## Not built, stated so nobody claims it
 
-Real retailer *cart* adapters for Costco/Walmart/Amazon (none publish a
+Real retailer *cart* adapters for Costco/Walmart/Amazon/Etsy (none publish a
 consumer API; the vault holds a credential — pasted or Chrome-captured —
-nothing yet authenticates with it), real retailer OAuth (none of the four
+nothing yet authenticates with it for those), real retailer OAuth (none of the four
 publish one — see [Connect stores](#security)), a Chrome-login capture for
 any store outside that prototype four, real Shopee/Costco/Walmart discovery
 (all three were tried this session — see "Where the data comes from" — and
@@ -351,8 +357,11 @@ Tesco is the one retailer adapter that moved off this list (S16) — see
 "Where the data comes from", above: real search, real detail, and a real
 basket behind the shopper's own pasted session token. Amazon, IKEA and Target
 discovery/detail moved off this list too (S17) — real search and product data,
-no basket — and Etsy, eBay and Best Buy discovery/detail moved off this list
-in the same way (S21). Costco, Walmart and Shopee stay here in full: none has an
+no basket — Etsy, eBay and Best Buy discovery/detail moved off this list
+in the same way (S21), and eBay and Best Buy **local cart+handoff** moved off
+this list too (S22) — local cart from cached prices, handoff to the retailer's
+own cart page, human completes checkout, `HANDED_OFF/unknown` (no retailer cart
+API called). Costco, Walmart and Shopee stay here in full: none has an
 equivalent real endpoint or a stealth-browser path this project could get
 past cleanly, and `sim:amazon`'s cart stays here alongside them — see [Connect
 stores](#security) for what a Chrome-login session on those three can and

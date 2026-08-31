@@ -37,10 +37,10 @@ function ctx(): AdapterCtx {
 }
 
 describe("real Best Buy adapter", () => {
-  it("is native discovery/detail only", () => {
+  it("is native discovery/detail/cart/handoff", () => {
     const a = new BestBuyAdapter({ render: fakeRender({}) });
     expect(a.manifest.mode).toBe("native");
-    expect(a.manifest.capabilities).toEqual(["discovery", "detail"]);
+    expect(a.manifest.capabilities).toEqual(["discovery", "detail", "cart", "handoff"]);
   });
 
   it("search parses sku-item cards", async () => {
@@ -77,5 +77,15 @@ describe("real Best Buy adapter", () => {
   it("refuses unknown id", async () => {
     const a = new BestBuyAdapter({ render: fakeRender({}) });
     await expect(a.detail("bk_bby-bestbuy_nope_00000000", [], ctx())).rejects.toThrow(/server-minted/);
+  });
+
+  it("buildCart creates a local cart with handoff to Best Buy cart", async () => {
+    const searchHtml = searchPage([card({ sku: "1234567", title: "Sony Headphones", price: "$99.99" })]);
+    const a = new BestBuyAdapter({ render: fakeRender({ "searchpage": searchHtml }) });
+    const [p] = await a.search({ query: "sony" }, ctx());
+    const cart = await a.buildCart!([{ id: p!.id, quantity: 1 }], ctx());
+    expect(cart.lineItems).toHaveLength(1);
+    expect(cart.total.value).toBe(99.99);
+    expect(cart.handoffUrl).toBe("https://www.bestbuy.com/cart");
   });
 });
