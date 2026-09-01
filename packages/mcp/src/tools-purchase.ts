@@ -208,10 +208,12 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
       title: "Confirm an approved purchase",
       description:
         "Execute a cart that a HUMAN has approved. Supply the 6-digit code the person read off the " +
-        "Basketed server's console, or omit it if they already approved in the panel. Succeeds only " +
-        "against an unexpired, unconsumed approval whose cart hash still matches and whose spend " +
-        "guardrails pass. Approvals are single-use and a failed execution does not return one — a retry " +
-        "needs a fresh human approval. This cannot be bypassed in any mode, by any flag.",
+        "Basketed server's console, or omit it if they already approved in the panel. Before buying, " +
+        "the cart is re-priced with the merchant: if the total or any line has moved since the human " +
+        "looked at it, the approval is VOIDED and nothing is bought — prepare it again and ask them " +
+        "for a fresh approval. If a guardrail refuses, or the merchant cannot be reached, the approval " +
+        "is left intact and the same call can be retried. Approvals are single-use once spent. This " +
+        "cannot be bypassed in any mode, by any flag.",
       inputSchema: z.object({
         approval_id: z.string().describe("From cart_prepare"),
         code: z
