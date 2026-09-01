@@ -77,7 +77,26 @@ async function persist() {
  *
  * Split out of the listener so hydration can replay buffered requests through
  * exactly the same matching, rather than a second copy of it that could drift.
+ * Tesco has used both `customer-uuid` and `x-customer-uuid` for the same id.
  */
+function headerAliases(name) {
+  const n = String(name).toLowerCase();
+  if (n === "customer-uuid" || n === "x-customer-uuid") return ["customer-uuid", "x-customer-uuid"];
+  return [n];
+}
+
+function expandNames(names) {
+  const out = [];
+  for (const n of names || []) {
+    for (const a of headerAliases(n)) if (!out.includes(a)) out.push(a);
+  }
+  return out;
+}
+
+function headerPresent(bag, name) {
+  return headerAliases(name).some((a) => Boolean(bag[a]));
+}
+
 function absorb(details) {
   let kept = false;
   for (const [match, names] of watched) {
@@ -199,7 +218,7 @@ function looksSignedIn(cookieHeader, authCookies) {
  */
 async function arm(capture) {
   if (!capture || !capture.match) return;
-  const names = (capture.headers || []).map((h) => String(h).toLowerCase());
+  const names = expandNames(capture.headers || []);
   const had = watched.get(capture.match);
   if (had && had.length === names.length && had.every((n, i) => n === names[i])) return;
   watched.set(capture.match, names);
@@ -228,7 +247,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
     // A COMPLETE set proves a signed-in session. A partial one proves nothing:
     // the signed-out site calls the same API with fewer headers on it.
     const complete = msg.capture
-      ? (msg.capture.headers || []).every((h) => headers[String(h).toLowerCase()])
+      ? (msg.capture.headers || []).every((h) => headerPresent(headers, h))
       : false;
     respond({
       ok: true,

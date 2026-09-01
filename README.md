@@ -136,9 +136,9 @@ Every adapter declares two independent things, and neither may be overstated.
 `xapi.tesco.com` are public endpoints Tesco's own website calls, with an API
 key that is public and embedded in their frontend JS — but Tesco does not
 document or support third-party use of either, and using them this way sits
-outside Tesco's Terms of Service, same as any unofficial API client. `sim:tesco`
-is untouched by this and stays exactly what it always was: fixture data, still
-what the offline drill runs against, still real-network-free.
+outside Tesco's Terms of Service, same as any unofficial API client. There is
+one Tesco in the live product (`tsc:tesco`). Demo catalogues (`sim:*`) load
+only with `--simulated`.
 
 **Amazon, IKEA, Target (S17) and Etsy, eBay, Best Buy (S21) do circumvent anti-bot detection.** Shopify UCP
 and Tesco are plain, unmodified HTTP calls — no anti-bot layer to get past. For
@@ -175,7 +175,9 @@ for an order nobody paid for would be the most damaging bug this could ship.
 
 ## Tools
 
-Read-only:
+Two lanes on one server.
+
+**Fetch lane** — no account needed:
 
 | | |
 |---|---|
@@ -183,14 +185,19 @@ Read-only:
 | `basket_search_products` | `response_format` · `fields` · `budget_tokens` · `max_results` |
 | `basket_get_product_detail` | heavy fields only via `include` |
 | `basket_get_token_report` | tokens served vs baseline, cumulative |
+| `basket_auth_status` | which stores are signed in, which need Connect |
 
-Money-adjacent — `destructiveHint: true`, never promotable to ALLOW:
+**Purchase lane** — Connect and/or a human; spend caps live in the panel Settings page:
 
 | | |
 |---|---|
+| `basket_list_delivery_slots` | Tesco delivery windows (needs a connected session) |
+| `basket_list_accounts` | opaque handles for `cart_prepare` (never credentials) |
 | `basket_cart_prepare` | builds a real cart, mints a Cart Mandate, returns `approval_id`. **`charged: false`.** |
 | `basket_purchase_confirm` | succeeds only against a human-approved, unexpired, unconsumed, hash-matching mandate |
 | `basket_list_orders` · `basket_get_order_status` | reads; `cart_json` and `approval_id` are stripped |
+
+Connect opens the retailer's own site in a new tab, then a **Heartbeat** watches until you are signed in (or were already) and seals the session. Basketed never asks for a store password. Caps (per-order, rolling 24h, store allowlist) are edited under **Settings** — human approval cannot be turned off.
 
 ### Token levers
 
@@ -238,7 +245,7 @@ up to `<file>.basketed-backup-<timestamp>`, unrelated keys and other servers are
 preserved, the write is atomic, and the diff is printed. A config we cannot
 parse is refused and left byte-identical rather than replaced.
 
-**Kiro's `autoApprove` is a trap.** Our generated config lists only the four
+**Kiro's `autoApprove` is a trap.** Our generated config lists only the
 read-only tools there, and `basketed doctor` warns if a money-adjacent tool has
 been added by hand.
 
@@ -272,20 +279,17 @@ annotations, namespaced names.
   A bad or missing key file degrades the Connect-stores page; it never takes
   the MCP server down, so a client cannot fail to start because of this file.
   Neither shipped adapter authenticates with what is stored — Shopify UCP is
-  anonymous and the simulated stores have nothing to check it against — so
-  connecting Costco, Walmart, Shopee, Taobao or `sim:amazon` holds a credential
-  for an adapter that does not exist yet and changes no result you see today.
-  Real Tesco (`tsc:tesco`) is the exception: what it seals is the header pair
-  its basket adapter actually calls with. (`sim:amazon` is the sign-in target — not
-  the real `amz:amazon` discovery/detail adapter below, which needs no
-  credential at all.)
-- **Connect signs you in at the store, in a browser — there is no password box
-  (S19), and it is the browser you already have open (S20). Covers Amazon,
-  Costco, IKEA, Shopee, Taobao, Tesco and Walmart.**
-  None of them publish a consumer OAuth flow, so the alternative to a
-  password-paste box is not a nicer password-paste box: it is opening the
-  retailer's own login page in the browser you already use and letting you sign
-  in there. Basketed has **no field anywhere that accepts a retailer password**,
+  anonymous — so connecting is only offered where an adapter will actually
+  send the session. Real Tesco (`tsc:tesco`) is that store: what it seals is
+  the header pair its basket adapter calls with (`authorization` and
+  `customer-uuid`, plus `x-customer-uuid` so Tesco's gateway accepts either
+  name).
+- **Connect signs you in at Tesco, in a browser — there is no password box.
+  Covers Tesco.**
+  Tesco does not publish a consumer OAuth flow, so the alternative to a
+  password-paste box is not a nicer password-paste box: it is opening Tesco's
+  own login page in the browser you already use and letting you sign in
+  there. Basketed has **no field anywhere that accepts a retailer password**,
   and the route refuses one even if a policy offered it — a test asserts both.
 
   Connect is a plain `<a target="_blank">`, so the tab opens in **the same

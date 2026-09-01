@@ -27,7 +27,7 @@ function check(label, condition, detail = "") {
 
 const child = spawn(
   process.execPath,
-  [resolve(ROOT, "packages/cli/bin.js"), "serve", "--http", "--port", String(PORT), "--snapshots"],
+  [resolve(ROOT, "packages/cli/bin.js"), "serve", "--http", "--port", String(PORT), "--snapshots", "--simulated"],
   // NO_OPEN: see smoke-purchase -- this one reaches an approval too.
   {
     cwd: ROOT,

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import puppeteer, { type Browser, type Page, type HTTPRequest } from "puppeteer-core";
 import { closeConnect, TTL_MS as HANDOFF_TTL_MS } from "./handoff.js";
+import { sessionHeaderAliases } from "./connections.js";
 
 /**
  * Sign in through the retailer's own site, in a real browser tab (S15, S18, S19).
@@ -394,13 +395,16 @@ function watchForHeaders(page: Page, storeId: string, want: { match: string; hea
       const s = sessions.get(storeId);
       if (!s) return;
       for (const name of want.headers) {
-        const value = sent[name.toLowerCase()];
-        if (value) s.captured[name.toLowerCase()] = value;
+        for (const alias of sessionHeaderAliases(name)) {
+          const value = sent[alias];
+          if (value) s.captured[alias] = value;
+        }
       }
       // A COMPLETE set is proof of a signed-in session, and it usually arrives
       // before the cookie signature does. A partial one proves nothing: the
-      // signed-out site calls the same API.
-      if (want.headers.every((h) => s.captured[h.toLowerCase()])) s.loggedIn = true;
+      // signed-out site calls the same API. Tesco's customer id may arrive as
+      // either header name; aliases count as the same required header.
+      if (want.headers.every((h) => sessionHeaderAliases(h).some((a) => s.captured[a]))) s.loggedIn = true;
     } catch {
       // a request that vanished mid-flight tells us nothing; ignore it
     }

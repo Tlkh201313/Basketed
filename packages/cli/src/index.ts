@@ -38,6 +38,7 @@ const USAGE = `basketed ${SERVER_INFO.version}
                                   ...and the control panel, on a free local port
   basketed serve --stdio --no-panel   stdio only; approve with the 6-digit code
   basketed serve --fast-mode      skip per-call confirmation for READ-ONLY tools only
+  basketed serve --simulated      include demo catalogues (off by default)
   basketed serve --http [--port]  MCP over Streamable HTTP + control panel (port 8787)
   basketed serve --http --open    ...and open the panel in your browser
   basketed serve --no-open        never open a browser by itself
@@ -71,6 +72,7 @@ Environment:
   BASKETED_PANEL_PORT=n  preferred panel port (default 8787, falls back to any)
   BASKETED_NO_OPEN=1     never open a browser (same as --no-open)
   BASKETED_SNAPSHOTS=1   replay from fixtures/snapshots instead of the network
+  BASKETED_SIMULATED=1   load demo catalogues (same as --simulated)
   BASKETED_ROOT=<dir>    where fixtures/ lives (auto-detected otherwise)
   BASKETED_DB=<path>     SQLite file (default ~/.basketed/basketed.db)
 `;
@@ -238,6 +240,7 @@ export async function main(argv: string[]): Promise<void> {
   const runtime = await createRuntime({
     root,
     snapshots: flag(argv, "snapshots") || process.env["BASKETED_SNAPSHOTS"] === "1",
+    simulated: flag(argv, "simulated") || process.env["BASKETED_SIMULATED"] === "1",
     fastMode: flag(argv, "fast-mode"),
   });
 

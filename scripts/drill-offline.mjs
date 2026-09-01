@@ -80,6 +80,7 @@ const child = spawn(
       ...process.env,
       NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import "${GUARD}"`.trim(),
       BASKETED_SNAPSHOTS: "1",
+      BASKETED_SIMULATED: "1",
       BASKETED_DB: join(DB_DIR, "drill.db"),
       // The drill reaches an approval, and opening a browser mid-drill would be
       // both a surprise and a second thing to explain on stage.
@@ -169,7 +170,7 @@ try {
   const locked = await fetch(`${BASE}/approvals`);
   check("and refuses a caller without it", locked.status === 401, "no token, no approval surface");
   const tools = await rpc("tools/list", {});
-  check("MCP answers with no wire", (tools.result?.tools ?? []).length === 8, `${tools.result?.tools?.length} tools`);
+  check("MCP answers with no wire", (tools.result?.tools ?? []).length === 10, `${tools.result?.tools?.length} tools`);
 
   step(3, "search — real and simulated side by side");
   const search = await call("basket_search_products", { query: "coffee", max_results: 8 });

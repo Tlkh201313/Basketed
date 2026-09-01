@@ -231,6 +231,29 @@ describe("session credentials", () => {
     await authorizedFetch(vault, "tsc:tesco", spy)("https://xapi.tesco.com/", { method: "POST" });
     expect(seen?.get("authorization")).toBe("Bearer abc123");
     expect(seen?.get("customer-uuid")).toBe("uuid-999");
+    expect(seen?.get("x-customer-uuid")).toBe("uuid-999");
+  });
+
+  it("accepts a customer id under either header name, and a bearer without the prefix", async () => {
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      username: null,
+      secret: encodeSession({
+        headers: { authorization: "raw-jwt", "x-customer-uuid": "uuid-888" },
+      }),
+    });
+
+    let seen: Headers | undefined;
+    const spy: typeof fetch = async (_input, init) => {
+      seen = new Headers(init?.headers);
+      return new Response("{}", { status: 200 });
+    };
+
+    await authorizedFetch(vault, "tsc:tesco", spy)("https://xapi.tesco.com/", { method: "POST" });
+    expect(seen?.get("authorization")).toBe("Bearer raw-jwt");
+    expect(seen?.get("customer-uuid")).toBe("uuid-888");
+    expect(seen?.get("x-customer-uuid")).toBe("uuid-888");
   });
 
   it("registers each header value for redaction, never the JSON envelope", () => {

@@ -26,6 +26,16 @@ import {
 export const APPROVAL_TTL_MS = 5 * 60 * 1000;
 export const MAX_CODE_ATTEMPTS = 5;
 
+/**
+ * Stores whose cart/trolley requires a sealed browser session (Connect).
+ * Additive table — same idea as control's CHROME_LOGIN map.
+ */
+const SESSION_CART_STORES = new Set(["tsc:tesco"]);
+
+function storeNeedsSession(storeId: string): boolean {
+  return SESSION_CART_STORES.has(storeId);
+}
+
 export type ApprovalState = "PENDING" | "APPROVED" | "CONSUMED" | "REJECTED" | "EXPIRED";
 export type OrderState =
   | "HANDED_OFF"
@@ -183,6 +193,27 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
   const adapter = deps.registry.get(storeId)!;
   if (!adapter.buildCart) {
     throw new Error(`Store "${storeId}" cannot build a cart. It reaches only ${adapter.manifest.capabilities.join(", ")}.`);
+  }
+
+  /*
+   * Session stores (Tesco today) need a sealed vault credential before we hit
+   * the retailer's API. Failing here with a Connect-panel pointer beats a raw
+   * 401 that looks like a network bug.
+   */
+  if (storeNeedsSession(storeId)) {
+    const held = deps.vault?.get(storeId) ?? null;
+    if (!held || held.broken || held.expired) {
+      const why = held?.expired
+        ? "the connected session has expired"
+        : held?.broken
+          ? "the stored credential cannot be read"
+          : "no account is connected";
+      throw new Error(
+        `${adapter.manifest.name} trolley needs a connected session (${why}). ` +
+          `Open the Basketed panel → Connect stores → ${adapter.manifest.name}, press Connect, ` +
+          `sign in on ${adapter.manifest.domain ?? "the retailer site"} if asked.`,
+      );
+    }
   }
 
   // Vault-wrapped only for THIS store's id -- a store with no stored

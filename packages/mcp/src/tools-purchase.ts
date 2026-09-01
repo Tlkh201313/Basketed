@@ -68,6 +68,71 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
     return runtime.purchase;
   };
 
+  /* ---- list_accounts (opaque handles for cart_prepare) ---- */
+
+  server.registerTool(
+    "basket_list_accounts",
+    {
+      title: "List account handles",
+      description:
+        "Opaque account handles for cart_prepare. Session stores return an acct_session_* handle only " +
+        "when Connect has sealed a live vault session. Anonymous cart stores (Shopify UCP) return an " +
+        "acct_guest_* handle. Never credentials — metadata only. Call basket_auth_status first if a " +
+        "session store is missing.",
+      inputSchema: z.object({
+        store_id: z.string().optional().describe("One store id from list_stores; omit for every cart-capable store"),
+      }),
+      outputSchema: z.object({
+        accounts: z.array(
+          z
+            .object({
+              handle: z.string(),
+              store_id: z.string(),
+              kind: z.string(),
+              ready: z.boolean(),
+              action: z.string(),
+            })
+            .loose(),
+        ),
+        count: z.number(),
+      }),
+      annotations: READ_ONLY,
+    },
+    async (args) => {
+      const held = new Map(runtime.vault.list().map((c) => [c.storeId, c]));
+      const accounts = runtime.registry
+        .list()
+        .filter((s) => s.mode !== "simulated")
+        .filter((s) => s.capabilities.includes("cart"))
+        .filter((s) => !args.store_id || s.id === args.store_id)
+        .map((s) => {
+          const slug = s.id.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").toLowerCase();
+          const needsSession = s.id === "tsc:tesco";
+          const c = held.get(s.id);
+          const live = Boolean(c && !c.broken && !c.expired);
+          if (needsSession) {
+            if (!live) return null;
+            return {
+              handle: `acct_session_${slug}`,
+              store_id: s.id,
+              kind: "session",
+              ready: true,
+              action: `${s.name} trolley is ready.`,
+            };
+          }
+          return {
+            handle: `acct_guest_${slug}`,
+            store_id: s.id,
+            kind: "guest",
+            ready: true,
+            action: `No account needed — use this guest handle for ${s.name} carts.`,
+          };
+        })
+        .filter((a): a is NonNullable<typeof a> => a !== null);
+      return respond(runtime, { accounts, count: accounts.length });
+    },
+  );
+
   /* 5 --------------------------------------------------------- cart_prepare */
 
   server.registerTool(
@@ -86,7 +151,7 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
           .describe("Product ids from search_products, all from the same store"),
         account_handle: z
           .string()
-          .describe("An opaque handle from list_accounts, e.g. acct_guest_shp_gymshark. Never a credential."),
+          .describe("An opaque handle from basket_list_accounts, e.g. acct_guest_shp_gymshark or acct_session_tsc_tesco. Never a credential."),
         address_id: z.string().optional().describe("An address id previously allowlisted in the panel"),
       }),
       outputSchema: z
@@ -274,6 +339,8 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
 }
 
 export const PURCHASE_TOOL_NAMES = [
+  "basket_list_delivery_slots",
+  "basket_list_accounts",
   "basket_cart_prepare",
   "basket_purchase_confirm",
   "basket_list_orders",

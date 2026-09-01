@@ -31,7 +31,7 @@ function check(label, ok, detail = "") {
   console.log(`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}`);
 }
 
-const child = spawn(process.execPath, [resolve(ROOT, "packages/cli/bin.js"), "serve", "--stdio", "--snapshots"], {
+const child = spawn(process.execPath, [resolve(ROOT, "packages/cli/bin.js"), "serve", "--stdio", "--snapshots", "--simulated"], {
   cwd: ROOT,
   stdio: ["pipe", "pipe", "pipe"],
   env: {

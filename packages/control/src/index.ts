@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { handleApi } from "./api.js";
-import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, type StoreRow } from "./pages.js";
+import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, renderSettings, type StoreRow } from "./pages.js";
 import { stateOf as chromeLoginStateOf, chromeMode } from "./browser-connect.js";
 import type { ControlDeps } from "./types.js";
 
@@ -207,7 +207,7 @@ export function createPanelHandler(
     // meant to answer "why was I refused" from the server's own console
     // without ever putting a secret in that answer.
     const authed = tokenMatches(suppliedToken(req, url), opts.token);
-    if (!authed && (path.startsWith("/api/") || path === "/" || path === "/approvals" || path.startsWith("/approvals/") || path === "/connections" || path.startsWith("/connections/"))) {
+    if (!authed && (path.startsWith("/api/") || path === "/" || path === "/approvals" || path.startsWith("/approvals/") || path === "/connections" || path.startsWith("/connections/") || path === "/settings")) {
       log(`401 ${method} ${path} (${suppliedToken(req, url) ? "token did not match" : "no token supplied"})`);
     }
 
@@ -303,13 +303,19 @@ export function createPanelHandler(
         path === "/approvals" ||
         path.startsWith("/approvals/") ||
         path === "/connections" ||
-        path.startsWith("/connections/"));
+        path.startsWith("/connections/") ||
+        path === "/settings");
 
     if (isPanelPage) {
       // The locked page carries no token, so an agent that GETs the panel
       // learns nothing it could replay against /api.
       if (!authed) {
         send(res, 401, "text/html; charset=utf-8", renderLocked());
+        return true;
+      }
+
+      if (path === "/settings") {
+        send(res, 200, "text/html; charset=utf-8", renderSettings(opts.token), { "set-cookie": setCookie });
         return true;
       }
 
@@ -337,7 +343,7 @@ export function createPanelHandler(
       if (path.startsWith("/connections/")) {
         const storeId = decodeURIComponent(path.slice("/connections/".length));
         const store = deps.registry.list().find((s) => s.id === storeId);
-        if (!store) {
+        if (!store || store.mode === "simulated") {
           send(
             res,
             404,

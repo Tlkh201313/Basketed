@@ -115,6 +115,43 @@ export function decodeSession(raw: string): SessionSecret | null {
   }
 }
 
+/**
+ * Headers a sealed session should actually send.
+ *
+ * Tesco (GavinAttard/tesco-grocery-mcp + PR #1) accepts the shopper id as
+ * either `customer-uuid` or `x-customer-uuid`; sending both is what their
+ * live frontend does, and a capture that only saw one still authenticates.
+ * A bearer without the "Bearer " prefix is normalised the same way.
+ */
+export function applySessionHeaders(target: Headers, session: SessionSecret): void {
+  const normalised = normaliseSessionHeaders(session.headers);
+  for (const [name, value] of Object.entries(normalised)) {
+    if (!value) continue;
+    try {
+      target.set(name, value);
+    } catch {
+      // Fetch forbids some names on Headers (e.g. Cookie in some runtimes).
+      // The outbound fetch still receives them via the plain-object merge below.
+    }
+  }
+}
+
+/** Same aliases, for the capture path that seals the envelope. */
+export function normaliseSessionHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (typeof value === "string" && value) out[name.toLowerCase()] = value;
+  }
+  const uuid = out["customer-uuid"] ?? out["x-customer-uuid"];
+  if (uuid) {
+    out["customer-uuid"] = uuid;
+    out["x-customer-uuid"] = uuid;
+  }
+  const auth = out["authorization"];
+  if (auth && !/^bearer\s/i.test(auth)) out["authorization"] = `Bearer ${auth}`;
+  return out;
+}
+
 /** What the panel is allowed to see: everything except the secret itself. */
 export interface Connection {
   storeId: string;
@@ -413,9 +450,7 @@ export function authorizedFetch(vault: Vault, storeId: string, base: typeof fetc
       // answers 401 and the panel says "reconnect" -- rather than an
       // exception thrown from inside the one closure an adapter cannot see.
       if (!session) return base(input, init);
-      // Verbatim, in the order the browser sent them. The vault does not know
-      // or care what any of these mean.
-      for (const [name, value] of Object.entries(session.headers)) headers.set(name, value);
+      applySessionHeaders(headers, session);
     } else return base(input, init);
 
     return base(input, { ...init, headers });

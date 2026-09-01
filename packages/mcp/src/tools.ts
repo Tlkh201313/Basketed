@@ -335,21 +335,91 @@ export function registerReadOnlyTools(server: McpServer, runtime: Runtime): void
     async () =>
       ok(runtime, {
         ...runtime.ledger.report(),
-        // A non-zero count here means a secret reached the boundary and was
-        // caught by the net rather than by the design. It is surfaced, not hidden.
         redaction_alarms: runtime.redactor.alarms(),
         provenance: PROVENANCE_NOTE,
       }),
   );
 }
 
-/** Names in wire order. Used by the install writers and the conformance test. */
-export const TOOL_NAMES = [
+export function registerAuthTools(server: McpServer, runtime: Runtime): void {
+  server.registerTool(
+    "basket_auth_status",
+    {
+      title: "Auth status",
+      description:
+        "Which stores are signed in, which need Connect, and which work without an account. " +
+        "Check this before cart or delivery-slot calls instead of waiting on a 401. " +
+        "Credentials are never returned — only metadata.",
+      inputSchema: z.object({
+        store_id: z.string().optional().describe("One store id from list_stores; omit for every live store"),
+      }),
+      outputSchema: z.object({
+        stores: z.array(
+          z
+            .object({
+              id: z.string(),
+              name: z.string(),
+              connected: z.boolean(),
+              expired: z.boolean(),
+              broken: z.boolean(),
+              cart: z.boolean(),
+              status: z.string(),
+              action: z.string(),
+            })
+            .loose(),
+        ),
+        count: z.number(),
+      }),
+      annotations: { ...READ_ONLY, openWorldHint: false },
+    },
+    async (args) => {
+      const held = new Map(runtime.vault.list().map((c) => [c.storeId, c]));
+      const rows = runtime.registry
+        .list()
+        .filter((s) => s.mode !== "simulated")
+        .filter((s) => !args.store_id || s.id === args.store_id)
+        .map((s) => {
+          const c = held.get(s.id);
+          const connected = Boolean(c && !c.broken && !c.expired);
+          const expired = Boolean(c?.expired);
+          const broken = Boolean(c?.broken);
+          const cart = s.capabilities.includes("cart");
+          const needsSession = s.id === "tsc:tesco";
+          let action = "No account needed for search.";
+          if (needsSession && connected) action = "Tesco trolley is ready.";
+          else if (needsSession && expired) action = "Tesco session expired. Reconnect Tesco in the Basketed panel.";
+          else if (needsSession && broken) action = "Tesco credential cannot be read. Reconnect Tesco in the Basketed panel.";
+          else if (needsSession) action = "Connect Tesco in the Basketed panel to use the trolley and delivery slots.";
+          return {
+            id: s.id,
+            name: s.name,
+            connected,
+            expired,
+            broken,
+            cart,
+            status: s.status,
+            action,
+          };
+        });
+      return ok(runtime, { stores: rows, count: rows.length });
+    },
+  );
+}
+
+/**
+ * Fetch lane — no account needed. Wire order for install / Kiro autoApprove.
+ *
+ * Delivery slots live on the purchase lane: they refuse without a vault session.
+ * `TOOL_NAMES` is an alias so older callers and the install-conformance test
+ * keep matching the fetch surface only.
+ */
+export const FETCH_TOOL_NAMES = [
   "basket_list_stores",
   "basket_search_products",
   "basket_get_product_detail",
   "basket_get_token_report",
-  // Appended, never inserted: the four above keep their wire positions, so a
-  // provider's cached tool list is not invalidated by a fifth arriving.
-  "basket_list_delivery_slots",
+  "basket_auth_status",
 ] as const;
+
+/** @deprecated Prefer FETCH_TOOL_NAMES — same list, fetch lane only. */
+export const TOOL_NAMES = FETCH_TOOL_NAMES;

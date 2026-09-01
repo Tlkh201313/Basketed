@@ -31,9 +31,8 @@ import type { AdapterCtx, CartLineItem, RawCart, StoreAdapter } from "../types.j
  *
  * This is `mode: "native"` for search/detail (Tesco's own live data, same
  * standing as Shopify UCP) because it is exactly that: no scraping, no DOM
- * parsing, a JSON API returning real prices. It is a genuinely different
- * claim from `sim:tesco`, which stays exactly as it was -- untouched, still
- * fixture-backed, still what the offline drill depends on.
+ * parsing, a JSON API returning real prices. Demo catalogues (`sim:tesco`)
+ * stay fixture-backed and load only with `--simulated`.
  *
  * Cart needs the shopper's own session, which nobody can hand out an API key
  * for -- there is no "Sign in with Tesco". `buildCart` sends whatever the
@@ -145,6 +144,8 @@ function graphqlHeaders(): Record<string, string> {
     "x-apikey": API_KEY,
     region: "UK",
     language: "en-GB",
+    Origin: "https://www.tesco.com",
+    Referer: "https://www.tesco.com/groceries/",
     "User-Agent": USER_AGENT,
   };
 }

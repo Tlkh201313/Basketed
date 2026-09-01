@@ -119,6 +119,12 @@ export interface RuntimeOptions {
   root?: string;
   /** Replay from fixtures/snapshots instead of the network. */
   snapshots?: boolean;
+  /**
+   * Load the fixture catalogues (`sim:tesco` and friends). Off by default —
+   * this is a shopping service, not a demo of two Tescos. Tests and
+   * `basketed serve --simulated` still opt in.
+   */
+  simulated?: boolean;
   /** Where adapter diagnostics go. NEVER stdout on the stdio transport. */
   log?: (msg: string) => void;
   /** SQLite path. ":memory:" in tests. */
@@ -151,18 +157,19 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
       loaded.push(adapter.manifest.id);
     }
   } catch (err) {
-    // A missing pin file must not take the server down -- the simulated stores
-    // still answer, and list_stores tells the truth about what is present.
     log(`no pinned Shopify stores: ${(err as Error).message}`);
   }
 
-  try {
-    for (const adapter of await SimulatedAdapter.loadAll(root)) {
-      registry.register(adapter);
-      loaded.push(adapter.manifest.id);
+  const simulated = opts.simulated ?? process.env["BASKETED_SIMULATED"] === "1";
+  if (simulated) {
+    try {
+      for (const adapter of await SimulatedAdapter.loadAll(root)) {
+        registry.register(adapter);
+        loaded.push(adapter.manifest.id);
+      }
+    } catch (err) {
+      log(`no simulated catalog: ${(err as Error).message}`);
     }
-  } catch (err) {
-    log(`no simulated catalog: ${(err as Error).message}`);
   }
 
   // Real Tesco (S16). Registered even under --snapshots -- unlike Shopify UCP
@@ -229,6 +236,12 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
 
   const byMode = new Map<string, number>();
   for (const row of registry.list()) byMode.set(row.mode, (byMode.get(row.mode) ?? 0) + 1);
+
+  const tescoHeld = vault.get("tsc:tesco");
+  if (registry.get("tsc:tesco")) {
+    const live = tescoHeld !== null && !tescoHeld.broken && !tescoHeld.expired;
+    registry.setStatus("tsc:tesco", live ? "ready" : "needs_auth");
+  }
 
   return {
     registry,

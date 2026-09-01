@@ -42,20 +42,20 @@ export const PRIMARY_CLIENTS = ["claude-code", "cursor", "codex", "claude-deskto
  * opencode's config file.
  */
 /**
- * The read-only tool names, for clients that pre-approve by name.
+ * Fetch-lane tool names, for clients that pre-approve by name (Kiro autoApprove).
  *
- * Duplicated from `@basketed/mcp`'s TOOL_NAMES rather than imported: control
- * does not depend on mcp and inverting that layering to share a string array
- * would be the wrong trade. The copy is not left to drift -- a test in
- * `packages/cli` asserts the two lists are identical and that none of these
- * appears in NEVER_ALLOW.
+ * Duplicated from `@basketed/mcp`'s FETCH_TOOL_NAMES rather than imported:
+ * control does not depend on mcp. A test in `packages/cli` asserts the two
+ * lists are identical and that none of these appears in NEVER_ALLOW.
+ *
+ * Slots are purchase-lane (need a connected session) and must never auto-approve.
  */
 export const READ_ONLY_TOOL_NAMES = [
   "basket_list_stores",
   "basket_search_products",
   "basket_get_product_detail",
   "basket_get_token_report",
-  "basket_list_delivery_slots",
+  "basket_auth_status",
 ] as const;
 
 export const CLIENT_ALIASES: Record<string, string> = {

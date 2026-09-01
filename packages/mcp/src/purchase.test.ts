@@ -136,7 +136,9 @@ describe("2 — purchase is blocked in fast mode", () => {
   it("never auto-confirms a money-adjacent tool, whatever the flag says", () => {
     const fast = createPolicy(true);
     for (const name of NEVER_ALLOW) expect(mayAutoConfirm(fast, name)).toBe(false);
-    for (const name of PURCHASE_TOOL_NAMES.slice(0, 2)) expect(mayAutoConfirm(fast, name)).toBe(false);
+    for (const name of ["basket_cart_prepare", "basket_purchase_confirm"]) {
+      expect(mayAutoConfirm(fast, name)).toBe(false);
+    }
     // Read-only tools are exactly what the flag is for.
     expect(mayAutoConfirm(fast, "basket_search_products")).toBe(true);
     expect(mayAutoConfirm(createPolicy(false), "basket_search_products")).toBe(false);
@@ -291,6 +293,54 @@ describe("5 — the surface itself cannot approve", () => {
     for (const name of ["basket_cart_prepare", "basket_purchase_confirm"]) {
       expect(NEVER_ALLOW).toContain(name);
     }
+  });
+
+  it("lists accounts and slots on the purchase lane", () => {
+    expect(PURCHASE_TOOL_NAMES).toContain("basket_list_accounts");
+    expect(PURCHASE_TOOL_NAMES).toContain("basket_list_delivery_slots");
+    expect(TOOL_NAMES).not.toContain("basket_list_delivery_slots");
+  });
+});
+
+describe("session stores refuse prepare without Connect", () => {
+  it("fails before hitting Tesco when the vault has no live session", async () => {
+    const thin = {
+      manifest: {
+        id: "tsc:tesco",
+        name: "Tesco",
+        domain: "tesco.com",
+        country: "GB",
+        currency: "GBP",
+        mode: "native" as const,
+        categories: ["grocery" as const],
+        capabilities: ["discovery", "detail", "cart"] as const,
+        auth: "none" as const,
+      },
+      search: async () => [],
+      detail: async () => {
+        throw new Error("unused");
+      },
+      buildCart: async () => {
+        throw new Error("buildCart must not run without a session");
+      },
+    };
+    const reg = new StoreRegistry();
+    reg.register(thin as never);
+    const id = "bk_tsc-tesco_gate";
+
+    const local: PurchaseDeps = {
+      ...deps,
+      registry: reg,
+      vault: { list: () => [], get: () => null } as never,
+    };
+
+    await expect(
+      prepareCart(local, {
+        items: [{ id, quantity: 1 }],
+        accountHandle: "acct_session_tsc_tesco",
+        principal: PRINCIPAL,
+      }),
+    ).rejects.toThrow(/connected session|Connect stores|Tesco/i);
   });
 });
 

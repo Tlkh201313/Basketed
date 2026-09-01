@@ -17,3 +17,10 @@ master.key
 # Backups written by the config installers
 *.basketed-backup-*
 .gstack/
+
+# Local agent/editor scratch — never commit
+.codegraph/
+.kiro/
+.vscode/
+*-local-command-caveat*.txt
+evals/

@@ -27,7 +27,7 @@ function esc(s: unknown): string {
  * proved it holds the token. `renderLocked()` is what an unauthenticated GET
  * gets, and it deliberately goes through neither this function nor SCRIPT.
  */
-type Page = "home" | "connections" | "approvals";
+type Page = "home" | "connections" | "approvals" | "settings";
 
 /**
  * The mark: a `--pri` square holding a serif lowercase b.
@@ -49,6 +49,7 @@ const ICON: Record<string, string> = {
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>`,
   plug: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
   check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>`,
+  gear: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`,
 };
 
 function navItem(href: string, label: string, icon: string, on: boolean): string {
@@ -70,7 +71,7 @@ function shell(
   main: string,
   token: string,
   bar = "",
-  sheet = active === "home" ? "install" : active === "approvals" ? "appr" : "stores",
+  sheet = active === "home" ? "install" : active === "approvals" ? "appr" : active === "settings" ? "settings" : "stores",
 ): string {
   return `<!doctype html>
 <html lang="en">
@@ -95,6 +96,7 @@ function shell(
       ${navItem("/", "Install", "home", active === "home")}
       ${navItem("/connections", "Connect stores", "plug", active === "connections")}
       ${navItem("/approvals", "Approvals", "check", active === "approvals")}
+      ${navItem("/settings", "Settings", "gear", active === "settings")}
     </nav>
     <div class="foot">
       <div class="themeseg" role="group" aria-label="Theme">
@@ -211,11 +213,14 @@ const TOOL_SURFACE: { safe: [string, string][]; money: [string, string][] } = {
     ["basket_list_stores", "which stores are loaded, and in what mode"],
     ["basket_search_products", "search across every loaded store at once"],
     ["basket_get_product_detail", "one product, normalised"],
-    ["basket_list_orders", "orders this machine has recorded"],
-    ["basket_get_order_status", "where one order got to"],
     ["basket_get_token_report", "what the last call cost, in tokens"],
+    ["basket_auth_status", "which stores are signed in, and which need Connect"],
   ],
   money: [
+    ["basket_list_delivery_slots", "delivery windows — needs a connected session"],
+    ["basket_list_accounts", "opaque handles for cart_prepare"],
+    ["basket_list_orders", "orders this machine has recorded"],
+    ["basket_get_order_status", "where one order got to"],
     ["basket_cart_prepare", "builds a cart and stops — this is what opens an approval"],
     ["basket_purchase_confirm", "spends money, and only after you approved this exact cart"],
   ],
@@ -331,19 +336,19 @@ ${h2("Install", `${primary.length} verified`)}
 ${h2("Everything else", `${rest.length} more`)}
 <div class="clients">${rest.map((c, i) => row(c, primary.length + i + 1)).join("")}</div>
 
-${h2("Tool surface", `${TOOL_SURFACE.safe.length + TOOL_SURFACE.money.length} tools`)}
+${h2("Tool surface", `${TOOL_SURFACE.safe.length + TOOL_SURFACE.money.length} tools · two lanes`)}
 <div class="tools">
   <div class="toolcard">
     <div class="cap">
-      <span class="pill ok">read only</span>
-      <span class="what">Answer questions. Never move money.</span>
+      <span class="pill ok">fetch lane</span>
+      <span class="what">No account needed. Search and status only.</span>
     </div>
     ${toolRows(TOOL_SURFACE.safe)}
   </div>
   <div class="toolcard money">
     <div class="cap">
-      <span class="pill wait">money adjacent</span>
-      <span class="what">Declared <code>destructiveHint: true</code>, and gated.</span>
+      <span class="pill wait">purchase lane</span>
+      <span class="what">Needs Connect and/or a human. Caps in Settings.</span>
     </div>
     ${toolRows(TOOL_SURFACE.money)}
   </div>
@@ -442,40 +447,7 @@ function firstSentence(text: string): string {
  * says which of the two you are looking at, in the terms a shopper would use.
  */
 function modeLabel(mode: string): string {
-  return mode === "native" ? "live data" : "sample data";
-}
-
-/**
- * Brands carried by more than one source (S18).
- *
- * Amazon, Tesco and IKEA each appear twice in the registry, and the reason is
- * real: one row is the retailer's own live data, the other is a fixture set
- * the offline drill depends on. They are genuinely different stores with
- * different capabilities, so they cannot be collapsed into one row without
- * claiming a union of capabilities neither one has — the exact overclaim
- * `StoreRegistry.register` throws on.
- *
- * What they CAN stop doing is appearing twice with no explanation. This pairs
- * them up so each card can name its twin, and so the sort can seat them next
- * to each other. Keyed on the display name, which is what a reader matches
- * on; the ids differ by design.
- */
-function twinsByBrand(stores: StoreRow[]): Map<string, StoreRow> {
-  const byBrand = new Map<string, StoreRow[]>();
-  for (const s of stores) {
-    const key = s.name.trim().toLowerCase();
-    byBrand.set(key, [...(byBrand.get(key) ?? []), s]);
-  }
-  const twin = new Map<string, StoreRow>();
-  for (const group of byBrand.values()) {
-    if (group.length !== 2) continue;
-    const live = group.find((s) => s.mode === "native");
-    const sample = group.find((s) => s.mode !== "native");
-    if (!live || !sample) continue;
-    twin.set(live.id, sample);
-    twin.set(sample.id, live);
-  }
-  return twin;
+  return mode === "native" ? "live" : mode === "simulated" ? "demo" : mode;
 }
 
 /**
@@ -526,32 +498,22 @@ function connectAnchor(store: StoreRow, policy: StoreAuthPolicy, label: string, 
 }
 
 export function renderConnections(input: ConnectionsInput): string {
-  const twin = twinsByBrand(input.stores);
+  const stores = input.stores.filter((s) => s.mode !== "simulated");
 
   const card = (s: StoreRow) => {
     const policy = authPolicyFor(s);
     const connectable = policy.methods.length > 0;
-    const other = twin.get(s.id);
     const live = s.mode === "native";
     return `<article class="appcard" data-store="${esc(s.id)}" data-name="${esc(s.name.toLowerCase())}" data-connectable="${connectable}">
   <div class="head">
     <span class="tile" aria-hidden="true">${esc(monogram(s.name))}</span>
     <div style="min-width:0">
       <div class="name"><a href="/connections/${encodeURIComponent(s.id)}">${esc(s.name)}</a></div>
-      <div class="where">${esc(s.id)}${s.country ? ` · ${esc(s.country)}` : ""}</div>
+      <div class="where">${esc(s.country)}${s.currency ? ` · ${esc(s.currency)}` : ""}</div>
     </div>
     <span class="pill ${live ? "ok" : "sim"}" style="margin-left:auto">${esc(modeLabel(s.mode))}</span>
   </div>
   <p class="reach">${esc(firstSentence(policy.reach))}</p>
-  ${
-    other
-      ? `<p class="twin">${
-          live
-            ? `Also listed as <a href="/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>, the demo copy the offline drill runs on. This is the live one.`
-            : `The real ${esc(s.name)} is <a href="/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>. This row is demo data, kept so the demo works with the wifi off.`
-        }</p>`
-      : ""
-  }
   <div class="foot">
     <span data-status><span class="pill off">checking</span></span>
     <span class="right">${
@@ -564,15 +526,8 @@ export function renderConnections(input: ConnectionsInput): string {
 </article>`;
   };
 
-  // Twins adjacent, real source first, so the pair reads as a pair.
-  const ordered = [...input.stores].sort((a, b) => {
-    const byName = a.name.localeCompare(b.name);
-    if (byName !== 0) return byName;
-    if (a.mode === b.mode) return a.id.localeCompare(b.id);
-    return a.mode === "native" ? -1 : 1;
-  });
-
-  const n = input.stores.length;
+  const ordered = [...stores].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  const n = stores.length;
 
   return shell(
     "Connect stores",
@@ -580,24 +535,21 @@ export function renderConnections(input: ConnectionsInput): string {
     `
 <h1>Connect stores</h1>
 <p class="lede">
-  Connect opens the store's own site in a browser tab and you sign in there. <strong>Basketed never
-  asks you for a password</strong> &mdash; there is no field on this page that takes one. What comes
-  back is sealed with AES-256-GCM under a key on this machine and handed to nothing but the request
-  interceptor, and <strong>no agent can read it back</strong>.
+  Connect opens the store's own site in a tab of this browser. You sign in there.
+  <strong>Basketed never asks for a password</strong> &mdash; there is no field that takes one.
+  The session is sealed on this machine. No agent can read it back.
 </p>
 
 <div class="sage" style="margin-top:22px">
   <span class="eyebrow">how connecting works</span>
   <p>
-    None of these retailers publish a consumer OAuth flow, so nobody can offer a real
-    <strong>Sign in with</strong> button for them. The next best thing is the real thing: a tab opens
-    on the retailer's own page, at their own URL. Already signed in there? It finishes on its own.
-    Not signed in? Sign in on their page and it finishes the moment you are through. Stores marked
-    <em>no account needed</em> work signed-out and have nothing to connect.
+    Tesco search works signed-out. Connect is only for the trolley: a tab opens on tesco.com,
+    you sign in on Tesco's page, and Basketed lifts the session Tesco's own site already uses.
+    Stores marked <em>no account needed</em> are live search &mdash; nothing to connect.
   </p>
 </div>
 
-${h2("Stores", twin.size ? `${twin.size / 2} carried by two sources` : "")}
+${h2("Stores", "")}
 <div class="appgrid" id="stores">${ordered.map(card).join("")}</div>
 <div class="empty" id="nostores" hidden>Nothing matches that.</div>
 `,
@@ -674,8 +626,9 @@ export function renderConnect(input: ConnectInput): string {
     <p class="small" style="margin:8px 0 0">
       Connect opens ${store} in <strong>a new tab of this browser</strong> &mdash; the one you are
       reading this in, with the accounts you are already signed into. Nothing is launched and nothing
-      is automated: it is a link. If you are already signed in at ${store}, the connection finishes on
-      its own; if you are not, sign in on their page and it finishes the moment you are through.
+      is automated: it is a link. A <strong>Heartbeat</strong> then watches that tab: if you are already
+      signed in at ${store}, the connection finishes on its own; if you are not, that tab is pointed at
+      their login page and Heartbeat finishes the moment you are through.
       Basketed never asks you for a password and has no field to type one into.
     </p>
     <div class="row" style="margin-top:18px" data-ext-badge hidden>
@@ -687,7 +640,7 @@ export function renderConnect(input: ConnectInput): string {
       <span class="small" data-connect-msg></span>
     </div>
     <div class="row" style="margin-top:20px" data-connect-waiting hidden>
-      <span class="small" data-connect-status>Waiting for ${store} in the other tab&hellip;</span>
+      <span class="small" data-connect-status>Heartbeat: watching ${store} in the other tab&hellip;</span>
       <a class="btn sm" href="${esc(login.loginUrl)}" target="_blank" rel="noopener noreferrer" data-connect-signin hidden>Sign in at ${store}</a>
       <button class="btn sm danger" type="button" data-connect-cancel>Stop waiting</button>
     </div>
@@ -821,8 +774,65 @@ ${h2("Waiting for you", "refreshes every 5s")}
 ${h2("Orders")}
 <div id="orders"><div class="empty">Loading…</div></div>
 
-${h2("Guardrails", "checked at confirm, never at prepare")}
+${h2("Guardrails", "checked at confirm · edit in Settings")}
+<p class="small" style="margin:0 0 10px"><a href="/settings">Open Settings to change caps &amp; store allowlist &rarr;</a></p>
 <div id="guardrails" class="hair rails"></div>
+`,
+    token,
+  );
+}
+
+/* --------------------------------------------------------------- settings */
+
+export function renderSettings(token: string): string {
+  return shell(
+    "Settings",
+    "settings",
+    `
+<h1>Spend caps and store allowlist.</h1>
+<p class="lede">
+  These are your standing rules for every purchase. Caps are checked at
+  <strong>confirm</strong>, never at prepare. Human approval cannot be turned off —
+  caps only refuse carts that would break your budget.
+</p>
+
+<form id="settings-form" data-settings-form>
+  <div class="two" style="margin-top:8px">
+    <div class="card">
+      <span class="eyebrow">home currency</span>
+      <label class="small" for="home_currency" style="display:block;margin:10px 0 6px">ISO code (e.g. GBP, USD)</label>
+      <input class="field" id="home_currency" name="home_currency" maxlength="3" pattern="[A-Za-z]{3}" required autocomplete="off" />
+      <label class="small" for="per_order_cap" style="display:block;margin:16px 0 6px">Per-order cap</label>
+      <input class="field" id="per_order_cap" name="per_order_cap" type="number" min="0" max="1000000" step="0.01" required />
+      <label class="small" for="daily_cap" style="display:block;margin:16px 0 6px">Rolling 24h cap</label>
+      <input class="field" id="daily_cap" name="daily_cap" type="number" min="0" max="1000000" step="0.01" required />
+      <div class="row" style="margin-top:18px">
+        <button class="btn pri" type="submit">Save caps</button>
+        <span class="small" data-settings-msg></span>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="sage">
+        <span class="eyebrow">spent in the last 24h</span>
+        <p style="margin:8px 0 0"><strong data-settings-spent>—</strong></p>
+        <p class="small" style="margin:6px 0 0">Remaining under the daily cap: <strong data-settings-remaining>—</strong></p>
+      </div>
+      <div class="risk">
+        <span class="eyebrow">human approval stays on</span>
+        <p>
+          Every cart still needs you to type the total in Approvals or read the
+          6-digit console code. There is no toggle that lets an agent skip that.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  ${h2("Store allowlist", "empty = any cart-capable store")}
+  <p class="small" style="margin:0 0 12px">
+    Tick stores the agent may prepare a cart for. Leave all unchecked to allow every cart-capable store.
+  </p>
+  <div id="settings-stores" class="stack" style="gap:8px"><div class="empty">Loading…</div></div>
+</form>
 `,
     token,
   );

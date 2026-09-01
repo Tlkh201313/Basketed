@@ -82,7 +82,7 @@ try {
   const kiro = join(DIR, "kiro.json");
   installClient(findClient("kiro"), opts(kiro));
   const auto = JSON.parse(readFileSync(kiro, "utf8")).mcpServers.basketed.autoApprove;
-  check("Kiro autoApprove lists only read-only tools", Array.isArray(auto) && auto.length === 4);
+  check("Kiro autoApprove lists only read-only tools", Array.isArray(auto) && auto.length === 5);
   check(
     "Kiro autoApprove NEVER lists a money-adjacent tool",
     !auto.some((t) => /cart_prepare|purchase_confirm/.test(t)),

@@ -66,6 +66,10 @@ const ROOT = resolve(import.meta.dirname, "../../..");
 const PRINCIPAL = "local:test";
 const ctx: AdapterCtx = { http: fetch, log: () => {}, snapshots: true };
 const TOKEN = randomBytes(32).toString("base64url");
+const TESCO_ID = "tsc:tesco";
+const TESCO_API = "/api/connections/tsc%3Atesco";
+const TESCO_HEADERS = { authorization: "Bearer tesco-secret-token", "customer-uuid": "cust-uuid-1" };
+const tescoSession = () => encodeSession({ headers: TESCO_HEADERS });
 
 let server: Server;
 let base: string;
@@ -448,40 +452,41 @@ describe("attached to a stdio server, with no MCP endpoint of its own", () => {
  * echoes a secret back, not even to a caller that just supplied one.
  */
 describe("connections (S14)", () => {
-  it("lists every registered store with a real auth policy, unauthenticated refused", async () => {
+  it("lists live stores only — demo catalogues stay off Connect", async () => {
     const noToken = await raw("/api/connections");
     expect(noToken.status).toBe(401);
 
     const res = await panel("/api/connections");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { connections: Array<Record<string, unknown>> };
-    const tesco = body.connections.find((c) => c["store_id"] === "sim:tesco");
+    expect(body.connections.some((c) => String(c["store_id"]).startsWith("sim:"))).toBe(false);
+    expect(body.connections.filter((c) => c["name"] === "Tesco")).toHaveLength(1);
+    const tesco = body.connections.find((c) => c["store_id"] === TESCO_ID);
     expect(tesco).toBeTruthy();
-    // S19: one method, and it is the one the browser sign-in produces.
-    expect(tesco!["methods"]).toEqual(["cookie"]);
+    expect(tesco!["methods"]).toEqual(["session"]);
     expect(tesco!["connected"]).toBe(false);
-    expect(String(tesco!["reach"])).toMatch(/no public/i);
+    expect(String(tesco!["reach"])).toMatch(/trolley|Connect/i);
   });
 
   it("connecting a store seals the secret and returns metadata only", async () => {
-    const res = await panel("/api/connections/sim%3Atesco", {
+    const res = await panel(TESCO_API, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "cookie", secret: "hunter2plaintext" }),
+      body: JSON.stringify({ method: "session", secret: tescoSession() }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(JSON.stringify(body)).not.toContain("hunter2plaintext");
-    expect(body).toMatchObject({ ok: true, store_id: "sim:tesco", method: "cookie" });
+    expect(JSON.stringify(body)).not.toContain("tesco-secret-token");
+    expect(body).toMatchObject({ ok: true, store_id: TESCO_ID, method: "session" });
 
-    expect(vault.reveal("sim:tesco")?.secret).toBe("hunter2plaintext");
+    expect(decodeSession(vault.reveal(TESCO_ID)?.secret ?? "")?.headers["authorization"]).toBe("Bearer tesco-secret-token");
 
     const list = (await (await panel("/api/connections")).json()) as {
       connections: Array<Record<string, unknown>>;
     };
-    const tesco = list.connections.find((c) => c["store_id"] === "sim:tesco");
+    const tesco = list.connections.find((c) => c["store_id"] === TESCO_ID);
     expect(tesco?.["connected"]).toBe(true);
-    expect(JSON.stringify(tesco)).not.toContain("hunter2plaintext");
+    expect(JSON.stringify(tesco)).not.toContain("tesco-secret-token");
   });
 
   it("refuses a store that does not exist", async () => {
@@ -513,45 +518,45 @@ describe("connections (S14)", () => {
     for (const store of deps.registry.list()) {
       expect(authPolicyFor(store).methods).not.toContain("password");
     }
-    const res = await panel("/api/connections/sim%3Atesco", {
+    const res = await panel(TESCO_API, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ method: "password", username: "me@example.com", secret: "hunter2plaintext" }),
     });
     expect(res.status).toBe(400);
-    expect(vault.get("sim:tesco")).toBeNull();
+    expect(vault.get(TESCO_ID)).toBeNull();
   });
 
   it("refuses an empty secret", async () => {
-    const res = await panel("/api/connections/sim%3Atesco", {
+    const res = await panel(TESCO_API, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "token", secret: "   " }),
+      body: JSON.stringify({ method: "session", secret: "   " }),
     });
     expect(res.status).toBe(400);
   });
 
   it("a cross-origin POST is refused before the token is even checked", async () => {
-    const res = await fetch(`${base}/api/connections/sim%3Atesco`, {
+    const res = await fetch(`${base}${TESCO_API}`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-basketed-token": TOKEN, origin: "http://evil.example" },
-      body: JSON.stringify({ method: "token", secret: "whatever-value-here" }),
+      body: JSON.stringify({ method: "session", secret: tescoSession() }),
     });
     expect(res.status).toBe(403);
-    expect(vault.get("sim:tesco")).toBeNull();
+    expect(vault.get(TESCO_ID)).toBeNull();
   });
 
   it("disconnect forgets it, and forgetting twice says so honestly", async () => {
-    await panel("/api/connections/sim%3Acostco", {
+    await panel(TESCO_API, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "cookie", secret: "whatever-value-goes-here" }),
+      body: JSON.stringify({ method: "session", secret: tescoSession() }),
     });
-    const first = await panel("/api/connections/sim%3Acostco", { method: "DELETE" });
+    const first = await panel(TESCO_API, { method: "DELETE" });
     expect(first.status).toBe(200);
-    expect(vault.get("sim:costco")).toBeNull();
+    expect(vault.get(TESCO_ID)).toBeNull();
 
-    const second = await panel("/api/connections/sim%3Acostco", { method: "DELETE" });
+    const second = await panel(TESCO_API, { method: "DELETE" });
     expect(second.status).toBe(404);
   });
 
@@ -565,10 +570,10 @@ describe("connections (S14)", () => {
       version: "test",
       token: TOKEN,
     });
-    const res = await panel("/api/connections/sim%3Atesco", {
+    const res = await panel(TESCO_API, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "cookie", secret: "whatever-value-here" }),
+      body: JSON.stringify({ method: "session", secret: tescoSession() }),
     });
     expect(res.status).toBe(503);
     const body = (await res.json()) as { error: string };
@@ -578,14 +583,49 @@ describe("connections (S14)", () => {
   it("the Connect-stores page renders once authed, and is locked otherwise", async () => {
     expect((await raw("/connections")).status).toBe(401);
     const html = await (await panel("/connections")).text();
-    expect(html).toContain("sim:tesco");
+    expect(html).toContain("tsc:tesco");
     expect(html).toContain("Connect stores");
+    expect(html).not.toContain("sim:tesco");
+    expect(html).not.toContain("demo copy");
+    expect((html.match(/Tesco/g) ?? []).length).toBeGreaterThan(0);
+    expect(html).not.toMatch(/sim:tesco[\s\S]*tsc:tesco|tsc:tesco[\s\S]*sim:tesco/);
   });
 
-  it("the per-store page renders a form, and 404s for an unknown store", async () => {
-    const html = await (await panel("/connections/sim%3Atesco")).text();
+  it("the per-store page for the demo Tesco is gone — only live Tesco connects", async () => {
+    expect((await panel("/connections/sim%3Atesco")).status).toBe(404);
+  });
+
+  it("the per-store page renders Connect with Heartbeat copy, and 404s for an unknown store", async () => {
+    const html = await (await panel("/connections/tsc%3Atesco")).text();
     expect(html).toContain("Connect Tesco");
+    expect(html).toMatch(/Heartbeat/i);
+    expect(html).not.toMatch(/type=["']password["']/i);
     expect((await panel("/connections/sim%3Anosuchstore")).status).toBe(404);
+  });
+
+  it("the Settings page renders caps form and is locked without the token", async () => {
+    expect((await raw("/settings")).status).toBe(401);
+    const html = await (await panel("/settings")).text();
+    expect(html).toContain("Spend caps");
+    expect(html).toContain("home_currency");
+    expect(html).toContain("per_order_cap");
+    expect(html).toContain("daily_cap");
+    expect(html).toMatch(/Human approval cannot be turned off|human approval stays on/i);
+    expect(html).toContain("Settings");
+  });
+
+  it("Settings save round-trips per-order and daily caps via the existing API", async () => {
+    const res = await panel("/api/guardrails", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ home_currency: "GBP", per_order_cap: 42, daily_cap: 99, allowed_stores: ["tsc:tesco"] }),
+    });
+    expect(res.status).toBe(200);
+    const g = loadGuardrails(purchase.db);
+    expect(g.homeCurrency).toBe("GBP");
+    expect(g.perOrderCap).toBe(42);
+    expect(g.dailyCap).toBe(99);
+    expect(g.allowedStores).toEqual(["tsc:tesco"]);
   });
 });
 
@@ -603,19 +643,19 @@ describe("connections (S14)", () => {
  */
 describe("connecting in the user's own browser (S20)", () => {
   it("registering a sign-in is behind the token, and reports where the tab went", async () => {
-    const noToken = await raw("/api/connections/sim%3Atesco/browser-connect", {
+    const noToken = await raw("/api/connections/tsc%3Atesco/browser-connect", {
       method: "POST",
       headers: { origin: base },
     });
     expect(noToken.status).toBe(401);
 
-    const res = await panel("/api/connections/sim%3Atesco/browser-connect", { method: "POST" });
+    const res = await panel("/api/connections/tsc%3Atesco/browser-connect", { method: "POST" });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; url: string; waiting: boolean };
     expect(body).toMatchObject({ ok: true, waiting: true });
     expect(body.url).toMatch(/tesco\.com/);
 
-    const status = (await (await panel("/api/connections/sim%3Atesco/browser-connect")).json()) as {
+    const status = (await (await panel("/api/connections/tsc%3Atesco/browser-connect")).json()) as {
       waiting: boolean;
     };
     expect(status.waiting).toBe(true);
@@ -627,47 +667,54 @@ describe("connecting in the user's own browser (S20)", () => {
   });
 
   it("a capture with no sign-in in flight is refused -- the vault is not writable on demand", async () => {
-    const res = await panel("/api/connections/sim%3Atesco/extension-capture", {
+    const res = await panel("/api/connections/tsc%3Atesco/extension-capture", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ cookie_header: "at-main=whatever" }),
     });
     expect(res.status).toBe(409);
-    expect(vault.get("sim:tesco")).toBeNull();
+    expect(vault.get(TESCO_ID)).toBeNull();
   });
 
   it("seals the session the extension read, and never echoes it back", async () => {
-    await panel("/api/connections/sim%3Aamazon/browser-connect", { method: "POST" });
-    const res = await panel("/api/connections/sim%3Aamazon/extension-capture", {
+    await panel(`${TESCO_API}/browser-connect`, { method: "POST" });
+    const res = await panel(`${TESCO_API}/extension-capture`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cookie_header: "at-main=super-secret-session-value" }),
+      body: JSON.stringify({
+        cookie_header: "session=super-secret-session-value",
+        headers: TESCO_HEADERS,
+      }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(JSON.stringify(body)).not.toContain("super-secret-session-value");
-    expect(body).toMatchObject({ ok: true, store_id: "sim:amazon", method: "cookie" });
-    expect(vault.reveal("sim:amazon")?.secret).toBe("at-main=super-secret-session-value");
+    expect(JSON.stringify(body)).not.toContain("tesco-secret-token");
+    expect(body).toMatchObject({ ok: true, store_id: TESCO_ID, method: "session" });
+    const sealed = decodeSession(vault.reveal(TESCO_ID)?.secret ?? "");
+    expect(sealed?.headers["authorization"]).toBe("Bearer tesco-secret-token");
+    expect(sealed?.headers["customer-uuid"]).toBe("cust-uuid-1");
+    expect(sealed?.headers["x-customer-uuid"]).toBe("cust-uuid-1");
+    expect(sealed?.headers["cookie"]).toBe("session=super-secret-session-value");
 
-    // The note is spent: replaying the same POST cannot rewrite the vault.
-    const replay = await panel("/api/connections/sim%3Aamazon/extension-capture", {
+    const replay = await panel(`${TESCO_API}/extension-capture`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cookie_header: "at-main=a-different-value" }),
+      body: JSON.stringify({ cookie_header: "at-main=a-different-value", headers: TESCO_HEADERS }),
     });
     expect(replay.status).toBe(409);
-    expect(vault.reveal("sim:amazon")?.secret).toBe("at-main=super-secret-session-value");
+    expect(decodeSession(vault.reveal(TESCO_ID)!.secret)?.headers["cookie"]).toBe("session=super-secret-session-value");
   });
 
   it("an empty capture is refused rather than sealed as a connection", async () => {
-    await panel("/api/connections/sim%3Aamazon/browser-connect", { method: "POST" });
-    const res = await panel("/api/connections/sim%3Aamazon/extension-capture", {
+    await panel(`${TESCO_API}/browser-connect`, { method: "POST" });
+    const res = await panel(`${TESCO_API}/extension-capture`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ cookie_header: "   " }),
     });
     expect(res.status).toBe(409);
-    expect(vault.get("sim:amazon")).toBeNull();
+    expect(vault.get(TESCO_ID)).toBeNull();
   });
 
   /*
@@ -720,10 +767,10 @@ describe("connecting in the user's own browser (S20)", () => {
    * a different browser -- which is the complaint this replaced.
    */
   it("Connect is a real link to the retailer, opening in the browser already in use", async () => {
-    const html = await (await panel("/connections/sim%3Aamazon")).text();
+    const html = await (await panel("/connections/tsc%3Atesco")).text();
     const link = /<a[^>]*data-connect-open[^>]*>/.exec(html)?.[0] ?? "";
     expect(link, "no Connect link on the store page").toBeTruthy();
-    expect(link).toMatch(/href="https:\/\/www\.amazon\.com/);
+    expect(link).toMatch(/href="https:\/\/www\.tesco\.com/);
     expect(link).toMatch(/target="_blank"/);
     expect(link).toMatch(/rel="noopener noreferrer"/);
     // Nothing on this page collects a credential, in any form.
@@ -742,7 +789,7 @@ describe("connecting in the user's own browser (S20)", () => {
    * path, because "load packages/extension" is not a thing anyone can paste.
    */
   it("says whether the extension is loaded before anything is pressed", async () => {
-    const html = await (await panel("/connections/sim%3Aamazon")).text();
+    const html = await (await panel("/connections/tsc%3Atesco")).text();
     expect(html).toContain("data-ext-badge");
     expect(html).toContain("data-ext-pill");
     // Backslash or forward slash: the path is whatever this platform writes.
@@ -757,7 +804,7 @@ describe("connecting in the user's own browser (S20)", () => {
    * The anchor stays an anchor so middle-click still works.
    */
   it("the panel script takes a window handle so it can close the tab it opened", async () => {
-    const js = await (await panel("/connections/sim%3Aamazon")).text();
+    const js = await (await panel("/connections/tsc%3Atesco")).text();
     expect(js).toContain("window.open(");
     expect(js).toContain("openedTabs");
     expect(js).toContain("closeTab");
@@ -801,8 +848,26 @@ describe("a store whose credential is a header set (S21)", () => {
     const session = decodeSession(vault.reveal("tsc:tesco")!.secret)!;
     expect(session.headers["authorization"]).toBe(token);
     expect(session.headers["customer-uuid"]).toBe("uuid-999");
+    expect(session.headers["x-customer-uuid"]).toBe("uuid-999");
     // Renewable without asking the human again -- see SessionSecret.refresh.
     expect(session.refresh).toEqual({ via: "browser", storeId: "tsc:tesco" });
+  });
+
+  it("a capture that only saw x-customer-uuid still seals, because Tesco uses both names", async () => {
+    await panel("/api/connections/tsc%3Atesco/browser-connect", { method: "POST" });
+    const res = await panel("/api/connections/tsc%3Atesco/extension-capture", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        cookie_header: "junk=1",
+        headers: { authorization: "Bearer only-x", "x-customer-uuid": "uuid-from-x" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const session = decodeSession(vault.reveal("tsc:tesco")!.secret)!;
+    expect(session.headers["authorization"]).toBe("Bearer only-x");
+    expect(session.headers["customer-uuid"]).toBe("uuid-from-x");
+    expect(session.headers["x-customer-uuid"]).toBe("uuid-from-x");
   });
 
   it("refuses a capture missing a header the store requires, and names the missing one", async () => {
@@ -819,15 +884,19 @@ describe("a store whose credential is a header set (S21)", () => {
     expect(vault.get("tsc:tesco")).toBeNull();
   });
 
-  it("a store with no header set still seals its cookie jar", async () => {
-    await panel("/api/connections/sim%3Aamazon/browser-connect", { method: "POST" });
-    const res = await panel("/api/connections/sim%3Aamazon/extension-capture", {
+  it("also keeps Tesco's cookie jar inside the sealed session", async () => {
+    await panel(`${TESCO_API}/browser-connect`, { method: "POST" });
+    const res = await panel(`${TESCO_API}/extension-capture`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cookie_header: "at-main=still-a-cookie-store" }),
+      body: JSON.stringify({
+        cookie_header: "at-main=still-a-cookie-store",
+        headers: TESCO_HEADERS,
+      }),
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ method: "cookie" });
+    expect(await res.json()).toMatchObject({ method: "session" });
+    expect(decodeSession(vault.reveal(TESCO_ID)!.secret)?.headers["cookie"]).toBe("at-main=still-a-cookie-store");
   });
 });
 
@@ -839,7 +908,7 @@ describe("a store whose credential is a header set (S21)", () => {
 describe("a session that has expired (S23)", () => {
   it("reports an expired session as expired, and NOT as connected", async () => {
     vault.connect({
-      storeId: "sim:amazon",
+      storeId: TESCO_ID,
       kind: "session",
       username: null,
       secret: encodeSession({ headers: { authorization: "Bearer x" }, expiresAt: 1_000 }),
@@ -847,14 +916,14 @@ describe("a session that has expired (S23)", () => {
     const list = (await (await panel("/api/connections")).json()) as {
       connections: Array<Record<string, unknown>>;
     };
-    const amazon = list.connections.find((c) => c["store_id"] === "sim:amazon");
-    expect(amazon).toMatchObject({ connected: false, expired: true, expires_at: 1_000 });
+    const tesco = list.connections.find((c) => c["store_id"] === TESCO_ID);
+    expect(tesco).toMatchObject({ connected: false, expired: true, expires_at: 1_000 });
   });
 
   it("a session with runway left is connected, and says when it runs out", async () => {
     const future = Date.now() + 3_600_000;
     vault.connect({
-      storeId: "sim:amazon",
+      storeId: TESCO_ID,
       kind: "session",
       username: null,
       secret: encodeSession({ headers: { authorization: "Bearer x" }, expiresAt: future }),
@@ -862,17 +931,17 @@ describe("a session that has expired (S23)", () => {
     const list = (await (await panel("/api/connections")).json()) as {
       connections: Array<Record<string, unknown>>;
     };
-    const amazon = list.connections.find((c) => c["store_id"] === "sim:amazon");
-    expect(amazon).toMatchObject({ connected: true, expired: false, expires_at: future });
+    const tesco = list.connections.find((c) => c["store_id"] === TESCO_ID);
+    expect(tesco).toMatchObject({ connected: true, expired: false, expires_at: future });
   });
 
   it("a credential with no expiry at all is connected with no clock on it", async () => {
-    vault.connect({ storeId: "sim:amazon", kind: "cookie", username: null, secret: "at-main=x" });
+    vault.connect({ storeId: TESCO_ID, kind: "session", username: null, secret: encodeSession({ headers: { authorization: "Bearer x" } }) });
     const list = (await (await panel("/api/connections")).json()) as {
       connections: Array<Record<string, unknown>>;
     };
-    const amazon = list.connections.find((c) => c["store_id"] === "sim:amazon");
-    expect(amazon).toMatchObject({ connected: true, expired: false, expires_at: null });
+    const tesco = list.connections.find((c) => c["store_id"] === TESCO_ID);
+    expect(tesco).toMatchObject({ connected: true, expired: false, expires_at: null });
   });
 });
 
@@ -887,7 +956,7 @@ describe("chrome-login (S15)", () => {
 
   it("unauthenticated start is refused, and never reaches the launcher", async () => {
     // Same-origin header, no token -- isolates the token check from the Origin check.
-    const res = await raw("/api/connections/sim%3Atesco/chrome-login", {
+    const res = await raw("/api/connections/tsc%3Atesco/chrome-login", {
       method: "POST",
       headers: { origin: base },
     });
@@ -907,13 +976,13 @@ describe("chrome-login (S15)", () => {
   });
 
   it("starts a login window and reports waiting", async () => {
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "POST" });
+    const res = await panel("/api/connections/tsc%3Atesco/chrome-login", { method: "POST" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, waiting: true, logged_in: false, attached: false });
     // The launcher is handed the whole target: where to land, where to send a
     // signed-out shopper, and the signatures that say the sign-in finished.
     expect(startLogin).toHaveBeenCalledWith(
-      "sim:tesco",
+      TESCO_ID,
       expect.objectContaining({
         url: expect.stringContaining("tesco.com"),
         loginUrl: expect.stringContaining("login"),
@@ -924,7 +993,7 @@ describe("chrome-login (S15)", () => {
   });
 
   it("reports login status for the open window, and leaks no cookie", async () => {
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login");
+    const res = await panel("/api/connections/tsc%3Atesco/chrome-login");
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ state: "idle", logged_in: false, waited_ms: 0 });
@@ -934,7 +1003,7 @@ describe("chrome-login (S15)", () => {
   });
 
   it("the status poll is behind the token like every other route", async () => {
-    const res = await raw("/api/connections/sim%3Atesco/chrome-login", {
+    const res = await raw("/api/connections/tsc%3Atesco/chrome-login", {
       headers: { origin: base },
     });
     expect(res.status).toBe(401);
@@ -942,25 +1011,26 @@ describe("chrome-login (S15)", () => {
 
   it("a launch failure (no Chrome installed) surfaces as 503, not a crash", async () => {
     vi.mocked(startLogin).mockResolvedValueOnce({ ok: false, error: "Google Chrome was not found on this machine." });
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "POST" });
+    const res = await panel("/api/connections/tsc%3Atesco/chrome-login", { method: "POST" });
     expect(res.status).toBe(503);
     const body = (await res.json()) as { error: string };
     expect(body.error).toMatch(/Chrome was not found/);
   });
 
-  it("capture seals a cookie credential and never echoes the raw session back", async () => {
+  it("capture seals a Tesco session and never echoes the raw headers back", async () => {
     vi.mocked(captureLogin).mockResolvedValueOnce({
       ok: true,
       cookieHeader: "session=super-secret-cookie-value",
-      headers: {},
+      headers: TESCO_HEADERS,
     });
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
+    const res = await panel(`${TESCO_API}/chrome-login/capture`, { method: "POST" });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(JSON.stringify(body)).not.toContain("super-secret-cookie-value");
-    expect(body).toMatchObject({ ok: true, store_id: "sim:tesco", method: "cookie" });
-    expect(vault.reveal("sim:tesco")?.secret).toBe("session=super-secret-cookie-value");
-    expect(captureLogin).toHaveBeenCalledWith("sim:tesco", ["tesco.com"]);
+    expect(JSON.stringify(body)).not.toContain("tesco-secret-token");
+    expect(body).toMatchObject({ ok: true, store_id: TESCO_ID, method: "session" });
+    expect(decodeSession(vault.reveal(TESCO_ID)!.secret)?.headers["authorization"]).toBe("Bearer tesco-secret-token");
+    expect(captureLogin).toHaveBeenCalledWith(TESCO_ID, ["tesco.com"]);
   });
 
   it("a capture with no window open, or no cookies yet, is a 409, not a 500", async () => {
@@ -968,7 +1038,7 @@ describe("chrome-login (S15)", () => {
       ok: false,
       error: "No sign-in tab is open for this store. Press Connect first.",
     });
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
+    const res = await panel("/api/connections/tsc%3Atesco/chrome-login/capture", { method: "POST" });
     expect(res.status).toBe(409);
   });
 
@@ -980,13 +1050,17 @@ describe("chrome-login (S15)", () => {
 
   it("cancel closes whatever window is open and says so honestly", async () => {
     vi.mocked(cancelLogin).mockResolvedValueOnce(true);
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "DELETE" });
+    const res = await panel("/api/connections/tsc%3Atesco/chrome-login", { method: "DELETE" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, closed: true });
   });
 
   it("a broken vault degrades capture to a clear 503, not a lost session", async () => {
-    vi.mocked(captureLogin).mockResolvedValueOnce({ ok: true, cookieHeader: "session=abc", headers: {} });
+    vi.mocked(captureLogin).mockResolvedValueOnce({
+      ok: true,
+      cookieHeader: "session=abc",
+      headers: TESCO_HEADERS,
+    });
     const broken = { ...deps, vault: degradedVault("disk is full") };
     handler = createPanelHandler(broken, {
       root: ROOT,
@@ -996,7 +1070,7 @@ describe("chrome-login (S15)", () => {
       version: "test",
       token: TOKEN,
     });
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
+    const res = await panel("/api/connections/tsc%3Atesco/chrome-login/capture", { method: "POST" });
     expect(res.status).toBe(503);
   });
 });
@@ -1004,17 +1078,14 @@ describe("chrome-login (S15)", () => {
 /* ------------------------- the README does not describe a build we do not have (S15) */
 
 /**
- * README's Security section names Tesco/Costco/Walmart/Amazon as the four
- * stores "Log in with Chrome" covers. That is a fact about `connections.ts`'s
- * policy table, not prose -- so if a fifth store quietly gained (or one of
- * the four lost) Chrome-login coverage, this fails instead of the README
- * silently going stale.
+ * README's Security section names the stores Connect covers. That is a fact
+ * about `connections.ts`'s policy table, not prose -- so if another store
+ * quietly gained (or Tesco lost) Chrome-login coverage, this fails instead of
+ * the README silently going stale.
  */
 describe("the README does not describe a connect build we do not have (S15, S19)", () => {
   it("names exactly the stores this build can sign in to", async () => {
-    // Deduped by name on purpose: the README names RETAILERS, and Tesco is
-    // reachable under two store ids -- the simulated one and the real one --
-    // both of which connect.
+    // README names RETAILERS. Connect covers live Tesco only.
     const withChromeLogin = [
       ...new Set(
         deps.registry
@@ -1023,10 +1094,10 @@ describe("the README does not describe a connect build we do not have (S15, S19)
           .map((s) => s.name),
       ),
     ].sort();
-    expect(withChromeLogin).toEqual(["Amazon", "Costco", "IKEA", "Shopee", "Taobao", "Tesco", "Walmart"]);
+    expect(withChromeLogin).toEqual(["Tesco"]);
 
     const readme = await readFile(resolve(ROOT, "README.md"), "utf8");
-    const bullet = /Connect signs you in at the store[\s\S]{0,3000}?asked for by hand\./i.exec(readme)?.[0];
+    const bullet = /Connect signs you in at Tesco[\s\S]{0,4000}?asked for by hand\./i.exec(readme)?.[0];
     expect(bullet, "README's connect bullet was not found where expected").toBeTruthy();
     for (const name of withChromeLogin) {
       expect(bullet).toMatch(new RegExp(name));

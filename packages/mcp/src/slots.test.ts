@@ -1,19 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { NEVER_ALLOW, createPolicy, mayAutoConfirm } from "./policy.js";
-import { TOOL_NAMES } from "./tools.js";
+import { FETCH_TOOL_NAMES, TOOL_NAMES } from "./tools.js";
+import { PURCHASE_TOOL_NAMES } from "./tools-purchase.js";
 
 /**
- * Delivery slots on the wire.
- *
- * Listing windows is a read: it shows the shopper what is on offer and takes
- * nothing. Booking one is not. It spends no money, but it holds a window a
- * real van drives to, and the window is scarce -- taking it takes it from
- * somebody. That is a commitment, and this project's whole claim is that a
- * commitment needs a human.
+ * Delivery slots on the wire — purchase lane (need a vault session).
  */
 describe("delivery slot tools", () => {
-  it("lists slots as an ordinary read-only tool", () => {
-    expect(TOOL_NAMES).toContain("basket_list_delivery_slots");
+  it("lists slots on the purchase lane, not the fetch lane", () => {
+    expect(PURCHASE_TOOL_NAMES).toContain("basket_list_delivery_slots");
+    expect(FETCH_TOOL_NAMES).not.toContain("basket_list_delivery_slots");
+    expect(TOOL_NAMES).not.toContain("basket_list_delivery_slots");
+    expect(FETCH_TOOL_NAMES).toContain("basket_auth_status");
   });
 
   it("can never auto-approve a booking, in any mode", () => {
@@ -24,8 +22,14 @@ describe("delivery slot tools", () => {
   });
 
   it("exposes no tool that books without going through the approval rail", () => {
-    // Listing is on the wire; booking is NOT a registered tool yet, and the
-    // absence is the honest state -- see the note in tools-slots.ts.
-    expect(TOOL_NAMES).not.toContain("basket_book_delivery_slot");
+    expect(PURCHASE_TOOL_NAMES).not.toContain("basket_book_delivery_slot");
+    expect(FETCH_TOOL_NAMES).not.toContain("basket_book_delivery_slot");
+  });
+});
+
+describe("account handles", () => {
+  it("exposes basket_list_accounts on the purchase lane", () => {
+    expect(PURCHASE_TOOL_NAMES).toContain("basket_list_accounts");
+    expect(FETCH_TOOL_NAMES).not.toContain("basket_list_accounts");
   });
 });

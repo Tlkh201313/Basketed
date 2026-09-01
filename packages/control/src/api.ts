@@ -12,7 +12,7 @@ import {
 } from "@basketed/commerce";
 import { encodeSession, type CredentialKind } from "@basketed/vault";
 import { noteExtensionSeen } from "./extension-file.js";
-import { authPolicyFor } from "./connections.js";
+import { authPolicyFor, sessionHeaderAliases } from "./connections.js";
 import { startLogin, captureLogin, cancelLogin, stateOf, statusOf } from "./browser-connect.js";
 import { openConnect, pendingFor, closeConnect, finish, statusFor } from "./handoff.js";
 import { expiryOf } from "./jwt.js";
@@ -76,6 +76,22 @@ function approvalView(row: Record<string, unknown>, now: number) {
   };
 }
 
+/** Bearer prefix + Tesco's two names for the same customer id. */
+function sealSessionHeaders(raw: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (typeof value === "string" && value) headers[name.toLowerCase()] = value;
+  }
+  const uuid = headers["customer-uuid"] ?? headers["x-customer-uuid"];
+  if (uuid) {
+    headers["customer-uuid"] = uuid;
+    headers["x-customer-uuid"] = uuid;
+  }
+  const auth = headers["authorization"];
+  if (auth && !/^bearer\s/i.test(auth)) headers["authorization"] = `Bearer ${auth}`;
+  return headers;
+}
+
 /**
  * Turn a capture into the credential a store's adapter can actually use (S21).
  *
@@ -90,38 +106,53 @@ function sealableCredential(
   want: { match: string; headers: string[] } | undefined,
   got: { cookieHeader: string; headers: Record<string, string> },
 ): { ok: true; kind: CredentialKind; secret: string } | { ok: false; error: string } {
-  if (want) {
-    const headers: Record<string, string> = {};
-    for (const name of want.headers) {
-      const value = String(got.headers[name] ?? got.headers[name.toLowerCase()] ?? "").trim();
-      if (value) headers[name.toLowerCase()] = value;
-    }
-    const missing = want.headers.filter((h) => !headers[h.toLowerCase()]);
-    if (missing.length) {
+  try {
+    if (want) {
+      const headers: Record<string, string> = {};
+      for (const name of want.headers) {
+        const key = name.toLowerCase();
+        let value = "";
+        for (const a of sessionHeaderAliases(key)) {
+          value = String(got.headers[a] ?? got.headers[a.toLowerCase()] ?? "").trim();
+          if (value) break;
+        }
+        if (value) headers[key] = value;
+      }
+      const missing = want.headers.filter((h) => !headers[h.toLowerCase()]);
+      if (missing.length) {
+        return {
+          ok: false,
+          error:
+            `Signed in, but ${storeName} has not sent ${missing.join(" and ")} yet. ` +
+            `Open your basket in that tab and this finishes by itself.`,
+        };
+      }
+      if (got.cookieHeader) headers["cookie"] = got.cookieHeader;
+      const sealed = sealSessionHeaders(headers);
+      const auth = sealed["authorization"];
+      const expiresAt = auth ? expiryOf(auth) : null;
       return {
-        ok: false,
-        error:
-          `Signed in, but ${storeName} has not sent ${missing.join(" and ")} yet. ` +
-          `Open your basket in that tab and this finishes by itself.`,
+        ok: true,
+        kind: "session",
+        secret: encodeSession({
+          headers: sealed,
+          ...(expiresAt === null ? {} : { expiresAt }),
+          refresh: { via: "browser", storeId },
+        }),
       };
     }
-    const auth = headers["authorization"];
-    const expiresAt = auth ? expiryOf(auth) : null;
-    return {
-      ok: true,
-      kind: "session",
-      secret: encodeSession({
-        headers,
-        ...(expiresAt === null ? {} : { expiresAt }),
-        // Renewable without asking the human again: the browser they signed in
-        // with is still signed in, so the session can simply be read afresh.
-        // No refresh endpoint to guess at, and nothing to get wrong.
-        refresh: { via: "browser", storeId },
-      }),
-    };
+    if (!got.cookieHeader) return { ok: false, error: `Not signed in at ${storeName} yet.` };
+    return { ok: true, kind: "cookie", secret: got.cookieHeader };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message || "Could not seal that session." };
   }
-  if (!got.cookieHeader) return { ok: false, error: `Not signed in at ${storeName} yet.` };
-  return { ok: true, kind: "cookie", secret: got.cookieHeader };
+}
+
+function syncTescoStatus(deps: ControlDeps, storeId: string): void {
+  if (storeId !== "tsc:tesco" || !deps.registry.get(storeId)) return;
+  const held = deps.vault.get(storeId);
+  const live = held !== null && !held.broken && !held.expired;
+  deps.registry.setStatus(storeId, live ? "ready" : "needs_auth");
 }
 
 export async function handleApi(
@@ -198,7 +229,10 @@ export async function handleApi(
     return {
       status: 200,
       body: {
-        connections: deps.registry.list().map((s) => {
+        connections: deps.registry
+          .list()
+          .filter((s) => s.mode !== "simulated")
+          .map((s) => {
           const policy = authPolicyFor(s);
           const held_ = held.get(s.id) ?? null;
           return {
@@ -291,6 +325,7 @@ export async function handleApi(
     const { kind, secret } = sealable;
     try {
       const saved = deps.vault.connect({ storeId, kind, username: null, secret });
+      syncTescoStatus(deps, storeId);
       log(`connect ${storeId}: session captured and sealed as ${kind}`);
       return {
         status: 200,
@@ -406,6 +441,7 @@ export async function handleApi(
       const saved = deps.vault.connect({ storeId, kind, username: null, secret });
       finish(storeId, "extension");
       closeConnect(storeId);
+      syncTescoStatus(deps, storeId);
       log(`connect ${storeId}: sealed as ${kind}, captured from the user's own browser`);
       return {
         status: 200,
@@ -426,6 +462,7 @@ export async function handleApi(
 
     if (method === "DELETE") {
       const forgotten = deps.vault.forget(storeId);
+      syncTescoStatus(deps, storeId);
       return { status: forgotten ? 200 : 404, body: { ok: forgotten, store_id: storeId } };
     }
 
@@ -446,6 +483,7 @@ export async function handleApi(
 
     try {
       const saved = deps.vault.connect({ storeId, kind, username, secret });
+      syncTescoStatus(deps, storeId);
       log(`connected ${storeId} via ${kind}`);
       // Metadata back, never an echo of what was just sent.
       return {

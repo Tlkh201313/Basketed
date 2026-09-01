@@ -29,7 +29,7 @@ function check(label, condition, detail = "") {
 }
 
 function openServer() {
-  const child = spawn(process.execPath, [resolve(ROOT, "packages/cli/bin.js"), "serve", "--stdio"], {
+  const child = spawn(process.execPath, [resolve(ROOT, "packages/cli/bin.js"), "serve", "--stdio", "--simulated"], {
     cwd: ROOT,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -104,19 +104,18 @@ legacy.notify("notifications/initialized");
 const list = await legacy.send("tools/list", {});
 const tools = list.result?.tools ?? [];
 const names = tools.map((t) => t.name);
-check("tools/list returns 9 tools", tools.length === 9, names.join(", "));
+check("tools/list returns 11 tools", tools.length === 11, names.join(", "));
 check(
   "tool order is deterministic",
   JSON.stringify(names) ===
     JSON.stringify([
-      // Read-only first, money-adjacent last, and stable. Churning this list
-      // invalidates the provider prompt cache, and the miss can cost more than
-      // the definitions ever saved.
       "basket_list_stores",
       "basket_search_products",
       "basket_get_product_detail",
       "basket_get_token_report",
+      "basket_auth_status",
       "basket_list_delivery_slots",
+      "basket_list_accounts",
       "basket_cart_prepare",
       "basket_purchase_confirm",
       "basket_list_orders",

@@ -5,24 +5,13 @@ import { authorizedFetch } from "@basketed/vault";
 import type { Runtime } from "./runtime.js";
 
 /**
- * Delivery windows on the wire.
+ * Delivery windows on the wire — purchase lane.
  *
- * Listing is here. **Booking is deliberately not**, and the absence is the
- * honest state rather than an oversight:
+ * Listing needs a CONNECTED account (vault session). Booking is deliberately
+ * not on the wire: see NEVER_ALLOW / basket_book_delivery_slot.
  *
- * `TescoAdapter.bookSlot` exists and works, but every commitment in this
- * project goes through one approval rail -- a mandate a human approves with a
- * 6-digit code off the server's own console -- and that rail is cart-shaped
- * (`prepareCart` -> `confirmPurchase`, hashed and guardrailed). A slot is not
- * a cart, so exposing a booking tool today would mean either inventing a
- * SECOND approval mechanism or letting an agent hold a delivery window with
- * no human at all. Both are worse than the tool not existing, so
- * `basket_book_delivery_slot` sits in NEVER_ALLOW as a reserved name and
- * booking stays a panel action until the rail generalises.
- *
- * Slots come from GavinAttard/tesco-grocery-mcp's read of Tesco's own API
- * (MIT); what is new here is that they are a capability tier any grocer can
- * implement, not a Tesco tool.
+ * Registered with the purchase tools (after auth_status) so the fetch lane
+ * stays unsigned-search only.
  */
 
 const READ_ONLY = {

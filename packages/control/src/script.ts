@@ -613,13 +613,15 @@ if (connectPage) {
 function watchConnect(cfg) {
   stopPump(cfg.storeId);
   showWaiting();
-  say("Waiting for " + cfg.name + " in the other tab...");
+  say("Heartbeat: watching " + cfg.name + " in the other tab...");
 
   // How many ticks we have let pass without the headers we need before
   // nudging the tab. One tick of patience first: if the page is still
   // loading, its own request is already on the way and a reload would only
   // interrupt it.
   let dry = 0;
+  // Point the opened tab at the retailer's login page once when signed out.
+  let sentToLogin = false;
 
   async function tick() {
     const out = await tryCapture(cfg);
@@ -638,8 +640,15 @@ function watchConnect(cfg) {
     }
     if (out.state === "signed-out") {
       dry = 0;
-      say("Not signed in at " + cfg.name + " yet - sign in in that tab and this finishes itself.");
       if (signinLink) signinLink.hidden = false;
+      const tab = tabFor(cfg.storeId);
+      if (!sentToLogin && tab && cfg.loginUrl) {
+        sentToLogin = true;
+        say("Heartbeat: not signed in — opening " + cfg.name + " login in that tab...");
+        try { tab.location = cfg.loginUrl; } catch (err) { /* tab gone; next tick notices */ }
+        return;
+      }
+      say("Heartbeat: waiting for you to sign in at " + cfg.name + " — finishes itself when you are through.");
       return;
     }
     if (out.state === "no-headers") {
@@ -647,15 +656,15 @@ function watchConnect(cfg) {
       const tab = tabFor(cfg.storeId);
       if (dry >= 2 && tab) {
         dry = 0;
-        say("Signed in at " + cfg.name + ". Asking that tab for the session...");
+        say("Heartbeat: signed in at " + cfg.name + ". Asking that tab for the session...");
         // Their own page, their own request, their own credential on it.
         try { tab.location = cfg.url; } catch (err) { /* tab gone; next tick notices */ }
         return;
       }
       say(
         tab
-          ? "Signed in at " + cfg.name + ". Waiting for the session..."
-          : "Signed in at " + cfg.name + ", but that tab is closed. Press Connect again.",
+          ? "Heartbeat: signed in at " + cfg.name + ". Waiting for the session..."
+          : "Heartbeat: signed in at " + cfg.name + ", but that tab is closed. Press Connect again.",
       );
       return;
     }
@@ -848,6 +857,81 @@ if (forgetBtn) {
       console.error("[basketed] disconnect failed: " + err.message);
       forgetBtn.disabled = false;
     }
+  });
+}
+
+/* --------------------------------------------------------------- settings */
+
+const settingsForm = $("[data-settings-form]");
+if (settingsForm) {
+  const msg = $("[data-settings-msg]");
+  const spentEl = $("[data-settings-spent]");
+  const remainEl = $("[data-settings-remaining]");
+  const storesEl = $("#settings-stores");
+
+  function saySettings(text, bad) {
+    if (!msg) return;
+    msg.textContent = text;
+    msg.style.color = bad ? "var(--bad)" : "";
+  }
+
+  async function loadSettings() {
+    const state = await (await api("/api/state")).json();
+    const g = state.guardrails;
+    settingsForm.home_currency.value = g.homeCurrency || "USD";
+    settingsForm.per_order_cap.value = g.perOrderCap;
+    settingsForm.daily_cap.value = g.dailyCap;
+    const spent = Number(g.spent_24h || 0);
+    const remain = Math.max(0, Number(g.dailyCap) - spent);
+    if (spentEl) spentEl.textContent = spent.toFixed(2) + " " + g.homeCurrency;
+    if (remainEl) remainEl.textContent = remain.toFixed(2) + " " + g.homeCurrency;
+
+    const allowed = new Set(g.allowedStores || []);
+    const cartStores = (state.stores || []).filter(function (s) {
+      return s.mode !== "simulated" && Array.isArray(s.capabilities) && s.capabilities.indexOf("cart") !== -1;
+    });
+    if (!storesEl) return;
+    if (!cartStores.length) {
+      storesEl.innerHTML = '<div class="empty">No cart-capable stores loaded.</div>';
+      return;
+    }
+    storesEl.innerHTML = cartStores.map(function (s) {
+      const on = allowed.size === 0 ? false : allowed.has(s.id);
+      return '<label class="row" style="gap:10px;align-items:center">' +
+        '<input type="checkbox" name="allowed_store" value="' + esc(s.id) + '"' + (on ? " checked" : "") + " />" +
+        "<span>" + esc(s.name) + ' <span class="num">' + esc(s.id) + "</span></span>" +
+        "</label>";
+    }).join("") +
+      '<p class="small" style="margin:8px 0 0">Leave every box unchecked to allow any cart-capable store (default).</p>';
+  }
+
+  settingsForm.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const boxes = Array.prototype.slice.call(settingsForm.querySelectorAll('input[name="allowed_store"]'));
+    const checked = boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+    // Empty list = any store (backend default). If the user checked some, send those.
+    const body = {
+      home_currency: String(settingsForm.home_currency.value || "").trim().toUpperCase(),
+      per_order_cap: Number(settingsForm.per_order_cap.value),
+      daily_cap: Number(settingsForm.daily_cap.value),
+      allowed_stores: checked,
+    };
+    try {
+      const res = await api("/api/guardrails", { method: "POST", body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) {
+        saySettings(data.error || ("Save failed (" + res.status + ")"), true);
+        return;
+      }
+      saySettings("Saved.");
+      await loadSettings();
+    } catch (err) {
+      saySettings(err.message || "Save failed", true);
+    }
+  });
+
+  void loadSettings().catch(function (err) {
+    saySettings(err.message || "Could not load settings", true);
   });
 }
 `;
