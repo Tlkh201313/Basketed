@@ -96,7 +96,11 @@ describe("real Tesco adapter (S16)", () => {
   it("is mode native with only the tiers it actually implements", () => {
     const adapter = new TescoAdapter();
     expect(adapter.manifest.mode).toBe("native");
-    expect(adapter.manifest.capabilities).toEqual(["discovery", "detail", "cart"]);
+    expect(adapter.manifest.capabilities).toEqual(["discovery", "detail", "cart", "slots"]);
+    // The tier is only claimable with both halves present -- the registry
+    // refuses it otherwise, so this is what makes the claim above honest.
+    expect(typeof adapter.slots).toBe("function");
+    expect(typeof adapter.bookSlot).toBe("function");
   });
 
   it("search returns real-shaped products, correctly priced", async () => {

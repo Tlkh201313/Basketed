@@ -10,7 +10,9 @@ import {
   type SearchQuery,
   type StoreManifest,
 } from "@basketed/core";
+import type { BookedSlot, DeliverySlot } from "@basketed/core";
 import { mintProductId } from "../ids.js";
+import { DELIVERY_SLOTS_QUERY, FULFILMENT_MUTATION, SLOTS_MFE, flattenBooking, flattenSlots } from "./slots.js";
 import type { AdapterCtx, CartLineItem, RawCart, StoreAdapter } from "../types.js";
 
 /**
@@ -46,6 +48,9 @@ import type { AdapterCtx, CartLineItem, RawCart, StoreAdapter } from "../types.j
 
 const SEARCH_URL = "https://search.api.tesco.com/search";
 const GRAPHQL_URL = "https://xapi.tesco.com/";
+
+/** The micro-frontend tesco.com identifies its basket calls as. */
+const BASKET_MFE = "mfe-basket";
 const API_KEY = "TvOSZJHlEk0pjniDGQFAc9Q59WGAR4dA"; // public, embedded in Tesco's own frontend
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -159,7 +164,7 @@ export class TescoAdapter implements StoreAdapter {
       categories: ["grocery", "general"],
       mode: "native",
       auth: "none",
-      capabilities: ["discovery", "detail", "cart"],
+      capabilities: ["discovery", "detail", "cart", "slots"],
       domain: "tesco.com",
     };
   }
@@ -361,34 +366,82 @@ export class TescoAdapter implements StoreAdapter {
    * single basket operation is easy to reach for a bare object instead,
    * which is a real request Tesco's API will not answer usefully.
    */
-  async #basketOp(
-    query: string,
-    variables: Record<string, unknown>,
-    ctx: AdapterCtx,
-  ): Promise<TescoBasket> {
+  async #op<T>(query: string, variables: Record<string, unknown>, mfeName: string, ctx: AdapterCtx): Promise<T> {
     const operationName = /^\s*(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? "Op";
     const res = await ctx.http(GRAPHQL_URL, {
       method: "POST",
       headers: graphqlHeaders(),
-      body: JSON.stringify([{ operationName, variables, query }]),
+      // `extensions.mfeName` because tesco.com's own frontend sends it and the
+      // gateway routes on it -- an operation without it is not the request the
+      // site makes.
+      body: JSON.stringify([{ operationName, variables, extensions: { mfeName }, query }]),
     });
     if (res.status === 401 || res.status === 403) {
-      throw new Error("Tesco refused the stored token (401/403) -- it is expired or invalid. Reconnect Tesco.");
+      throw new Error("Tesco refused the stored session (401/403) -- it is expired or invalid. Reconnect Tesco.");
     }
-    if (!res.ok) throw new Error(`Tesco basket API returned HTTP ${res.status}.`);
+    if (!res.ok) throw new Error(`Tesco ${operationName} returned HTTP ${res.status}.`);
     const bodyText = await res.text();
     this.lastRawBytes += bodyText.length;
-    let envelopes: Array<TescoGraphQLEnvelope<{ basket?: TescoBasket }>>;
+    let envelopes: Array<TescoGraphQLEnvelope<T>>;
     try {
-      envelopes = JSON.parse(bodyText) as Array<TescoGraphQLEnvelope<{ basket?: TescoBasket }>>;
+      envelopes = JSON.parse(bodyText) as Array<TescoGraphQLEnvelope<T>>;
     } catch {
-      throw new Error(`Tesco basket API non-JSON HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
+      throw new Error(`Tesco ${operationName} non-JSON HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
     }
     const envelope = envelopes[0];
-    if (!envelope) throw new Error("Tesco basket API returned an empty response.");
+    if (!envelope) throw new Error(`Tesco ${operationName} returned an empty response.`);
     if (envelope.errors?.length) {
-      throw new Error(`Tesco basket API error: ${envelope.errors.map((e) => e.message).join("; ")}`);
+      throw new Error(`Tesco ${operationName} error: ${envelope.errors.map((e) => e.message).join("; ")}`);
     }
-    return envelope.data?.basket ?? {};
+    return (envelope.data ?? ({} as T)) as T;
+  }
+
+  async #basketOp(query: string, variables: Record<string, unknown>, ctx: AdapterCtx): Promise<TescoBasket> {
+    const data = await this.#op<{ basket?: TescoBasket }>(query, variables, BASKET_MFE, ctx);
+    return data.basket ?? {};
+  }
+
+  /**
+   * Delivery windows for a date range.
+   *
+   * Both halves of the tier live here because the registry refuses one without
+   * the other -- see StoreAdapter.slots. Unavailable windows are dropped: an
+   * agent can only act on one it can book.
+   */
+  async slots(range: { start: string; end: string }, ctx: AdapterCtx): Promise<DeliverySlot[]> {
+    const data = await this.#op<{ delivery?: unknown }>(
+      DELIVERY_SLOTS_QUERY,
+      { start: range.start, end: range.end, type: "DELIVERY_VAN" },
+      SLOTS_MFE,
+      ctx,
+    );
+    const raw = Array.isArray(data.delivery) ? (data.delivery as Array<Record<string, unknown>>) : [];
+    return flattenSlots(raw, this.manifest.currency, false);
+  }
+
+  /**
+   * Take one.
+   *
+   * A commitment against the shopper's real account, so it is approval-gated
+   * upstream and never reachable under fast-mode. Tesco answering with an
+   * unbooked slot means somebody else took the window between listing it and
+   * this call -- said plainly, rather than reported as a reservation nobody
+   * holds.
+   */
+  async bookSlot(slotId: string, ctx: AdapterCtx): Promise<BookedSlot> {
+    const data = await this.#op<{ fulfilment?: { slot?: Record<string, unknown> } }>(
+      FULFILMENT_MUTATION,
+      { slotId, action: "BOOK" },
+      SLOTS_MFE,
+      ctx,
+    );
+    const booked = flattenBooking(data.fulfilment ?? {});
+    if (!booked) {
+      throw new Error(
+        `Tesco did not confirm slot ${slotId}. It was most likely taken between listing it and booking it -- ` +
+          `list slots again and pick another.`,
+      );
+    }
+    return booked;
   }
 }
