@@ -15,6 +15,7 @@ import {
 import {
   createPanelHandler,
   CLIENTS,
+  CLIENT_ALIASES,
   PRIMARY_CLIENTS,
   pathFor,
   snippetFor,
@@ -23,7 +24,8 @@ import {
 } from "@basketed/control";
 import type { Runtime } from "@basketed/mcp";
 import { findRoot } from "./root.js";
-import { installClient, findClient, expandPath } from "./install.js";
+import { installClient, resolveTargets, expandPath } from "./install.js";
+import { publishPanel, readPanel, clearPanel } from "./panel-file.js";
 
 export { findRoot };
 export * from "./install.js";
@@ -37,9 +39,11 @@ const USAGE = `basketed ${SERVER_INFO.version}
   basketed serve --http [--port]  MCP over Streamable HTTP + control panel (port 8787)
   basketed serve --http --open    ...and open the panel in your browser
   basketed serve --no-open        never open a browser by itself
-  basketed install [--client X]   Write the MCP config for an agent client
+  basketed install [client...]    Write the MCP config for named clients
+                                  e.g. basketed install codex opencode cursor
   basketed install --all          ...for every client with a known file
   basketed install --dry-run      ...show the diff and write nothing
+                                  (no client named = the four primaries)
   basketed clients                List every supported client and its config path
   basketed doctor                 Check the install end to end
   basketed tools                  Print the tool surface and exit
@@ -383,6 +387,10 @@ export async function main(argv: string[]): Promise<void> {
   // order history, and a localhost single-user build has no business being
   // reachable from the network.
   server.listen(port, "127.0.0.1", () => {
+    // Same handoff the stdio panel writes: whatever is looking for the live
+    // panel finds this port rather than assuming the documented one.
+    publishPanel({ origin, pid: process.pid });
+    process.on("exit", () => clearPanel());
     process.stderr.write(
       `[basketed] http · ${runtime.summary}` +
         `${runtime.policy.fastMode ? " · fast-mode (read-only tools only)" : ""}\n` +
@@ -460,11 +468,16 @@ async function startStdioPanel(runtime: Runtime, root: string, mayOpen: boolean)
     token,
   });
 
+  // Written down so nothing has to guess which port this run landed on --
+  // see panel-file.ts. The token is deliberately not in it.
+  publishPanel({ origin, pid: process.pid });
+
   const panel: StdioPanel = {
     origin,
     token,
     url: (path) => `${origin}${path}?t=${token}`,
     close: () => {
+      clearPanel();
       server.close();
       for (const socket of sockets) socket.destroy();
     },
@@ -479,21 +492,28 @@ function runInstall(argv: string[]): void {
   const root = findRoot();
   const binPath = resolve(root, "packages/cli/bin.js");
   const dryRun = flag(argv, "dry-run");
-  const wanted = value(argv, "client");
 
-  const targets = flag(argv, "all")
-    ? CLIENTS
-    : wanted
-      ? [findClient(wanted)].filter((c): c is NonNullable<typeof c> => Boolean(c))
-      : CLIENTS.filter((c) => (PRIMARY_CLIENTS as readonly string[]).includes(c.id));
-
-  if (!targets.length) {
+  // `argv` still has "install" at the front; client names come after it.
+  const resolved = resolveTargets(argv.slice(1));
+  if (!resolved.ok) {
+    /*
+     * A name we do not know stops the WHOLE run.
+     *
+     * Installing the ones we recognised and staying quiet about the rest is
+     * exactly how the bug this replaced felt: it printed success, wrote four
+     * configs nobody asked for, and sent people looking for a broken server
+     * instead of a file that was never written.
+     */
+    const plural = resolved.unknown.length > 1 ? "s" : "";
     process.stderr.write(
-      `Unknown client "${wanted}". Run \`basketed clients\` to see the list.\n`,
+      `Unknown client${plural}: ${resolved.unknown.join(", ")}. Nothing was written.\n\n` +
+        `Known clients:\n${CLIENTS.map((c) => `  ${c.id}`).join("\n")}\n\n` +
+        `Also accepted: ${Object.keys(CLIENT_ALIASES).sort().join(", ")}\n`,
     );
     process.exitCode = 1;
     return;
   }
+  const targets = resolved.targets;
 
   process.stdout.write(
     `${dryRun ? "Would write" : "Writing"} MCP config for ${targets.length} client(s).\n` +
@@ -540,14 +560,28 @@ async function runDoctor(argv: string[]): Promise<void> {
   say(Boolean(runtime.purchase), "purchase gate initialised");
   say(!runtime.policy.fastMode, "fast mode off by default");
 
-  const port = Number(value(argv, "port") ?? 8787);
-  const free = await new Promise<boolean>((res) => {
-    const probe = createServer();
-    probe.once("error", () => res(false));
-    probe.once("listening", () => probe.close(() => res(true)));
-    probe.listen(port, "127.0.0.1");
-  });
-  say(free, `port ${port} is free`, free ? "" : "something is already listening");
+  /*
+   * A running panel is the answer to "which tab do I open", and it is not
+   * always the documented port -- on stdio the panel takes whatever is free.
+   * Report the live one when there is one; only then does a busy port matter.
+   */
+  const live = readPanel();
+  if (live) {
+    say(true, "panel is running", `${live.origin}/connections  (pid ${live.pid})`);
+  } else {
+    const port = Number(value(argv, "port") ?? 8787);
+    const free = await new Promise<boolean>((res) => {
+      const probe = createServer();
+      probe.once("error", () => res(false));
+      probe.once("listening", () => probe.close(() => res(true)));
+      probe.listen(port, "127.0.0.1");
+    });
+    say(
+      free,
+      `no panel running; port ${port} is free`,
+      free ? "start one with `basketed serve --http --open`" : "something else is already listening",
+    );
+  }
 
   // The project-scoped config in this repo is the safest demo target: it needs
   // no write to anything in the user's home directory.
@@ -556,8 +590,16 @@ async function runDoctor(argv: string[]): Promise<void> {
     say(readFileSync(projectConfig, "utf8").includes("basketed"), "project .mcp.json is wired", projectConfig);
   }
 
+  /*
+   * Every client, not only the four primaries.
+   *
+   * A user who wired opencode or Zed and is looking at a client that cannot
+   * see the tools needs THAT line, and the old loop could not print it: it
+   * reported on four clients and stayed silent about the eight others it has
+   * a table entry for.
+   */
   process.stdout.write("\nclients\n");
-  for (const spec of CLIENTS.filter((c) => (PRIMARY_CLIENTS as readonly string[]).includes(c.id))) {
+  for (const spec of CLIENTS) {
     if (!spec.path) continue;
     const path = expandPath(pathFor(spec, process.platform), process.cwd());
     const text = existsSync(path) ? readFileSync(path, "utf8") : "";
@@ -565,10 +607,13 @@ async function runDoctor(argv: string[]): Promise<void> {
     if (!text.includes("basketed")) {
       // Not installed is a thing to DO, not a thing that is broken. Reporting
       // it as a failure would make `doctor` cry wolf on a clean machine and
-      // train people to ignore the one line that matters.
-      process.stdout.write(
-        `  --    ${spec.name.padEnd(15)} not installed — \`basketed install --client ${spec.id}\`\n`,
-      );
+      // train people to ignore the one line that matters. Only the primaries
+      // are worth a nag; the rest are listed by `basketed clients`.
+      if ((PRIMARY_CLIENTS as readonly string[]).includes(spec.id)) {
+        process.stdout.write(
+          `  --    ${spec.name.padEnd(16)} not installed — run: basketed install ${spec.id}\n`,
+        );
+      }
       continue;
     }
 

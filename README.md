@@ -10,7 +10,7 @@ a purchase step **only a human can authorise**.
 
 ```bash
 pnpm i && pnpm build
-node packages/cli/bin.js install --client claude-code   # or --all
+node packages/cli/bin.js install claude-code            # or --all
 ```
 
 That is the whole setup. Your client launches Basketed itself over stdio, and
@@ -212,7 +212,8 @@ appears.
 
 ```bash
 basketed clients                       # every client, its file, its key
-basketed install --client claude-code
+basketed install claude-code           # or codex, cursor, opencode, zed, grok...
+basketed install codex opencode        # several at once
 basketed install --all --dry-run       # show the diff, write nothing
 basketed doctor                        # check the install end to end
 ```
