@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import puppeteer, { type Browser, type Page, type HTTPRequest } from "puppeteer-core";
 import { closeConnect, TTL_MS as HANDOFF_TTL_MS } from "./handoff.js";
-import { sessionHeaderAliases } from "./connections.js";
+import { sessionHeaderAliases, captureComplete } from "./connections.js";
 
 /**
  * Sign in through the retailer's own site, in a real browser tab (S15, S18, S19).
@@ -404,7 +404,7 @@ function watchForHeaders(page: Page, storeId: string, want: { match: string; hea
       // before the cookie signature does. A partial one proves nothing: the
       // signed-out site calls the same API. Tesco's customer id may arrive as
       // either header name; aliases count as the same required header.
-      if (want.headers.every((h) => sessionHeaderAliases(h).some((a) => s.captured[a]))) s.loggedIn = true;
+      if (captureComplete(want, s.captured)) s.loggedIn = true;
     } catch {
       // a request that vanished mid-flight tells us nothing; ignore it
     }
@@ -513,8 +513,11 @@ export async function startLogin(
   // Whether they are already in decides what they see next, so check once,
   // up front, rather than a poll interval later.
   try {
-    const complete =
-      session.capture !== null && session.capture.headers.every((h) => session.captured[h.toLowerCase()]);
+    // Alias-aware: Tesco sends the customer id as `customer-uuid` on one
+    // route and `x-customer-uuid` on another, and this check did not know
+    // they were the same header. A capture that was in fact complete read as
+    // still waiting, leaving a human watching a tab that would never finish.
+    const complete = captureComplete(session.capture, session.captured);
     session.loggedIn = looksLoggedIn(await readCookies(browser, domains, page), authCookies) || complete;
   } catch {
     // not fatal; the poll picks it up

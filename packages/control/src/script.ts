@@ -481,6 +481,12 @@ if (storesEl) {
       if (!c) return;
       const status = card.querySelector("[data-status]");
       if (status) status.innerHTML = pill(c);
+      // The server computes the lane; the poll keeps it current so a session
+      // that expires while the page is open moves shelf without a reload.
+      if (c.lane) card.dataset.lane = c.lane;
+      if (c.state) card.dataset.state = c.state;
+      const open = card.querySelector("[data-connect-open]");
+      if (open) open.textContent = c.state === "expired" || c.state === "broken" ? "Reconnect" : "Connect";
       const disc = card.querySelector("[data-disconnect]");
       // An expired session is still HELD -- disconnect has to stay reachable,
       // or the only way out of one is to connect again over the top of it.
@@ -507,11 +513,31 @@ if (storesEl) {
   /* tabs and search are pure client-side filters over server-rendered cards */
   let activeTab = "all";
   const countEl = $("[data-count]");
+
+  /*
+   * Which tab a card belongs on -- a pure function of the lane the server
+   * stamped, and nothing else.
+   *
+   * The old test read the rendered badge with a CSS selector: it asked
+   * whether a pill carried the "on" class, so the Connected tab was a query
+   * over styling, and a store with no account at all was simply "not
+   * connected" -- shelved beside one waiting on a sign-in that never happened.
+   * Those are different situations and the shopper has something to do about
+   * exactly one of them.
+   */
+  function laneMatches(tab, lane) {
+    if (tab === "all") return true;
+    if (tab === "fetch") return lane === "fetch";
+    if (tab === "connected") return lane === "connected";
+    if (tab === "unconnected") return lane === "unconnected";
+    return true;
+  }
+
   function applyFilter() {
     const q = ($("[data-find]").value || "").trim().toLowerCase();
     let shown = 0;
     storesEl.querySelectorAll("[data-store]").forEach((card) => {
-      const matchesTab = activeTab === "all" || card.querySelector("[data-status] .pill.on, [data-status] .pill.bad");
+      const matchesTab = laneMatches(activeTab, card.dataset.lane);
       const matchesText = !q || card.dataset.name.indexOf(q) !== -1 || card.dataset.store.toLowerCase().indexOf(q) !== -1;
       const show = Boolean(matchesTab) && matchesText;
       card.hidden = !show;

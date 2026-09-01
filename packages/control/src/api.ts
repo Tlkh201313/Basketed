@@ -8,6 +8,10 @@ import {
   saveGuardrails,
   GuardrailValueError,
   spentInWindow,
+  connectHint,
+  laneFor,
+  needsAccount,
+  sessionState,
   syncAccountStatus,
   type CartMandate,
 } from "@basketed/commerce";
@@ -260,6 +264,18 @@ export async function handleApi(
             username: held_?.username ?? null,
             connected_at: held_?.createdAt ?? null,
             last_used_at: held_?.lastUsedAt ?? null,
+            /*
+             * The lane split (S21). `connected` alone could not tell the
+             * panel apart from a store that HAS an account and is signed out
+             * from one that has no account at all -- both were simply "not
+             * connected", so a scrape store sat forever on a shelf implying
+             * there was a sign-in still to do.
+             */
+            needs_account: needsAccount(s.account),
+            lane: laneFor(s.account, held_),
+            state: sessionState(held_),
+            refresh: s.account.kind === "session" ? s.account.refresh : null,
+            hint: needsAccount(s.account) && sessionState(held_) !== "live" ? connectHint(s, held_) : null,
             chrome_login: policy.chromeLogin !== null,
             chrome_login_waiting: stateOf(s.id) !== "idle",
             chrome_login_logged_in: stateOf(s.id) === "logged_in",
@@ -486,44 +502,30 @@ export async function handleApi(
       return { status: forgotten ? 200 : 404, body: { ok: forgotten, store_id: storeId } };
     }
 
-    const policy = authPolicyFor(store);
-    if (policy.methods.length === 0) {
-      return { status: 400, body: { error: `${store.name} needs no account: its endpoint is anonymous.` } };
-    }
-
-    const payload = await body();
-    const kind = String(payload["method"] ?? "") as CredentialKind;
-    if (!policy.methods.includes(kind)) {
-      return { status: 400, body: { error: `${store.name} accepts: ${policy.methods.join(", ")}.` } };
-    }
-
-    const secret = String(payload["secret"] ?? "");
-    const username = payload["username"] === undefined ? null : String(payload["username"]);
-    if (!secret.trim()) return { status: 400, body: { error: "Nothing was entered." } };
-
-    try {
-      const saved = deps.vault.connect({ storeId, kind, username, secret });
-      syncStatus(deps, storeId);
-      log(`connected ${storeId} via ${kind}`);
-      // Metadata back, never an echo of what was just sent.
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          store_id: saved.storeId,
-          method: saved.kind,
-          username: saved.username,
-          connected_at: saved.createdAt,
-        },
-      };
-    } catch (err) {
-      // Covers both a bad master key (degradedVault always throws here) and
-      // any crypto failure -- either way the human gets a reason, not a blank
-      // 500, and it lands on stderr for whoever is debugging this machine.
-      const reason = (err as Error).message;
-      log(`connect ${storeId} failed: ${reason}`);
-      return { status: 503, body: { error: reason } };
-    }
+    /*
+     * The last route that took a raw credential in a request body, closed.
+     *
+     * It predates the browser flow and was left in as a fallback: POST a
+     * cookie header or a token and the vault sealed it. Every path that
+     * reaches it now goes through the store's own site instead, so the only
+     * thing this could still serve is a caller who obtained a session some
+     * other way -- which is the shape this panel spent S19 removing. A
+     * pasted credential also skips every check the capture route makes: no
+     * expiry is read, no required header is verified, and a half-session
+     * seals as if it were whole.
+     *
+     * 405 with the alternative named, rather than 404: pretending the route
+     * was never here would send whoever calls it looking for a typo.
+     */
+    return {
+      status: 405,
+      body: {
+        error:
+          `Credentials are not accepted in a request body. Connect ${store.name} from the panel: ` +
+          `a tab opens on the store's own site, you sign in there, and the session is sealed ` +
+          `from that tab. DELETE on this path still disconnects.`,
+      },
+    };
   }
 
   if (method === "GET" && path === "/api/orders") {

@@ -498,16 +498,10 @@ describe("connections (S14)", () => {
     expect(String(tesco!["reach"])).toMatch(/trolley|Connect/i);
   });
 
-  it("connecting a store seals the secret and returns metadata only", async () => {
-    const res = await panel(TESCO_API, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "session", secret: tescoSession() }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(JSON.stringify(body)).not.toContain("tesco-secret-token");
-    expect(body).toMatchObject({ ok: true, store_id: TESCO_ID, method: "session" });
+  it("seals a session and reports it as metadata only, never as the secret", async () => {
+    // Sealed the way the browser flow seals it, because the route that took a
+    // secret in a request body is closed -- see the 405 test below.
+    vault.connect({ storeId: TESCO_ID, kind: "session", secret: tescoSession() });
 
     expect(decodeSession(vault.reveal(TESCO_ID)?.secret ?? "")?.headers["authorization"]).toBe("Bearer tesco-secret-token");
 
@@ -516,7 +510,29 @@ describe("connections (S14)", () => {
     };
     const tesco = list.connections.find((c) => c["store_id"] === TESCO_ID);
     expect(tesco?.["connected"]).toBe(true);
+    expect(tesco?.["lane"]).toBe("connected");
+    expect(tesco?.["state"]).toBe("live");
     expect(JSON.stringify(tesco)).not.toContain("tesco-secret-token");
+  });
+
+  /*
+   * The last route that accepted a raw credential in a request body, closed.
+   *
+   * It predates the browser sign-in and was kept as a fallback. Anything
+   * pasted through it skipped every check the capture route makes: no expiry
+   * read, no required header verified, a half-session sealed as though whole.
+   * 405 rather than 404, so a caller learns the route moved rather than
+   * hunting for a typo.
+   */
+  it("refuses a credential posted in a request body, and says where to go instead", async () => {
+    const res = await panel(TESCO_API, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "session", secret: tescoSession() }),
+    });
+    expect(res.status).toBe(405);
+    expect(((await res.json()) as { error: string }).error).toMatch(/not accepted in a request body/i);
+    expect(vault.get(TESCO_ID)).toBeNull();
   });
 
   it("refuses a store that does not exist", async () => {
@@ -528,14 +544,14 @@ describe("connections (S14)", () => {
     expect(res.status).toBe(404);
   });
 
-  it("refuses a method the store's policy does not allow", async () => {
-    // Target is reached signed-out: it has no account, so nothing connects.
-    const res = await panel("/api/connections/tgt%3Atarget", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "cookie", secret: "whatever-value-here" }),
-    });
-    expect(res.status).toBe(400);
+  it("offers no connect method at all for a store reached signed-out", () => {
+    // Target has no account, so there is nothing for a card to offer. This
+    // used to be checked by POSTing a credential at it and expecting a 400;
+    // the policy itself is the honest place to ask.
+    const target = deps.registry.list().find((s) => s.id === "tgt:target");
+    expect(target).toBeTruthy();
+    expect(authPolicyFor(target!).methods).toEqual([]);
+    expect(authPolicyFor(target!).chromeLogin).toBeNull();
   });
 
   /*
@@ -544,7 +560,7 @@ describe("connections (S14)", () => {
    * credential-phishing page there is; the browser sign-in replaced it, so no
    * store may offer "password" and the route must refuse it even if one did.
    */
-  it("no store offers a password, and the route refuses one outright", async () => {
+  it("no store offers a password, and no field accepts a retailer password", async () => {
     for (const store of deps.registry.list()) {
       expect(authPolicyFor(store).methods).not.toContain("password");
     }
@@ -553,17 +569,13 @@ describe("connections (S14)", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ method: "password", username: "me@example.com", secret: "hunter2plaintext" }),
     });
-    expect(res.status).toBe(400);
+    // The whole route is closed now, so a password cannot even reach the
+    // policy check that used to turn it away.
+    expect(res.status).toBe(405);
     expect(vault.get(TESCO_ID)).toBeNull();
-  });
 
-  it("refuses an empty secret", async () => {
-    const res = await panel(TESCO_API, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "session", secret: "   " }),
-    });
-    expect(res.status).toBe(400);
+    const html = await (await panel("/connections/" + encodeURIComponent(TESCO_ID))).text();
+    expect(html).not.toMatch(/type="password"/);
   });
 
   it("a cross-origin POST is refused before the token is even checked", async () => {
@@ -577,11 +589,8 @@ describe("connections (S14)", () => {
   });
 
   it("disconnect forgets it, and forgetting twice says so honestly", async () => {
-    await panel(TESCO_API, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "session", secret: tescoSession() }),
-    });
+    // DELETE is the half of this route that survived; the POST half is a 405.
+    vault.connect({ storeId: TESCO_ID, kind: "session", secret: tescoSession() });
     const first = await panel(TESCO_API, { method: "DELETE" });
     expect(first.status).toBe(200);
     expect(vault.get(TESCO_ID)).toBeNull();
@@ -600,14 +609,14 @@ describe("connections (S14)", () => {
       version: "test",
       token: TOKEN,
     });
-    const res = await panel(TESCO_API, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ method: "session", secret: tescoSession() }),
-    });
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toMatch(/disk is full/);
+    // Reads are what a degraded vault has to survive: the panel still has to
+    // render, and every store has to read as not connected rather than as a
+    // blank 500 that says nothing about why.
+    const res = await panel("/api/connections");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { connections: Array<Record<string, unknown>> };
+    expect(body.connections.length).toBeGreaterThan(0);
+    expect(body.connections.every((c) => c["connected"] === false)).toBe(true);
   });
 
   it("the Connect-stores page renders once authed, and is locked otherwise", async () => {

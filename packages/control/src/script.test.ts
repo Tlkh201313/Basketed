@@ -100,3 +100,38 @@ describe("the page the script writes into", () => {
     }
   });
 });
+
+describe("the four connection lanes", () => {
+  it("filters on the lane the server stamped, not on a CSS class", () => {
+    /*
+     * The Connected tab used to be a query over rendered badge styling:
+     * querySelector("[data-status] .pill.on"). That could not tell a store
+     * with no account from one that is signed out, so every scrape store sat
+     * on a shelf implying there was a sign-in still to do.
+     */
+    expect(CODE).toMatch(/laneMatches\s*\(/);
+    expect(CODE).toContain("dataset.lane");
+    expect(CODE).not.toMatch(/\.pill\.on/);
+  });
+
+  it("knows all four tabs by name", () => {
+    for (const tab of ["all", "fetch", "connected", "unconnected"]) {
+      expect(CODE, tab).toContain('"' + tab + '"');
+    }
+  });
+
+  it("keeps the lane current as the poll runs", () => {
+    // A session that expires while the page is open has to change shelf
+    // without a reload, or the tabs are only correct on first paint.
+    expect(CODE).toMatch(/card\.dataset\.lane\s*=/);
+    expect(CODE).toMatch(/card\.dataset\.state\s*=/);
+  });
+
+  it("says Reconnect once something is already held", () => {
+    // A shopper who connected an hour ago and is shown "Connect" reads it as
+    // their first attempt having failed silently.
+    expect(CODE).toContain("Reconnect");
+    expect(CODE).toMatch(/"expired"/);
+    expect(CODE).toMatch(/"broken"/);
+  });
+});

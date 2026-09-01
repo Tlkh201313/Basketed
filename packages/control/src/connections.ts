@@ -1,23 +1,35 @@
+import type { AccountLogin, StoreAccount } from "@basketed/core";
 import type { CredentialKind } from "@basketed/vault";
+import { usesPhrase } from "@basketed/commerce";
 
 /**
- * What connecting a store actually means, per store.
+ * What connecting a store actually means, rendered for the panel.
  *
- * This table exists because the honest answer differs by retailer, and a
- * panel that rendered one identical "Connect" button for all of them would be
- * lying about three different situations at once:
+ * Until S21 this file held the answer: a table keyed by store id, saying
+ * which stores had a Connect button, where it sent you, and which cookies to
+ * watch for. It was the only place that knew Tesco has a trolley behind a
+ * sign-in and Etsy does not, so the panel could offer Connect for a store
+ * whose adapter never reads a session and nothing would catch it.
+ *
+ * The adapter declares that now, in `manifest.account`. This file is a
+ * projection of the declaration into panel copy, and holds no store ids.
+ *
+ * The three situations one identical "Connect" button would have lied about
+ * are still three, they are just no longer written down here:
  *
  *   - **Shopify UCP merchants** need nothing. Their agentic endpoint is
  *     anonymous; there is no account to connect and adding a login step would
- *     invent one that does not exist.
+ *     invent one that does not exist. (`account: none`)
  *   - **Amazon, IKEA, Target and the other scrape stores** are reached
  *     signed-out, through their own public pages. Search works without an
  *     account. Connect is not offered until an adapter actually consumes a
- *     session -- sealing cookies that nothing uses is a fake "connected" state.
+ *     session -- sealing cookies that nothing uses is a fake "connected"
+ *     state. (`account: none`)
  *   - **Tesco** search is public; the basket is not. Connect opens tesco.com,
  *     the human signs in there, and Basketed lifts `authorization` plus
  *     `customer-uuid` from Tesco's own `xapi.tesco.com` call (the same pair
  *     GavinAttard/tesco-grocery-mcp sends, captured instead of pasted).
+ *     (`account: session`)
  *
  * ## Why there is no password box anywhere in this panel (S19)
  *
@@ -37,45 +49,14 @@ import type { CredentialKind } from "@basketed/vault";
 
 export type ConnectMethod = CredentialKind;
 
-/** Where "Connect" sends a human, and what to read back afterwards. */
-export interface ChromeLogin {
-  /** Where the tab lands first: a page that reveals whether you are signed in. */
-  url: string;
-  /**
-   * Where to send someone who turns out NOT to be signed in. Landing a
-   * signed-out shopper on a homepage and leaving them to find the account
-   * menu is a worse flow than opening the login page for them.
-   */
-  loginUrl: string;
-  domains: string[];
-  /**
-   * Cookie-name prefixes that only a signed-in session has. The server polls
-   * for one of these so the panel can say "you are in" by itself instead of
-   * asking a human to confirm a login they just performed.
-   *
-   * Best-effort signatures, not a contract: none of these retailers documents
-   * its cookies and any of them may rename one without notice. A miss stays
-   * recoverable -- the capture route never consults this list.
-   */
-  authCookies: string[];
-  /**
-   * Headers to lift off the store's own API call, when the credential is not
-   * in the cookie jar at all (S21).
-   *
-   * Tesco is the case that forced this open. Its basket API authenticates on
-   * `authorization` AND `customer-uuid` together -- a bearer alone returns a
-   * basket that is not yours, which is exactly the "connected but broken"
-   * failure that is worst to debug. GavinAttard/tesco-grocery-mcp (MIT) sends
-   * the same pair, which is where the second header came from; the difference
-   * is that it asks a human to copy both out of DevTools, and this lifts them
-   * from the tab they just signed into.
-   *
-   * Every header named here is REQUIRED. A capture missing one is refused
-   * rather than sealed, because half a session succeeds here and fails later,
-   * somewhere with much less context.
-   */
-  capture?: { match: string; headers: string[] };
-}
+/**
+ * Where "Connect" sends a human, and what to read back afterwards.
+ *
+ * The shape now lives in the core schema so an adapter can declare it. This
+ * alias is kept because the browser-connect session machinery reads it by
+ * this name in a dozen places, and renaming those buys nothing.
+ */
+export type ChromeLogin = AccountLogin;
 
 export interface StoreAuthPolicy {
   /** Empty when there is nothing to connect. Never contains "password" (see above). */
@@ -87,76 +68,6 @@ export interface StoreAuthPolicy {
   /** Set for every store that has an account to sign in to. */
   chromeLogin: ChromeLogin | null;
 }
-
-const ANONYMOUS: StoreAuthPolicy = {
-  methods: [],
-  oauth: false,
-  reach: "Anonymous. This merchant's agentic endpoint needs no account, so there is nothing to connect.",
-  chromeLogin: null,
-};
-
-const DEMO: StoreAuthPolicy = {
-  methods: [],
-  oauth: false,
-  reach: "Demo catalogue. Search works offline; there is no real account to connect.",
-  chromeLogin: null,
-};
-
-/**
- * Every store whose adapter actually consumes a session, and how to reach it.
- *
- * Demo (`sim:*`) catalogues used to have Connect buttons that sealed cookies
- * nothing ever sent. That is gone: Connect exists only where a live adapter
- * will attach the captured session on the next basket call.
- */
-const CHROME_LOGIN: Record<string, ChromeLogin> = {
-  // Real Tesco. Basket auth is the header pair Tesco's own frontend sends to
-  // xapi.tesco.com -- a bearer alone returns a basket that is not yours.
-  "tsc:tesco": {
-    url: "https://www.tesco.com/groceries/en-GB/",
-    loginUrl: "https://www.tesco.com/account/login/en-GB",
-    domains: ["tesco.com"],
-    authCookies: ["_ttoken", "trefresh", "atrc_", "access_token", "OAuth.AccessToken"],
-    capture: { match: "xapi.tesco.com", headers: ["authorization", "customer-uuid"] },
-  },
-};
-
-/**
- * Real Tesco (S16). `mode: "native"` because search/detail genuinely are --
- * Tesco's own live API, no auth needed. That is also why it cannot fall
- * through to the generic `mode === "native"` case below: unlike Shopify UCP,
- * this store's basket DOES need a credential, so "native" here is not a
- * synonym for "nothing to connect".
- */
-const REAL_TESCO_POLICY: StoreAuthPolicy = {
-  methods: ["session"],
-  oauth: false,
-  reach:
-    "Search Tesco without an account. Connect to use your real trolley: a tab opens on tesco.com, " +
-    "you sign in there, and Basketed seals the session. No password is typed into Basketed.",
-  chromeLogin: CHROME_LOGIN["tsc:tesco"] ?? null,
-};
-
-/**
- * Real Amazon, IKEA, Target (S17). `mode: "native"` for the same reason as
- * Tesco -- genuinely their own live pages, reaching a real signed-out shopper
- * -- but the mechanism differs and the card says so: there is no JSON API
- * here, a stealth browser renders the retailer's own public page and the
- * adapter parses what a signed-out visitor sees. Nothing to connect, because
- * nothing here needs an account.
- */
-function realScrapePolicy(name: string): StoreAuthPolicy {
-  return {
-    methods: [],
-    oauth: false,
-    reach: `Live ${name} search from their public pages. No account needed.`,
-    chromeLogin: null,
-  };
-}
-
-const REAL_AMAZON_POLICY = realScrapePolicy("Amazon");
-const REAL_IKEA_POLICY = realScrapePolicy("IKEA");
-const REAL_TARGET_POLICY = realScrapePolicy("Target");
 
 /**
  * Tesco's GraphQL gateway has sent the customer id as `customer-uuid` and as
@@ -170,13 +81,69 @@ export function sessionHeaderAliases(name: string): string[] {
   return [key];
 }
 
-export function authPolicyFor(store: { id: string; mode: string }): StoreAuthPolicy {
-  if (store.id === "tsc:tesco") return REAL_TESCO_POLICY;
-  if (store.id === "amz:amazon") return REAL_AMAZON_POLICY;
-  if (store.id === "ikea:ikea") return REAL_IKEA_POLICY;
-  if (store.id === "tgt:target") return REAL_TARGET_POLICY;
-  if (store.mode === "simulated") return DEMO;
-  if (store.mode === "native") return ANONYMOUS;
+/**
+ * True when every header the store asked for has actually arrived.
+ *
+ * The check this replaces read `headers.every((h) => captured[h.toLowerCase()])`
+ * against the raw capture, which does not know that `customer-uuid` and
+ * `x-customer-uuid` are the same header. Tesco sends one or the other
+ * depending on the route, so a session that was complete could be reported as
+ * still waiting, leaving a human staring at a tab that would never finish.
+ */
+export function captureComplete(
+  capture: { headers: string[] } | null | undefined,
+  captured: Record<string, string>,
+): boolean {
+  if (!capture) return false;
+  return capture.headers.every((name) =>
+    sessionHeaderAliases(name).some((alias) => String(captured[alias] ?? "").trim() !== ""),
+  );
+}
+
+/**
+ * The panel's view of one store's account, derived entirely from what the
+ * adapter declared.
+ *
+ * `mode` is still consulted for the copy on a store with no account, because
+ * "demo catalogue" and "live store, no sign-in needed" read differently to a
+ * shopper even though both are `account: none` as far as the code cares.
+ */
+export function authPolicyFor(store: { name: string; mode: string; account: StoreAccount }): StoreAuthPolicy {
+  const account = store.account;
+
+  if (account.kind === "session") {
+    const unlocks = usesPhrase(account);
+    const domain = account.login.domains[0] ?? "the retailer site";
+    return {
+      methods: ["session"],
+      oauth: false,
+      reach:
+        `Search ${store.name} without an account. Connect to use your real ${unlocks}: a tab opens ` +
+        `on ${domain}, you sign in there, and Basketed seals the session. ` +
+        `No password is typed into Basketed.`,
+      chromeLogin: account.login,
+    };
+  }
+
+  if (account.kind === "demo") {
+    return {
+      methods: [],
+      oauth: false,
+      reach: "Demo catalogue. Search works offline; there is no real account to connect.",
+      chromeLogin: null,
+    };
+  }
+
+  // No account. Which of the two true sentences to show depends on where the
+  // data comes from, not on whether there is a credential -- there is not.
+  if (store.mode === "native") {
+    return {
+      methods: [],
+      oauth: false,
+      reach: `Live ${store.name} search from their public pages. No account needed.`,
+      chromeLogin: null,
+    };
+  }
   return {
     methods: [],
     oauth: false,
@@ -185,11 +152,12 @@ export function authPolicyFor(store: { id: string; mode: string }): StoreAuthPol
   };
 }
 
-/** The label the panel puts on a held credential. */
-export function secretLabel(method: ConnectMethod): string {
-  return method === "cookie" ? "Session" : method === "token" ? "Access token" : "Account";
-}
-
 export function methodLabel(method: ConnectMethod): string {
-  return method === "cookie" ? "Browser session" : method === "token" ? "Access token" : "Account";
+  return method === "cookie"
+    ? "Browser session"
+    : method === "session"
+      ? "Browser session"
+      : method === "token"
+        ? "Access token"
+        : "Account";
 }

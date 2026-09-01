@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { PANEL_BODY_LIMIT, readJsonBody } from "@basketed/core";
+import { laneFor, sessionState } from "@basketed/commerce";
 import { handleApi } from "./api.js";
 import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, renderSettings, type StoreRow } from "./pages.js";
 import { stateOf as chromeLoginStateOf, chromeMode } from "./browser-connect.js";
@@ -350,13 +351,22 @@ export function createPanelHandler(
       }
 
       if (path === "/connections") {
-        const stores: StoreRow[] = deps.registry.list().map((s) => ({
-          id: s.id,
-          name: s.name,
-          mode: s.mode,
-          country: s.country,
-          currency: s.currency,
-        }));
+        // Lane and state are computed here, not in the browser, so the four
+        // tabs are correct on first paint rather than after the status poll
+        // lands -- and so a reader with JavaScript off still sees the truth.
+        const stores: StoreRow[] = deps.registry.list().map((s) => {
+          const held = deps.vault.get(s.id);
+          return {
+            id: s.id,
+            name: s.name,
+            mode: s.mode,
+            country: s.country,
+            currency: s.currency,
+            account: s.account,
+            lane: laneFor(s.account, held),
+            state: sessionState(held),
+          };
+        });
         send(res, 200, "text/html; charset=utf-8", renderConnections({ stores, token: opts.token }), {
           "set-cookie": setCookie,
         });
@@ -381,7 +391,16 @@ export function createPanelHandler(
           200,
           "text/html; charset=utf-8",
           renderConnect({
-            store: { id: store.id, name: store.name, mode: store.mode, country: store.country, currency: store.currency },
+            store: {
+              id: store.id,
+              name: store.name,
+              mode: store.mode,
+              country: store.country,
+              currency: store.currency,
+              account: store.account,
+              lane: laneFor(store.account, held),
+              state: sessionState(held),
+            },
             token: opts.token,
             connected: held
               ? { method: held.kind, username: held.username, broken: held.broken, expired: held.expired }

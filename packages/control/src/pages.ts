@@ -2,6 +2,8 @@ import { CLIENTS, PRIMARY_CLIENTS, pathFor, snippetFor, type SnippetInput } from
 import { STYLE } from "./style.js";
 import { SCRIPT } from "./script.js";
 import { authPolicyFor, methodLabel, type ConnectMethod, type StoreAuthPolicy } from "./connections.js";
+import { laneFor, type AccountLane, type SessionState } from "@basketed/commerce";
+import type { StoreAccount } from "@basketed/core";
 
 /**
  * The panel's pages: Install, Connect stores, Approvals — originally just the
@@ -403,6 +405,18 @@ export interface StoreRow {
   mode: string;
   country?: string;
   currency?: string;
+  /** The adapter's own account declaration. Everything the card says comes from it. */
+  account: StoreAccount;
+  /**
+   * Which shelf this store starts on, computed server-side from what the
+   * vault holds right now.
+   *
+   * Rendered into the markup rather than fetched, so the tabs work on a page
+   * whose first status poll has not landed yet -- and so a reader with
+   * JavaScript off still sees which stores are signed in.
+   */
+  lane?: AccountLane;
+  state?: SessionState;
 }
 
 export interface ConnectionsInput {
@@ -504,7 +518,13 @@ export function renderConnections(input: ConnectionsInput): string {
     const policy = authPolicyFor(s);
     const connectable = policy.methods.length > 0;
     const live = s.mode === "native";
-    return `<article class="appcard" data-store="${esc(s.id)}" data-name="${esc(s.name.toLowerCase())}" data-connectable="${connectable}">
+    const lane = s.lane ?? laneFor(s.account, null);
+    const state = s.state ?? "none";
+    // "Reconnect", not "Connect", once something is already held: a shopper
+    // who connected an hour ago and is shown "Connect" reads it as their
+    // first attempt having failed silently.
+    const label = state === "expired" || state === "broken" ? "Reconnect" : "Connect";
+    return `<article class="appcard" data-store="${esc(s.id)}" data-name="${esc(s.name.toLowerCase())}" data-connectable="${connectable}" data-lane="${esc(lane)}" data-state="${esc(state)}">
   <div class="head">
     <span class="tile" aria-hidden="true">${esc(monogram(s.name))}</span>
     <div style="min-width:0">
@@ -519,7 +539,7 @@ export function renderConnections(input: ConnectionsInput): string {
     <span class="right">${
       connectable
         ? `<button class="btn sm danger" type="button" data-disconnect hidden>Disconnect</button>
-           ${connectAnchor(s, policy, "Connect", "btn sm pri")}`
+           ${connectAnchor(s, policy, label, "btn sm pri")}`
         : `<span class="none">no account needed</span>`
     }</span>
   </div>
@@ -543,9 +563,15 @@ export function renderConnections(input: ConnectionsInput): string {
 <div class="sage" style="margin-top:22px">
   <span class="eyebrow">how connecting works</span>
   <p>
-    Tesco search works signed-out. Connect is only for the trolley: a tab opens on tesco.com,
-    you sign in on Tesco's page, and Basketed lifts the session Tesco's own site already uses.
-    Stores marked <em>no account needed</em> are live search &mdash; nothing to connect.
+    Search works signed-out everywhere. Connect is only for the stores that keep a
+    basket or a delivery slot behind your own account: a tab opens on the store's own
+    site, you sign in there, and Basketed seals the session that site already uses.
+    Stores under <em>Fetch</em> have no account to connect &mdash; searching them signed
+    out is the whole product, not a limitation.
+  </p>
+  <p>
+    A session that has run out shows <em>Reconnect</em>. If you are still signed in at the
+    store, pressing it finishes by itself.
   </p>
 </div>
 
@@ -559,6 +585,8 @@ ${h2("Stores", "")}
       <div class="seg" role="group" aria-label="Filter stores">
         <button data-tab="all" class="on" type="button">All</button>
         <button data-tab="connected" type="button">Connected</button>
+        <button data-tab="unconnected" type="button">Unconnected</button>
+        <button data-tab="fetch" type="button">Fetch</button>
       </div>
       <div class="finder">
         <span class="slash" aria-hidden="true">/</span>
