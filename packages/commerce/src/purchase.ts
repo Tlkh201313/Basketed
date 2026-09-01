@@ -3,7 +3,7 @@ import type { FxTable, Money } from "@basketed/core";
 
 import type { AdapterCtx, StoreRegistry } from "@basketed/adapters";
 import { describeRoute, parseProductId, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
-import { authorizedFetch, type Vault } from "@basketed/vault";
+import { authorizedFetch, SessionUnusableError, type Vault } from "@basketed/vault";
 import type { Db } from "./db.js";
 import { withRetry, withTimeout } from "./retry.js";
 import { cartHash, describeMandate, type CartMandate, type MandateLine } from "./mandate.js";
@@ -633,11 +633,15 @@ export async function confirmPurchase(
       );
     } catch (err) {
       audit(deps.db, "recheck_unreachable", `${fingerprint(approvalId)} ${(err as Error).message}`, now);
+      // A dead session is not an outage: waiting will not fix it. The
+      // approval survives either way, because neither is the human's fault.
+      const next =
+        err instanceof SessionUnusableError
+          ? "Nothing was bought and the approval is still good — reconnect the store, then confirm again."
+          : "Nothing was bought and the approval is still good — try again in a moment.";
       return {
         ok: false,
-        reason:
-          `Could not re-check the cart with ${adapter.manifest.name} before buying: ${(err as Error).message}. ` +
-          "Nothing was bought and the approval is still good — try again in a moment.",
+        reason: `Could not re-check the cart with ${adapter.manifest.name} before buying: ${(err as Error).message}. ${next}`,
       };
     }
 

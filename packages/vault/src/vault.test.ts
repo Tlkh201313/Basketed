@@ -5,7 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { openVault, degradedVault, authorizedFetch, encodeSession, decodeSession, type Vault } from "./index.js";
+import {
+  openVault,
+  degradedVault,
+  authorizedFetch,
+  encodeSession,
+  decodeSession,
+  SessionUnusableError,
+  type Vault,
+} from "./index.js";
 
 /**
  * The vault's one job: hold a secret so a human can add it, and make sure the
@@ -306,16 +314,122 @@ describe("session credentials", () => {
    * silently succeeds as an anonymous call -- it attaches nothing and the
    * adapter gets the retailer's own 401, which is the honest outcome.
    */
-  it("a session whose envelope will not parse attaches nothing", async () => {
+  it("a session whose envelope will not parse sends nothing at all", async () => {
+    // This used to go out unauthenticated and let Tesco answer 401. Letting a
+    // signed-out request reach the retailer is how an empty basket comes back
+    // looking like an answer, so the refusal happens here instead.
     vault.connect({ storeId: "tsc:tesco", kind: "session", username: null, secret: "not json at all" });
     expect(decodeSession("not json at all")).toBeNull();
 
-    let seen: Headers | undefined;
-    const spy: typeof fetch = async (_input, init) => {
-      seen = new Headers(init?.headers);
+    let reached = false;
+    const spy: typeof fetch = async () => {
+      reached = true;
       return new Response("{}", { status: 401 });
     };
-    await authorizedFetch(vault, "tsc:tesco", spy)("https://xapi.tesco.com/");
-    expect(seen?.get("authorization")).toBeNull();
+    await expect(authorizedFetch(vault, "tsc:tesco", spy)("https://xapi.tesco.com/")).rejects.toThrow(
+      /broken.*[Rr]econnect/s,
+    );
+    expect(reached).toBe(false);
+  });
+});
+
+describe("authorizedFetch refuses before the wire, not after the retailer does", () => {
+  let db: DatabaseSync;
+  let vault: Vault;
+  let reached: number;
+  let base: typeof fetch;
+
+  beforeEach(() => {
+    db = new DatabaseSync(":memory:");
+    vault = openVault(db, { keyPath: tmpKeyPath() });
+    reached = 0;
+    base = async () => {
+      reached += 1;
+      return new Response("{}");
+    };
+  });
+
+  it("throws on an expired session and sends nothing", async () => {
+    /*
+     * An expired session used to go out anyway. With luck the retailer said
+     * 401; without it, they served the signed-out page -- which has the right
+     * shape, so an empty basket or an empty slot list read as fact. That is
+     * the failure a shopping agent must never paper over.
+     */
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      secret: encodeSession({ headers: { authorization: "Bearer stale" }, expiresAt: Date.now() - 1000 }),
+    });
+
+    await expect(authorizedFetch(vault, "tsc:tesco", base)("https://example.com/x")).rejects.toThrow(
+      /expired.*[Rr]econnect/s,
+    );
+    expect(reached).toBe(0);
+  });
+
+  it("throws on a credential the current key cannot read, and sends nothing", async () => {
+    const keyA = tmpKeyPath();
+    openVault(db, { keyPath: keyA }).connect({ storeId: "tsc:tesco", kind: "token", secret: "under-the-old-key" });
+    const rotated = openVault(db, { keyPath: tmpKeyPath() });
+
+    await expect(authorizedFetch(rotated, "tsc:tesco", base)("https://example.com/x")).rejects.toThrow(/broken/i);
+    expect(reached).toBe(0);
+  });
+
+  it("throws on a sealed envelope that is not one we wrote", async () => {
+    // Decrypts fine, but there are no headers to attach, so the request would
+    // go out signed-out and come back plausibly wrong.
+    vault.connect({ storeId: "tsc:tesco", kind: "session", secret: "not-an-envelope" });
+    await expect(authorizedFetch(vault, "tsc:tesco", base)("https://example.com/x")).rejects.toThrow(
+      SessionUnusableError,
+    );
+    expect(reached).toBe(0);
+  });
+
+  it("names the store and the state it is in", async () => {
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      secret: encodeSession({ headers: { authorization: "Bearer stale" }, expiresAt: 1 }),
+    });
+    const err = await authorizedFetch(vault, "tsc:tesco", base)("https://example.com/x").catch((e) => e);
+    expect(err).toBeInstanceOf(SessionUnusableError);
+    expect(err.storeId).toBe("tsc:tesco");
+    expect(err.state).toBe("expired");
+    // Callers distinguish "reconnect" from "the shop is down" on this.
+    expect(err.message).toMatch(/nothing was sent to the retailer/i);
+  });
+
+  it("never leaks the stale secret in the refusal", async () => {
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      secret: encodeSession({ headers: { authorization: "Bearer the-stale-secret" }, expiresAt: 1 }),
+    });
+    const err = await authorizedFetch(vault, "tsc:tesco", base)("https://example.com/x").catch((e) => e);
+    expect(String(err.message)).not.toContain("the-stale-secret");
+  });
+
+  it("still lets a live session through", async () => {
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      secret: encodeSession({ headers: { authorization: "Bearer live" }, expiresAt: Date.now() + 3_600_000 }),
+    });
+    await authorizedFetch(vault, "tsc:tesco", base)("https://example.com/x");
+    expect(reached).toBe(1);
+  });
+
+  it("still lets a session that named no expiry through", async () => {
+    // "Did not say" is not "expired". Refusing here would break every store
+    // whose session carries no lifetime of its own.
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      secret: encodeSession({ headers: { authorization: "Bearer forever" } }),
+    });
+    await authorizedFetch(vault, "tsc:tesco", base)("https://example.com/x");
+    expect(reached).toBe(1);
   });
 });

@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 
@@ -245,11 +246,38 @@ function masterKey(keyPath: string): Buffer {
   } catch {
     /* advisory on Windows; not a reason to refuse to run */
   }
+  restrictToOwner(keyPath);
   const key = Buffer.from(readFileSync(keyPath, "utf8").trim(), "base64");
   if (key.length !== 32) {
     throw new Error(`Master key at ${keyPath} is not 32 bytes. Delete it to mint a new one (connections are lost).`);
   }
   return key;
+}
+
+/**
+ * Windows has no 0600. chmodSync there only flips the read-only attribute,
+ * so the key file inherits the profile directory's ACL -- which grants
+ * Administrators and SYSTEM, and on a machine-joined profile can grant more.
+ * This strips inheritance and leaves exactly the current user.
+ *
+ * Best-effort by design: a locked-down key is worth having and a failure to
+ * lock it down is not worth refusing to shop over. The file is already under
+ * the user's own profile either way, and a message on stderr the shopper
+ * never reads would be the only alternative.
+ */
+function restrictToOwner(keyPath: string): void {
+  if (process.platform !== "win32") return;
+  const user = process.env["USERNAME"];
+  if (!user) return;
+  try {
+    execFileSync("icacls", [keyPath, "/inheritance:r", "/grant:r", `${user}:F`], {
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: 5_000,
+    });
+  } catch {
+    /* no icacls, no permission, or a filesystem without ACLs. Not fatal. */
+  }
 }
 
 function seal(key: Buffer, plaintext: string): string {
@@ -436,8 +464,45 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
  * and `customer-uuid` together. The vault never interprets them -- the capture
  * side named them, and this closure only sets them.
  */
+export class SessionUnusableError extends Error {
+  constructor(
+    readonly storeId: string,
+    readonly state: "expired" | "broken",
+    message: string,
+  ) {
+    super(message);
+    this.name = "SessionUnusableError";
+  }
+}
+
+function unusable(storeId: string, state: "expired" | "broken"): SessionUnusableError {
+  return new SessionUnusableError(
+    storeId,
+    state,
+    state === "expired"
+      ? `The ${storeId} session has expired. Reconnect the store in the Basketed panel, ` +
+          `then try again -- nothing was sent to the retailer.`
+      : `The ${storeId} connection is broken and cannot be read. Reconnect the store in the ` +
+          `Basketed panel, then try again -- nothing was sent to the retailer.`,
+  );
+}
+
 export function authorizedFetch(vault: Vault, storeId: string, base: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
+    /*
+     * Refuse BEFORE the request, not after the retailer does.
+     *
+     * Sending an expired session got a 401 back if we were lucky and a
+     * signed-out page if we were not, and a signed-out page is the dangerous
+     * one: it has the right shape, so an empty basket or an empty slot list
+     * reads as fact. Failing here means the answer is always "reconnect",
+     * never a plausible wrong one -- and a dead credential never reaches the
+     * wire at all.
+     */
+    const held = vault.get(storeId);
+    if (held?.broken) throw unusable(storeId, "broken");
+    if (held?.expired) throw unusable(storeId, "expired");
+
     const cred = vault.reveal(storeId);
     if (!cred) return base(input, init);
 
@@ -446,10 +511,10 @@ export function authorizedFetch(vault: Vault, storeId: string, base: typeof fetc
     else if (cred.kind === "cookie") headers.set("cookie", cred.secret);
     else if (cred.kind === "session") {
       const session = decodeSession(cred.secret);
-      // An envelope that will not parse attaches nothing, so the retailer
-      // answers 401 and the panel says "reconnect" -- rather than an
-      // exception thrown from inside the one closure an adapter cannot see.
-      if (!session) return base(input, init);
+      // Decrypted, but the envelope inside is not one we wrote. Same class of
+      // failure as a broken seal: we cannot attach the credential, so the
+      // request would go out signed-out and come back plausibly wrong.
+      if (!session) throw unusable(storeId, "broken");
       applySessionHeaders(headers, session);
     } else return base(input, init);
 
