@@ -648,7 +648,9 @@ export function renderConnect(input: ConnectInput): string {
 
   const connectBlock = login
     ? `
-<div class="two" data-connect-page data-store="${esc(input.store.id)}">
+<div class="two" data-connect-page data-store="${esc(input.store.id)}" data-state="${esc(
+    held?.broken ? "broken" : held?.expired ? "expired" : held ? "live" : "none",
+  )}">
   <div class="card">
     <span class="eyebrow">sign in at ${store}</span>
     <p class="small" style="margin:8px 0 0">

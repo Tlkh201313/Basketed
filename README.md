@@ -84,7 +84,7 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # five smoke suites, all offline
-pnpm test         # 403 unit tests
+pnpm test         # 457 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm stability    # 25 cold starts, measured: last run 25/25 (100%)
 pnpm smoke:live   # ...and against live merchants, spending real requests
@@ -213,6 +213,16 @@ Two lanes on one server.
 | `basket_list_orders` · `basket_get_order_status` | reads; `cart_json` and `approval_id` are stripped |
 
 Connect opens the retailer's own site in a new tab, then a **Heartbeat** watches until you are signed in (or were already) and seals the session. Basketed never asks for a store password. Caps (per-order, rolling 24h, store allowlist) are edited under **Settings** — human approval cannot be turned off.
+
+The Connect-stores page has four tabs: **All**, **Connected**, **Unconnected**
+and **Fetch**. Fetch is where most stores live and it is not a lesser shelf —
+those stores have no account to connect, and searching them signed out is the
+product rather than a limitation. Unconnected means there genuinely is a
+sign-in still to do. Which shelf a store lands on comes from the adapter's own
+`account` declaration, so a store cannot be advertised as connectable by the
+panel while its adapter never reads a session. Connect drives Chrome, Edge,
+Brave or Chromium, whichever is installed (`BASKETED_CHROME` names another),
+and `basketed doctor` prints which one it would open.
 
 ### Token levers
 

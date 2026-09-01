@@ -754,6 +754,40 @@ if (connectPage) {
   const pill = $("[data-ext-pill]");
   const pillNote = $("[data-ext-pill-note]");
   const here = extensionPresent();
+
+  /*
+   * A session that has run out, re-armed without a click.
+   *
+   * An expiry is not a sign-out. The shopper is very often still signed in at
+   * the store, and the only thing that lapsed is the copy Basketed holds. The
+   * page still made them press Connect, wait for a tab to open on a site they
+   * were already logged into, and close it again -- a full manual round trip
+   * to re-read something the extension can see from here.
+   *
+   * So on arrival, if a credential is held and dead and the extension is
+   * loaded, ask it once. If the cookies and headers are there, this finishes
+   * silently and the page reloads connected. If they are not, nothing is lost
+   * and the Connect button is exactly where it was.
+   *
+   * Deliberately no window.open: a popup outside a click handler is blocked,
+   * and one that was not would be a page opening retailer tabs on its own.
+   */
+  const state = connectPage.dataset.state;
+  if (here && opener && (state === "expired" || state === "broken")) {
+    const cfg = connectConfig(opener);
+    say("Session expired. Checking whether you are still signed in at " + cfg.name + "...");
+    void (async () => {
+      const out = await tryCapture(cfg);
+      if (out.state === "connected") {
+        say("Still signed in. Reconnected.");
+        setTimeout(() => location.reload(), 700);
+        return;
+      }
+      // Not a failure worth a red line: pressing Connect is the normal path
+      // and it is right there. Say what happened and get out of the way.
+      say("Press Reconnect to sign in at " + cfg.name + " again.");
+    })();
+  }
   if (badge) badge.hidden = false;
   if (pill) {
     pill.className = here ? "pill ok" : "pill wait";

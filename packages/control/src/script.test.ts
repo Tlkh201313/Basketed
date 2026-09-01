@@ -135,3 +135,21 @@ describe("the four connection lanes", () => {
     expect(CODE).toMatch(/"broken"/);
   });
 });
+
+describe("re-arming a session that ran out", () => {
+  it("tries a silent capture on arrival, and only when the extension is here", () => {
+    // An expiry is not a sign-out. The shopper is usually still signed in at
+    // the store, and the only thing that lapsed is our copy.
+    expect(CODE).toMatch(/state === "expired"/);
+    expect(CODE).toMatch(/state === "broken"/);
+    expect(CODE).toMatch(/here \s*&&/);
+  });
+
+  it("opens no window outside a click", () => {
+    // A popup outside a click handler is blocked, and one that was not would
+    // be a page opening retailer tabs by itself.
+    const rearm = CODE.slice(CODE.indexOf('state === "expired"'));
+    const upToEnd = rearm.slice(0, 900);
+    expect(upToEnd).not.toContain("window.open");
+  });
+});
