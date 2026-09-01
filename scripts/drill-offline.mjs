@@ -85,6 +85,10 @@ const child = spawn(
       // The drill reaches an approval, and opening a browser mid-drill would be
       // both a surprise and a second thing to explain on stage.
       BASKETED_NO_OPEN: "1",
+      // No Chromium either. With the wire cut a stealth render can only end in
+      // a launch or a navigation failure, and spending thirty seconds arriving
+      // at one is not a test of anything.
+      BASKETED_NO_BROWSER: "1",
     },
   },
 );
