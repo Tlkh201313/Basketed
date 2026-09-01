@@ -11,37 +11,19 @@ import {
 } from "@basketed/core";
 import * as cheerio from "cheerio";
 import { mintProductId } from "../ids.js";
-import { renderPage, type RenderResult } from "../stealth/browser.js";
+import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
 
 /**
- * Real IKEA, S17.
+ * Real IKEA — plain HTTP, no browser.
  *
- * IKEA has no public product API reachable without a partner agreement, so
- * unlike Tesco (a JSON API) this adapter renders IKEA's own real pages in a
- * stealth browser (packages/adapters/src/stealth/browser.ts) and reads the
- * data straight out of the DOM they ship to a signed-out browser. Say that
- * plainly: this is scraping, not an API integration. It is still `mode:
- * "native"` because that field answers "whose data is this", not "how was it
- * fetched" -- every field here is exactly what ikea.com renders for anyone,
- * no login, no account, no scraped-through-a-proxy fabrication.
+ * Search (`/search/?q=`) and detail pages are SSR HTML with the same markup
+ * a signed-out browser sees. The previous stealth-browser render is no longer
+ * needed — S22 fetches the same live pages via ctx.http with a desktop
+ * User-Agent and parses the same data-attributes and JSON-LD block.
  *
- * Two very different real surfaces, verified live before this file was
- * written:
- *   - Search results (`/search/?q=`) embed the product data as plain HTML
- *     attributes on each card (`data-ref-id`, `data-price`, `data-currency`,
- *     `data-product-name`) -- no JSON blob to parse, so this reads those
- *     attributes directly rather than guessing at nested class names.
- *   - A product detail page embeds a full schema.org `Product` block as
- *     `<script type="application/ld+json">` -- name, price, availability,
- *     images, aggregate rating and reviews all in one place. That JSON-LD
- *     block is what detail() actually parses; it does not scrape the
- *     rendered price/rating widgets, which are the more fragile of the two.
- *
- * No cart, no handoff: IKEA's add-to-basket flow needs a session this
- * adapter has no way to hold (there is no "Sign in with IKEA" here, and even
- * signed in, checkout is a real payment nobody at our access tier can
- * complete programmatically). `capabilities` says exactly that.
+ * Still `mode: "native"` — whose data, not how fetched. No cart/handoff.
+ * `render` remains as a test seam for canned HTML.
  */
 
 const SEARCH_BASE = "https://www.ikea.com/us/en/search/";
@@ -94,19 +76,14 @@ function itemNumberFromUrl(url: string): string | null {
 }
 
 export interface IkeaAdapterOptions {
-  /**
-   * Injectable in place of the real stealth-browser render, purely so the
-   * unit suite can run against canned HTML instead of launching a real
-   * Chromium and hitting the real network -- there is no ctx.http seam here
-   * to mock against (see the file header), so this is that seam instead.
-   */
+  /** Test seam: canned HTML without live fetch. */
   render?: (url: string) => Promise<RenderResult>;
 }
 
 export class IkeaAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
   readonly #cache = new Map<string, Cached>();
-  readonly #render: (url: string) => Promise<RenderResult>;
+  readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
   constructor(opts: IkeaAdapterOptions = {}) {
@@ -122,16 +99,34 @@ export class IkeaAdapter implements StoreAdapter {
       capabilities: ["discovery", "detail"],
       domain: "ikea.com",
     };
-    this.#render = opts.render ?? renderPage;
+    this.#render = opts.render;
   }
 
-  async search(q: SearchQuery, _ctx: AdapterCtx): Promise<Product[]> {
+  async search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]> {
     this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `${SEARCH_BASE}?${new URLSearchParams({ q: q.query })}`;
-    const { status, html } = await this.#render(url);
-    this.lastRawBytes = html.length;
-    if (status !== 200) throw new Error(`IKEA search returned HTTP ${status ?? "unknown"}.`);
+    let html: string;
+    let status: number | null = 200;
+    if (this.#render) {
+      const res = await this.#render(url);
+      html = res.html;
+      status = res.status;
+      this.lastRawBytes = html.length;
+      if (status !== 200) throw new Error(`IKEA search returned HTTP ${status ?? "unknown"}.`);
+    } else {
+      const res = await ctx.http(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) throw new Error(`IKEA search returned HTTP ${res.status}.`);
+      status = res.status;
+    }
 
     const $ = cheerio.load(html);
     const cards = $("[data-testid='plp-product-card']").toArray().slice(0, count);
@@ -175,16 +170,34 @@ export class IkeaAdapter implements StoreAdapter {
     return products;
   }
 
-  async detail(id: string, include: Include[], _ctx: AdapterCtx): Promise<ProductDetail> {
+  async detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail> {
     const cached = this.#cache.get(id);
     if (!cached) {
       throw new Error("Unknown product id for IKEA. Ids are server-minted; search first, then request detail.");
     }
     if (!cached.url) throw new Error(`IKEA product ${cached.itemNumber} has no link to fetch.`);
 
-    const { status, html } = await this.#render(cached.url);
-    this.lastRawBytes = html.length;
-    if (status !== 200) throw new Error(`IKEA product page returned HTTP ${status ?? "unknown"} for ${cached.itemNumber}.`);
+    let html: string;
+    let status: number | null = 200;
+    if (this.#render) {
+      const res = await this.#render(cached.url);
+      html = res.html;
+      status = res.status;
+      this.lastRawBytes = html.length;
+      if (status !== 200) throw new Error(`IKEA product page returned HTTP ${status ?? "unknown"} for ${cached.itemNumber}.`);
+    } else {
+      const res = await ctx.http(cached.url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) throw new Error(`IKEA product page returned HTTP ${res.status} for ${cached.itemNumber}.`);
+      status = res.status;
+    }
 
     const $ = cheerio.load(html);
     const productLd = $("script[type='application/ld+json']")

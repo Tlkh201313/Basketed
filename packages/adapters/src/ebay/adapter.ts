@@ -11,21 +11,16 @@ import {
   type StoreManifest,
 } from "@basketed/core";
 import { mintProductId } from "../ids.js";
-import { renderPage, type RenderResult } from "../stealth/browser.js";
+import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
 
 /**
- * Real eBay, S21.
+ * Real eBay — plain HTTP, no browser.
  *
- * eBay exposes a Browse API behind OAuth, but the public search
- * (ebay.com/sch) is SSR HTML reachable signed-out. This adapter renders
- * that page plus ebay.com/itm/<id> and parses the DOM, same stealth
- * browser as Amazon/IKEA/Target.
- *
- * Still `mode: "native"` — eBay's own live data, not proxied.
- * Cart is local (no retailer API) and handoff goes to https://cart.ebay.com —
- * the human completes checkout. No payment is completed by Basketed
- * (HANDED_OFF/unknown).
+ * ebay.com/sch and /itm are SSR HTML reachable via plain HTTP. S22 switches
+ * from stealth render to ctx.http so all 24 stores work without Chromium.
+ * Cart remains local (no retailer API) → handoff https://cart.ebay.com.
+ * `render` stays as test seam for canned HTML.
  */
 
 const SEARCH_BASE = "https://www.ebay.com/sch/i.html";
@@ -80,11 +75,11 @@ export interface EbayAdapterOptions {
 export class EbayAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
   readonly #cache = new Map<string, Cached>();
-  readonly #render: (url: string) => Promise<RenderResult>;
+  readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
   constructor(opts: EbayAdapterOptions = {}) {
-    this.#render = opts.render ?? renderPage;
+    this.#render = opts.render;
     this.manifest = {
       id: "ebay:ebay",
       name: "eBay",
@@ -99,13 +94,31 @@ export class EbayAdapter implements StoreAdapter {
     };
   }
 
-  async search(q: SearchQuery, _ctx: AdapterCtx): Promise<Product[]> {
+  async search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]> {
     this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `${SEARCH_BASE}?${new URLSearchParams({ _nkw: q.query })}`;
-    const { status, html } = await this.#render(url);
-    this.lastRawBytes = html.length;
-    if (status !== null && status >= 400) throw new Error(`eBay search returned HTTP ${status}.`);
+    let html: string;
+    let status: number | null = 200;
+    if (this.#render) {
+      const res = await this.#render(url);
+      html = res.html;
+      status = res.status;
+      this.lastRawBytes = html.length;
+      if (status !== null && status >= 400) throw new Error(`eBay search returned HTTP ${status}.`);
+    } else {
+      const res = await ctx.http(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15A372 Safari/604.1",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) throw new Error(`eBay search returned HTTP ${res.status}.`);
+      status = res.status;
+    }
 
     const $ = cheerio.load(html);
     const products: Product[] = [];
@@ -165,15 +178,33 @@ export class EbayAdapter implements StoreAdapter {
     return products;
   }
 
-  async detail(id: string, include: Include[], _ctx: AdapterCtx): Promise<ProductDetail> {
+  async detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail> {
     const cached = this.#cache.get(id);
     if (!cached) throw new Error("Unknown product id for eBay. Ids are server-minted; search first, then request detail.");
     if (!cached.url) throw new Error(`eBay product ${cached.itemId} has no link to fetch.`);
 
     this.lastRawBytes = 0;
-    const { status, html } = await this.#render(cached.url);
-    this.lastRawBytes = html.length;
-    if (status !== null && status >= 400) throw new Error(`eBay product page returned HTTP ${status} for ${cached.itemId}.`);
+    let html: string;
+    let status: number | null = 200;
+    if (this.#render) {
+      const res = await this.#render(cached.url);
+      html = res.html;
+      status = res.status;
+      this.lastRawBytes = html.length;
+      if (status !== null && status >= 400) throw new Error(`eBay product page returned HTTP ${status} for ${cached.itemId}.`);
+    } else {
+      const res = await ctx.http(cached.url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15A372 Safari/604.1",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) throw new Error(`eBay product page returned HTTP ${res.status} for ${cached.itemId}.`);
+      status = res.status;
+    }
 
     const $ = cheerio.load(html);
 
