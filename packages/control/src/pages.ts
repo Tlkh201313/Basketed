@@ -612,7 +612,13 @@ export interface ConnectInput {
   store: StoreRow;
   token: string;
   /** Set when a credential is already held, so the page can say so. */
-  connected: { method: string; username: string | null; broken: boolean } | null;
+  connected: {
+    method: string;
+    username: string | null;
+    broken: boolean;
+    /** A session past its own expiry. Held, but no longer worth anything (S23). */
+    expired: boolean;
+  } | null;
   /** True if a Chrome login window is already open for this store (S15). */
   chromeWaiting: boolean;
   /** Which browser the login will open in, so the card can say so up front (S18). */
@@ -731,7 +737,9 @@ export function renderConnect(input: ConnectInput): string {
   <span class="pill ${input.store.mode === "native" ? "ok" : "sim"}">${esc(modeLabel(input.store.mode))}</span>
   ${
     held
-      ? `<span class="pill ${held.broken ? "bad" : "on"}">${held.broken ? "reconnect needed" : "connected"}</span>`
+      ? `<span class="pill ${held.broken || held.expired ? "bad" : "on"}">${
+          held.broken ? "reconnect needed" : held.expired ? "session expired" : "connected"
+        }</span>`
       : login
         ? `<span class="pill off">not connected</span>`
         : `<span class="pill ok">ready</span>`
@@ -743,13 +751,15 @@ export function renderConnect(input: ConnectInput): string {
 ${
   held
     ? `<div class="sage" style="margin-top:20px">
-  <span class="eyebrow">already connected</span>
+  <span class="eyebrow">${held.expired ? "held, but expired" : "already connected"}</span>
   <p>
     Held${held.username ? ` as <strong>${esc(held.username)}</strong>` : ""}
     as a <span class="num">${esc(methodLabel(held.method as ConnectMethod))}</span>.${
       held.broken
         ? " <strong>The stored bytes no longer decrypt with the current key</strong> &mdash; connect again to replace them."
-        : " Connecting again replaces it."
+        : held.expired
+          ? " <strong>This session has expired</strong> &mdash; the store will refuse it, so connect again to replace it."
+          : " Connecting again replaces it."
     }
   </p>
   <div class="row" style="margin-top:14px">

@@ -353,7 +353,9 @@ export function createPanelHandler(
           renderConnect({
             store: { id: store.id, name: store.name, mode: store.mode, country: store.country, currency: store.currency },
             token: opts.token,
-            connected: held ? { method: held.kind, username: held.username, broken: held.broken } : null,
+            connected: held
+              ? { method: held.kind, username: held.username, broken: held.broken, expired: held.expired }
+              : null,
             // "logged_in" is still a window waiting to be captured, so both
             // non-idle states render the waiting card.
             chromeWaiting: chromeLoginStateOf(storeId) !== "idle",

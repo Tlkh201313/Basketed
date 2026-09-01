@@ -13,7 +13,7 @@ import {
   type PurchaseDeps,
 } from "@basketed/commerce";
 import type { FxTable } from "@basketed/core";
-import { openVault, degradedVault, decodeSession, type Vault } from "@basketed/vault";
+import { openVault, degradedVault, decodeSession, encodeSession, type Vault } from "@basketed/vault";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -753,6 +753,51 @@ describe("a store whose credential is a header set (S21)", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ method: "cookie" });
+  });
+});
+
+/**
+ * A session that has run out is not a connection. The panel showing it green
+ * is the specific lie this covers: the user finds out at the checkout, from
+ * the retailer, instead of here.
+ */
+describe("a session that has expired (S23)", () => {
+  it("reports an expired session as expired, and NOT as connected", async () => {
+    vault.connect({
+      storeId: "sim:amazon",
+      kind: "session",
+      username: null,
+      secret: encodeSession({ headers: { authorization: "Bearer x" }, expiresAt: 1_000 }),
+    });
+    const list = (await (await panel("/api/connections")).json()) as {
+      connections: Array<Record<string, unknown>>;
+    };
+    const amazon = list.connections.find((c) => c["store_id"] === "sim:amazon");
+    expect(amazon).toMatchObject({ connected: false, expired: true, expires_at: 1_000 });
+  });
+
+  it("a session with runway left is connected, and says when it runs out", async () => {
+    const future = Date.now() + 3_600_000;
+    vault.connect({
+      storeId: "sim:amazon",
+      kind: "session",
+      username: null,
+      secret: encodeSession({ headers: { authorization: "Bearer x" }, expiresAt: future }),
+    });
+    const list = (await (await panel("/api/connections")).json()) as {
+      connections: Array<Record<string, unknown>>;
+    };
+    const amazon = list.connections.find((c) => c["store_id"] === "sim:amazon");
+    expect(amazon).toMatchObject({ connected: true, expired: false, expires_at: future });
+  });
+
+  it("a credential with no expiry at all is connected with no clock on it", async () => {
+    vault.connect({ storeId: "sim:amazon", kind: "cookie", username: null, secret: "at-main=x" });
+    const list = (await (await panel("/api/connections")).json()) as {
+      connections: Array<Record<string, unknown>>;
+    };
+    const amazon = list.connections.find((c) => c["store_id"] === "sim:amazon");
+    expect(amazon).toMatchObject({ connected: true, expired: false, expires_at: null });
   });
 });
 

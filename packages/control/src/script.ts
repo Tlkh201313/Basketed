@@ -307,11 +307,24 @@ if (approvalsEl) {
 
 const storesEl = $("#stores");
 if (storesEl) {
+  /* "3h left" / "40m left". Rounded DOWN: an optimistic clock on a session
+     about to die is worse than no clock at all. */
+  function timeLeft(at) {
+    const mins = Math.floor((at - Date.now()) / 60000);
+    if (mins <= 0) return "expiring now";
+    return mins >= 60 ? Math.floor(mins / 60) + "h left" : mins + "m left";
+  }
+
   function pill(c) {
     if (c.chrome_login_logged_in) return '<span class="pill wait">signed in — finishing…</span>';
     if (c.chrome_login_waiting) return '<span class="pill off">signing in…</span>';
     if (c.broken) return '<span class="pill bad">reconnect needed</span>';
-    if (c.connected) return '<span class="pill on">connected' + (c.username ? " as " + esc(c.username) : "") + '</span>';
+    if (c.expired) return '<span class="pill bad">session expired</span>';
+    if (c.connected) {
+      const who = c.username ? " as " + esc(c.username) : "";
+      const left = c.expires_at ? " · " + timeLeft(c.expires_at) : "";
+      return '<span class="pill on">connected' + who + left + '</span>';
+    }
     // A store with no account to sign in to is not "not connected" -- it is
     // finished. Saying otherwise reads as a step the reader still has to take.
     if (!c.methods || !c.methods.length) return '<span class="pill ok">ready</span>';
@@ -338,7 +351,9 @@ if (storesEl) {
       const status = card.querySelector("[data-status]");
       if (status) status.innerHTML = pill(c);
       const disc = card.querySelector("[data-disconnect]");
-      if (disc) disc.hidden = !c.connected && !c.broken;
+      // An expired session is still HELD -- disconnect has to stay reachable,
+      // or the only way out of one is to connect again over the top of it.
+      if (disc) disc.hidden = !c.connected && !c.broken && !c.expired;
     });
   }
 

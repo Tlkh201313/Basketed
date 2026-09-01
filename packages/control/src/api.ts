@@ -209,8 +209,13 @@ export async function handleApi(
             methods: policy.methods,
             oauth: policy.oauth,
             reach: policy.reach,
-            connected: held_ !== null && !held_.broken,
+            // An expired session is not a connection. Reporting it as one
+            // moves the discovery to the checkout, where the retailer says it
+            // instead of the panel -- see the vault's Connection.expired.
+            connected: held_ !== null && !held_.broken && !held_.expired,
             broken: held_?.broken ?? false,
+            expired: held_?.expired ?? false,
+            expires_at: held_?.expiresAt ?? null,
             method: held_?.kind ?? null,
             username: held_?.username ?? null,
             connected_at: held_?.createdAt ?? null,
