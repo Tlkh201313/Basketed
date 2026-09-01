@@ -20,12 +20,14 @@ import {
   pathFor,
   snippetFor,
   closeAllChromeLogins,
+  readExtensionSeen,
   type ControlDeps,
 } from "@basketed/control";
 import type { Runtime } from "@basketed/mcp";
 import { findRoot } from "./root.js";
 import { installClient, resolveTargets, expandPath } from "./install.js";
 import { publishPanel, readPanel, clearPanel } from "./panel-file.js";
+import { runExtension } from "./extension.js";
 
 export { findRoot };
 export * from "./install.js";
@@ -45,6 +47,7 @@ const USAGE = `basketed ${SERVER_INFO.version}
   basketed install --dry-run      ...show the diff and write nothing
                                   (no client named = the four primaries)
   basketed clients                List every supported client and its config path
+  basketed extension              Where the browser extension is, and how to load it
   basketed doctor                 Check the install end to end
   basketed tools                  Print the tool surface and exit
 
@@ -212,6 +215,11 @@ export async function main(argv: string[]): Promise<void> {
 
   if (command === "install") {
     return runInstall(argv);
+  }
+
+  if (command === "extension") {
+    runExtension(findRoot());
+    return;
   }
 
   if (command === "doctor") {
@@ -578,8 +586,26 @@ async function runDoctor(argv: string[]): Promise<void> {
     });
     say(
       free,
-      `no panel running; port ${port} is free`,
-      free ? "start one with `basketed serve --http --open`" : "something else is already listening",
+      free ? `no panel running; port ${port} is free` : `no panel running, and port ${port} is taken`,
+      free ? "start one with `basketed serve --http --open`" : "something else is already listening — serve on another port with --port",
+    );
+  }
+
+  /*
+   * The browser extension.
+   *
+   * Not a failure when it is missing: it may be loaded in a browser that has
+   * not opened the panel yet, and a doctor that cries wolf teaches people to
+   * skip the one line that matters. But silence was worse -- until now nothing
+   * in this program mentioned the extension at all, and "Connect does nothing"
+   * had no diagnosis anywhere.
+   */
+  const ext = readExtensionSeen();
+  if (ext) {
+    say(true, "browser extension has connected", `${ext.version ? `v${ext.version}, ` : ""}last seen ${new Date(ext.seenAt).toLocaleString()}`);
+  } else {
+    process.stdout.write(
+      "  --    browser extension     never seen — run: basketed extension  (Connect cannot finish by itself without it)\n",
     );
   }
 

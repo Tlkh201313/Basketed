@@ -442,7 +442,7 @@ function extensionPresent() {
  * the panel -- localhost is shared ground, and "a page on 127.0.0.1" is not
  * an identity.
  */
-function askExtension(cfg) {
+function askExtension(kind, cfg) {
   return new Promise((resolve) => {
     if (!extensionPresent()) { resolve(null); return; }
     const id = "bk" + Math.random().toString(36).slice(2);
@@ -458,7 +458,7 @@ function askExtension(cfg) {
     timer = setTimeout(() => { window.removeEventListener("message", onReply); resolve(null); }, 4000);
     window.postMessage({
       source: "basketed-panel",
-      type: "capture",
+      type: kind,
       id: id,
       token: TOKEN,
       domains: cfg.domains,
@@ -474,6 +474,7 @@ function connectConfig(el) {
   return {
     storeId: el.dataset.store,
     name: el.dataset.name || el.dataset.store,
+    url: el.getAttribute("href") || "",
     domains: parse(el.dataset.domains),
     authCookies: parse(el.dataset.authCookies),
     capture: parseCapture(el.dataset.capture),
@@ -483,10 +484,14 @@ function connectConfig(el) {
 
 /* One attempt: ask the extension, and seal whatever it found. */
 async function tryCapture(cfg) {
-  const reply = await askExtension(cfg);
+  const reply = await askExtension("capture", cfg);
   if (!reply) return { state: "no-extension" };
   if (!reply.ok) return { state: "no-extension", error: reply.error };
   if (!reply.signedIn) return { state: "signed-out" };
+  // Signed in, but the store wants headers and none have flown yet. Reported
+  // separately from "waiting" so the pump knows it is worth provoking the
+  // tab rather than sitting through another 2.5 seconds of nothing.
+  if (cfg.capture && !reply.complete) return { state: "no-headers" };
   let res;
   try {
     res = await api("/api/connections/" + encodeURIComponent(cfg.storeId) + "/extension-capture", {
@@ -504,6 +509,41 @@ async function tryCapture(cfg) {
 }
 
 const pumps = new Map();
+
+/*
+ * The retailer tab this page opened, per store.
+ *
+ * We hold the handle because window.open gives one and a plain target=_blank
+ * anchor does not, and two things depend on having it (S24):
+ *
+ *   - **Closing.** A page may only close a window it opened itself. Until
+ *     S24 the tab was opened by the anchor's own navigation, so nothing on
+ *     this page could ever close it -- "it connected but the tab is still
+ *     sitting there" was not a bug that sometimes happened, it was the only
+ *     possible outcome.
+ *   - **Provoking.** Tesco's credential is a header pair on a call its own
+ *     frontend makes, not a cookie. A shopper who is already signed in and
+ *     whose tab has finished loading makes no further calls, so there was
+ *     nothing to overhear and the connect waited forever. Re-pointing the
+ *     window at the store's own URL makes Tesco's own page issue its own
+ *     authenticated request. Cross-origin location assignment on a window
+ *     you opened is allowed; reading anything back from it is not, and we do
+ *     not try.
+ */
+const openedTabs = new Map();
+
+function tabFor(storeId) {
+  const w = openedTabs.get(storeId);
+  if (!w || w.closed) { openedTabs.delete(storeId); return null; }
+  return w;
+}
+
+function closeTab(storeId) {
+  const w = tabFor(storeId);
+  if (!w) return false;
+  openedTabs.delete(storeId);
+  try { w.close(); return true; } catch (err) { return false; }
+}
 
 function stopPump(storeId) {
   const t = pumps.get(storeId);
@@ -530,16 +570,63 @@ function showIdle() {
   if (signinLink) signinLink.hidden = true;
 }
 
+/*
+ * Arm the header watch as soon as the connect page is on screen, before any
+ * click. The listener has to be running BEFORE the retailer's tab loads, or
+ * the one authenticated call it makes on load is the one we miss -- which is
+ * exactly what happened to anyone already signed in.
+ */
+if (connectPage) {
+  const opener = $("[data-connect-open]");
+  if (opener) {
+    const cfg = connectConfig(opener);
+    if (cfg.capture) void askExtension("arm", cfg);
+  }
+
+  /*
+   * Say whether the extension is here BEFORE the click, not after the failure.
+   *
+   * The old page kept its only mention of the extension in a hidden block that
+   * appeared once a connect had already gone nowhere, so the single most
+   * common reason Connect does nothing was invisible right up until the moment
+   * it had already wasted the user's time. The content script sets the
+   * attribute this reads the instant the page loads, so the answer is known
+   * before anything is pressed.
+   */
+  const badge = $("[data-ext-badge]");
+  const pill = $("[data-ext-pill]");
+  const pillNote = $("[data-ext-pill-note]");
+  const here = extensionPresent();
+  if (badge) badge.hidden = false;
+  if (pill) {
+    pill.className = here ? "pill ok" : "pill wait";
+    pill.textContent = here ? "extension loaded" : "extension not loaded";
+  }
+  if (pillNote) {
+    pillNote.textContent = here
+      ? "Connect finishes by itself in this browser."
+      : "Connect will open the tab, but cannot read the session back. Load it once - below.";
+  }
+  if (!here && extMissing) extMissing.hidden = false;
+}
+
 function watchConnect(cfg) {
   stopPump(cfg.storeId);
   showWaiting();
   say("Waiting for " + cfg.name + " in the other tab...");
 
+  // How many ticks we have let pass without the headers we need before
+  // nudging the tab. One tick of patience first: if the page is still
+  // loading, its own request is already on the way and a reload would only
+  // interrupt it.
+  let dry = 0;
+
   async function tick() {
     const out = await tryCapture(cfg);
     if (out.state === "connected") {
       stopPump(cfg.storeId);
-      say("Connected. Reading this page again...");
+      const closed = closeTab(cfg.storeId);
+      say(closed ? "Connected. Closing that tab..." : "Connected. Reading this page again...");
       setTimeout(() => location.reload(), 900);
       return;
     }
@@ -550,8 +637,26 @@ function watchConnect(cfg) {
       return;
     }
     if (out.state === "signed-out") {
+      dry = 0;
       say("Not signed in at " + cfg.name + " yet - sign in in that tab and this finishes itself.");
       if (signinLink) signinLink.hidden = false;
+      return;
+    }
+    if (out.state === "no-headers") {
+      dry += 1;
+      const tab = tabFor(cfg.storeId);
+      if (dry >= 2 && tab) {
+        dry = 0;
+        say("Signed in at " + cfg.name + ". Asking that tab for the session...");
+        // Their own page, their own request, their own credential on it.
+        try { tab.location = cfg.url; } catch (err) { /* tab gone; next tick notices */ }
+        return;
+      }
+      say(
+        tab
+          ? "Signed in at " + cfg.name + ". Waiting for the session..."
+          : "Signed in at " + cfg.name + ", but that tab is closed. Press Connect again.",
+      );
       return;
     }
     if (out.state === "failed") {
@@ -568,13 +673,35 @@ function watchConnect(cfg) {
 
 /*
  * Delegated, so one handler serves the store page and every card on the list.
- * The click's own navigation opens the tab; this only registers that a
- * sign-in is in flight and starts watching for it to finish.
+ *
+ * The anchor stays a real anchor -- middle-click, ctrl-click and "open in new
+ * tab" all still do the ordinary thing, and a browser with JavaScript off
+ * still gets to the retailer. A plain left click is handled here instead so
+ * the window is opened by window.open, synchronously inside the click, which
+ * is both un-blockable by popup blockers and the only way this page ends up
+ * holding a handle it can later close.
  */
 document.addEventListener("click", (e) => {
   const el = e.target.closest ? e.target.closest("[data-connect-open]") : null;
   if (!el) return;
+  // Leave every modified click to the browser.
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   const cfg = connectConfig(el);
+
+  let tab = null;
+  try {
+    tab = window.open(cfg.url, "basketed-connect-" + cfg.storeId);
+  } catch (err) {
+    tab = null;
+  }
+  // A blocked or failed open leaves the anchor to do its own job; only steal
+  // the navigation once we actually have the window.
+  if (tab) {
+    e.preventDefault();
+    openedTabs.set(cfg.storeId, tab);
+    try { tab.focus(); } catch (err) { /* focus is a courtesy */ }
+  }
+
   api("/api/connections/" + encodeURIComponent(cfg.storeId) + "/browser-connect", { method: "POST" })
     .catch((err) => console.error("[basketed] connect could not be registered: " + err.message));
   watchConnect(cfg);

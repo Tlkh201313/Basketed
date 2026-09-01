@@ -17,7 +17,16 @@ import { openVault, degradedVault, decodeSession, encodeSession, type Vault } fr
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+/*
+ * Serving a real panel means the verify route really writes its "an extension
+ * spoke to a panel" note. Point that at a temporary directory before anything
+ * imports the module, so a test run never makes `basketed doctor` claim an
+ * extension this machine does not have.
+ */
+process.env["BASKETED_STATE_DIR"] = mkdtempSync(join(tmpdir(), "basketed-state-"));
+
 import { createPanelHandler } from "./index.js";
+import { readExtensionSeen } from "./extension-file.js";
 import { authPolicyFor } from "./connections.js";
 import { resetHandoff } from "./handoff.js";
 import type { ControlDeps } from "./types.js";
@@ -674,6 +683,37 @@ describe("connecting in the user's own browser (S20)", () => {
   });
 
   /*
+   * `basketed doctor` runs in its own process, long after the handshake it
+   * wants to report on, so the handshake has to leave a mark. Without this,
+   * the single most common reason Connect does nothing -- the extension is
+   * not loaded -- was the one thing doctor could not check (S24).
+   */
+  it("a verified extension leaves a note doctor can read, with its version", async () => {
+    const ok = await panel("/api/extension/verify/1.1.0");
+    expect(ok.status).toBe(200);
+    const seen = readExtensionSeen();
+    expect(seen?.version).toBe("1.1.0");
+    expect(seen?.seenAt).toBeGreaterThan(0);
+  });
+
+  /* An older extension asks for the bare path. It is still answered. */
+  it("answers an extension that reports no version at all", async () => {
+    expect((await panel("/api/extension/verify")).status).toBe(200);
+  });
+
+  /*
+   * The note is a timestamp and a version string. A token in it would be a
+   * credential sitting in a directory every process the user runs can read --
+   * the exact thing panel.json refuses to do, for the same reason.
+   */
+  it("the note holds no secret", async () => {
+    await panel("/api/extension/verify/1.1.0");
+    const note = await readFile(resolve(process.env["BASKETED_STATE_DIR"]!, "extension.json"), "utf8");
+    expect(note).not.toContain(TOKEN);
+    expect(JSON.parse(note)).toEqual({ seenAt: expect.any(Number), version: "1.1.0" });
+  });
+
+  /*
    * The whole point of S20, asserted on the markup: Connect is a link that
    * opens the retailer in a new tab of THIS browser. A button that scripted
    * a window open would be popup-blocked, and a server-side launch would be
@@ -689,6 +729,41 @@ describe("connecting in the user's own browser (S20)", () => {
     // Nothing on this page collects a credential, in any form.
     expect(html).not.toMatch(/type="password"/);
     expect(html).not.toMatch(/<form/);
+  });
+
+  /*
+   * The extension's absence has to be visible BEFORE the click (S24).
+   *
+   * The page used to keep its only mention of the extension in a hidden block
+   * that appeared after a connect had already gone nowhere -- so the most
+   * common reason Connect does nothing was invisible until it had already
+   * wasted the reader's time. The badge is rendered on the server and filled
+   * in by the script on load, and the how-to now carries the absolute folder
+   * path, because "load packages/extension" is not a thing anyone can paste.
+   */
+  it("says whether the extension is loaded before anything is pressed", async () => {
+    const html = await (await panel("/connections/sim%3Aamazon")).text();
+    expect(html).toContain("data-ext-badge");
+    expect(html).toContain("data-ext-pill");
+    // Backslash or forward slash: the path is whatever this platform writes.
+    expect(html).toMatch(/packages[\\/]extension/);
+    expect(html).toContain("Load unpacked");
+  });
+
+  /*
+   * A left click has to be handled by the page, not left to the anchor: only
+   * a window this page opened itself can be closed by it, and closing it is
+   * the difference between "connected" and "connected, and now go tidy up".
+   * The anchor stays an anchor so middle-click still works.
+   */
+  it("the panel script takes a window handle so it can close the tab it opened", async () => {
+    const js = await (await panel("/connections/sim%3Aamazon")).text();
+    expect(js).toContain("window.open(");
+    expect(js).toContain("openedTabs");
+    expect(js).toContain("closeTab");
+    // ...and provokes a tab that is signed in but silent, rather than waiting
+    // on a request an idle page is never going to make.
+    expect(js).toContain("no-headers");
   });
 });
 

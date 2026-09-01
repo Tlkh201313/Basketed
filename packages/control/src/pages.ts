@@ -493,13 +493,21 @@ function twinsByBrand(stores: StoreRow[]): Map<string, StoreRow> {
 /**
  * The control that starts a connection (S20).
  *
- * A real anchor with `target="_blank"`, not a button that calls
- * `window.open` — because the click is then the browser's own navigation, in
- * the browser the panel is already running in. That is what makes the tab
- * appear in the user's actual window, with their actual logins, instead of a
- * second Chrome: no automation is involved in opening it at all. It also
- * means no popup blocker ever eats it, which a scripted open after an
- * `await` reliably would.
+ * A real anchor with `target="_blank"`, never a button — the tab has to be a
+ * navigation in the browser the panel is already running in, so it lands in
+ * the user's actual window with their actual logins rather than in a second
+ * Chrome. Middle-click, ctrl-click and "open in new tab" all keep working,
+ * and a page with JavaScript off still reaches the retailer.
+ *
+ * A plain left click is intercepted by script.ts and re-issued as
+ * `window.open`, synchronously inside the handler (S24). Synchronously is the
+ * whole trick: no popup blocker touches an open that happens inside a click,
+ * and only a window this page opened itself may later be closed by it. Before
+ * that, the tab was opened by the anchor's own navigation and nothing on this
+ * page could close it — "it connected but the tab is still sitting there" was
+ * not an intermittent bug, it was the only possible outcome. If the open is
+ * refused for any reason the click is left alone and the anchor does its own
+ * job.
  *
  * The `data-` attributes are what the extension needs to read that session
  * back: which domains to look in, which cookie names mean "signed in", and
@@ -623,6 +631,12 @@ export interface ConnectInput {
   chromeWaiting: boolean;
   /** Which browser the login will open in, so the card can say so up front (S18). */
   chrome: { attached: boolean; where: string };
+  /**
+   * Absolute path to the unpacked extension, so the page can print the exact
+   * string to paste rather than a relative one whose meaning depends on where
+   * the reader's shell happens to be standing (S24).
+   */
+  extensionDir: string;
 }
 
 /**
@@ -664,6 +678,10 @@ export function renderConnect(input: ConnectInput): string {
       its own; if you are not, sign in on their page and it finishes the moment you are through.
       Basketed never asks you for a password and has no field to type one into.
     </p>
+    <div class="row" style="margin-top:18px" data-ext-badge hidden>
+      <span class="pill neutral" data-ext-pill>checking for the extension&hellip;</span>
+      <span class="small" data-ext-pill-note></span>
+    </div>
     <div class="row" style="margin-top:20px" data-connect-idle>
       ${connectAnchor(input.store, policy, held ? `Reconnect ${input.store.name}` : `Connect ${input.store.name}`, "btn pri")}
       <span class="small" data-connect-msg></span>
@@ -675,14 +693,20 @@ export function renderConnect(input: ConnectInput): string {
     </div>
 
     <div class="claim" style="margin-top:18px" data-ext-missing hidden>
-      <span class="eyebrow">to finish it automatically</span>
+      <span class="eyebrow">load this once, or Connect cannot finish</span>
       <p>
         Chrome does not let an outside program read this browser's session &mdash;
         <a href="https://developer.chrome.com/blog/remote-debugging-port" target="_blank" rel="noopener noreferrer">since
         Chrome 136</a> that is blocked on purpose, and it is a good rule. The way in is from the
-        inside: load <span class="num">packages/extension</span> once at
-        <span class="num">chrome://extensions</span> &rarr; Developer mode &rarr; Load unpacked, and
-        the connection completes by itself in this browser. Without it, use the window below instead.
+        inside, and it is a one-time thing: open <span class="num">chrome://extensions</span>
+        (or <span class="num">edge://extensions</span>), turn on <strong>Developer mode</strong>,
+        press <strong>Load unpacked</strong>, and pick this folder &mdash;
+      </p>
+      <p style="margin:10px 0 0"><span class="num">${esc(input.extensionDir)}</span></p>
+      <p style="margin:10px 0 0">
+        Then come back and press Connect; it finishes by itself. The same three lines are printed by
+        <span class="num">basketed extension</span> if you would rather read them in a terminal.
+        Without the extension, use the window below instead.
       </p>
       <div class="row" style="margin-top:12px">
         <button class="btn sm" type="button" data-chrome-start>Sign in in a Basketed window</button>

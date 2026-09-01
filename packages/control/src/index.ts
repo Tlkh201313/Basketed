@@ -10,6 +10,7 @@ import type { ControlDeps } from "./types.js";
 export * from "./clients.js";
 export type { ControlDeps } from "./types.js";
 export { closeAll as closeAllChromeLogins } from "./browser-connect.js";
+export { readExtensionSeen, noteExtensionSeen, type ExtensionSeen } from "./extension-file.js";
 
 /**
  * The control panel (§7), served by the same process and the same port as the
@@ -360,6 +361,9 @@ export function createPanelHandler(
             // non-idle states render the waiting card.
             chromeWaiting: chromeLoginStateOf(storeId) !== "idle",
             chrome: await chromeMode(),
+            // Absolute, from this process's own root, so the page prints a
+            // path that can be pasted straight into Load unpacked.
+            extensionDir: resolve(opts.root, "packages/extension"),
           }),
           { "set-cookie": setCookie },
         );

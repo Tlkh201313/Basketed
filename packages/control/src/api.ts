@@ -11,6 +11,7 @@ import {
   type CartMandate,
 } from "@basketed/commerce";
 import { encodeSession, type CredentialKind } from "@basketed/vault";
+import { noteExtensionSeen } from "./extension-file.js";
 import { authPolicyFor } from "./connections.js";
 import { startLogin, captureLogin, cancelLogin, stateOf, statusOf } from "./browser-connect.js";
 import { openConnect, pendingFor, closeConnect, finish, statusFor } from "./handoff.js";
@@ -357,7 +358,14 @@ export async function handleApi(
    * and the extension checks it HERE before it reads a single cookie. Same
    * gate as everything else in this file; answering at all is the answer.
    */
-  if (method === "GET" && path === "/api/extension/verify") {
+  const verify = /^\/api\/extension\/verify(?:\/([\w.-]{1,32}))?$/.exec(path);
+  if (method === "GET" && verify) {
+    /*
+     * The version rides on the path because this route takes no body and the
+     * panel handler passes only method and pathname down here. It is optional,
+     * so an older extension asking for the bare path is still answered.
+     */
+    noteExtensionSeen({ version: verify[1] ?? "" });
     return { status: 200, body: { ok: true, panel: "basketed" } };
   }
 
