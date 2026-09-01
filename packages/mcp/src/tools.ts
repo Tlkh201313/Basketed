@@ -294,8 +294,24 @@ export function registerReadOnlyTools(server: McpServer, runtime: Runtime): void
       }
 
       const include: Include[] = (args.include as Include[] | undefined) ?? ["description", "stock"];
+      const isTransient = (e: unknown) => /429|503|5\d\d|timeout|ECONN|ENET|ETIMEDOUT|fetch failed|blocked|captcha/i.test(String((e as Error)?.message ?? e));
+      const withRetry = async <T>(fn: () => Promise<T>, attempts = 3): Promise<T> => {
+        let last: unknown;
+        for (let i = 0; i < attempts; i++) {
+          try {
+            return await fn();
+          } catch (e) {
+            last = e;
+            const msg = String((e as Error)?.message ?? e);
+            // Do not retry on unknown product / capability errors (not transient)
+            if (/No such product|does not support|Unknown product/i.test(msg) || !isTransient(e) || i === attempts - 1) throw e;
+            await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i) + Math.random() * 150));
+          }
+        }
+        throw last;
+      };
       try {
-        const detail = await adapter.detail(args.id, include, runtime.ctx);
+        const detail = await withRetry(() => adapter.detail(args.id, include, runtime.ctx), 3);
         runtime.ledger.record(
           "basket_get_product_detail",
           estimateTokens(detail),

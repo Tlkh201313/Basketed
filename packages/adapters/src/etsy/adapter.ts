@@ -107,8 +107,25 @@ export class EtsyAdapter implements StoreAdapter {
       });
       html = await res.text();
       this.lastRawBytes = html.length;
-      if (!res.ok) throw new Error(`Etsy search returned HTTP ${res.status}.`);
-      status = res.status;
+      if (!res.ok) {
+        // Cloudflare 403 — try stealth browser as fallback if available (real data, no simulated fallback)
+        if (res.status === 403) {
+          try {
+            const { renderPage } = await import("../stealth/browser.js");
+            const r = await renderPage(url);
+            html = r.html;
+            status = r.status;
+            this.lastRawBytes = html.length;
+            if (status !== null && status >= 400) throw new Error(`Etsy search returned HTTP ${status} (stealth).`);
+          } catch {
+            throw new Error(`Etsy search returned HTTP ${res.status}.`);
+          }
+        } else {
+          throw new Error(`Etsy search returned HTTP ${res.status}.`);
+        }
+      } else {
+        status = res.status;
+      }
     }
 
     const $ = cheerio.load(html);
@@ -196,8 +213,24 @@ export class EtsyAdapter implements StoreAdapter {
       });
       html = await res.text();
       this.lastRawBytes = html.length;
-      if (!res.ok) throw new Error(`Etsy product page returned HTTP ${res.status} for ${cached.listingId}.`);
-      status = res.status;
+      if (!res.ok) {
+        if (res.status === 403) {
+          try {
+            const { renderPage } = await import("../stealth/browser.js");
+            const r = await renderPage(cached.url);
+            html = r.html;
+            status = r.status;
+            this.lastRawBytes = html.length;
+            if (status !== null && status >= 400) throw new Error(`Etsy product page returned HTTP ${status} for ${cached.listingId} (stealth).`);
+          } catch {
+            throw new Error(`Etsy product page returned HTTP ${res.status} for ${cached.listingId}.`);
+          }
+        } else {
+          throw new Error(`Etsy product page returned HTTP ${res.status} for ${cached.listingId}.`);
+        }
+      } else {
+        status = res.status;
+      }
     }
 
     const $ = cheerio.load(html);
