@@ -30,6 +30,22 @@ export class StoreRegistry {
           `An adapter may never claim a tier it fakes.`,
       );
     }
+    // The same constraint, one level up: an account block may not claim reach
+    // the adapter does not have. A store that says "connect to use your
+    // trolley" and has no cart tier sends a human through a sign-in for
+    // nothing, and the panel would have no way to know.
+    const account = adapter.manifest.account;
+    if (account.kind === "session") {
+      const have = new Set(adapter.manifest.capabilities);
+      const phantom = account.uses.filter((tier) => !have.has(tier));
+      if (phantom.length) {
+        throw new Error(
+          `Adapter "${adapter.manifest.id}" says a session is needed for ${phantom.join(", ")}, ` +
+            `but it does not implement ${phantom.length === 1 ? "that tier" : "those tiers"}. ` +
+            `An account may never promise reach the adapter does not have.`,
+        );
+      }
+    }
     if (this.#adapters.has(adapter.manifest.id)) {
       throw new Error(`Duplicate store id "${adapter.manifest.id}".`);
     }

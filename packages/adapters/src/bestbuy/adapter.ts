@@ -122,7 +122,7 @@ export class BestBuyAdapter implements StoreAdapter {
       language: "en",
       categories: ["electronics", "general"],
       mode: "native",
-      auth: "none",
+      account: { kind: "none" },
       capabilities: ["discovery", "detail", "cart", "handoff"],
       domain: "bestbuy.com",
     };

@@ -49,7 +49,7 @@ const manifest = (over: Partial<StoreManifest> = {}): StoreManifest => ({
   language: "en",
   categories: ["grocery"],
   mode: "native",
-  auth: "none",
+  account: { kind: "none" },
   capabilities: ["discovery", "detail"],
   ...over,
 });

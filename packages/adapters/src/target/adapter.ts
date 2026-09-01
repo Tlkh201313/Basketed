@@ -103,7 +103,7 @@ export class TargetAdapter implements StoreAdapter {
       language: "en",
       categories: ["general"],
       mode: "native",
-      auth: "none",
+      account: { kind: "none" },
       capabilities: ["discovery", "detail"],
       domain: "target.com",
     };

@@ -116,7 +116,7 @@ export class EbayAdapter implements StoreAdapter {
       language: "en",
       categories: ["general", "electronics", "apparel"],
       mode: "native",
-      auth: "none",
+      account: { kind: "none" },
       capabilities: ["discovery", "detail", "cart", "handoff"],
       domain: "ebay.com",
     };

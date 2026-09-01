@@ -107,7 +107,7 @@ export class EtsyAdapter implements StoreAdapter {
       language: "en",
       categories: ["general", "apparel", "furniture"],
       mode: "native",
-      auth: "none",
+      account: { kind: "none" },
       capabilities: ["discovery", "detail"],
       domain: "etsy.com",
     };

@@ -81,7 +81,7 @@ export class SimulatedAdapter implements StoreAdapter {
       language: "en",
       categories: store.categories,
       mode: "simulated",
-      auth: "simulated",
+      account: { kind: "demo" },
       capabilities: ["discovery", "detail", "cart"],
     };
   }

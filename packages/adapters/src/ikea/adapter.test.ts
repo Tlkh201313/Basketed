@@ -101,7 +101,7 @@ describe("real IKEA adapter (S17)", () => {
     const adapter = new IkeaAdapter();
     expect(adapter.manifest.mode).toBe("native");
     expect(adapter.manifest.capabilities).toEqual(["discovery", "detail"]);
-    expect(adapter.manifest.auth).toBe("none");
+    expect(adapter.manifest.account.kind).toBe("none");
   });
 
   it("search parses real-shaped product cards with decimal (not minor-unit) prices", async () => {

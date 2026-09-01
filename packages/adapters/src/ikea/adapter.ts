@@ -123,7 +123,7 @@ export class IkeaAdapter implements StoreAdapter {
       language: "en",
       categories: ["furniture"],
       mode: "native",
-      auth: "none",
+      account: { kind: "none" },
       capabilities: ["discovery", "detail"],
       domain: "ikea.com",
     };

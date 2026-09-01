@@ -131,7 +131,7 @@ export class ShopifyUcpAdapter implements StoreAdapter {
       language: "en",
       categories: ["general", "grocery", "apparel"],
       mode: "native",
-      auth: "none",
+      account: { kind: "none" },
       capabilities: ["discovery", "detail", "cart", "handoff"],
       endpoint: opts.endpoint,
       domain: opts.domain,

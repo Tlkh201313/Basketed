@@ -173,7 +173,32 @@ export class TescoAdapter implements StoreAdapter {
       language: "en",
       categories: ["grocery", "general"],
       mode: "native",
-      auth: "none",
+      /*
+       * Search is public; the trolley is not.
+       *
+       * Tesco's basket API authenticates on `authorization` AND
+       * `customer-uuid` together -- a bearer alone returns a basket that is
+       * not yours, which is the "connected but broken" failure that is worst
+       * to debug. GavinAttard/tesco-grocery-mcp (MIT) sends the same pair;
+       * the difference is that it asks a human to copy both out of DevTools,
+       * and this lifts them from the tab they just signed into.
+       *
+       * `uses` names cart and slots, not discovery or detail, because those
+       * two genuinely work signed out and claiming otherwise would put a
+       * Connect wall in front of a search that does not need one.
+       */
+      account: {
+        kind: "session",
+        uses: ["cart", "slots"],
+        refresh: "browser",
+        login: {
+          url: "https://www.tesco.com/groceries/en-GB/",
+          loginUrl: "https://www.tesco.com/account/login/en-GB",
+          domains: ["tesco.com"],
+          authCookies: ["_ttoken", "trefresh", "atrc_", "access_token", "OAuth.AccessToken"],
+          capture: { match: "xapi.tesco.com", headers: ["authorization", "customer-uuid"] },
+        },
+      },
       capabilities: ["discovery", "detail", "cart", "slots"],
       domain: "tesco.com",
     };
