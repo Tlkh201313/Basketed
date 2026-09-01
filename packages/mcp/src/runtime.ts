@@ -1,7 +1,5 @@
-import { readFile } from "node:fs/promises";
 import { userInfo } from "node:os";
-import { resolve } from "node:path";
-import { createRedactor, type FxTable, type Redactor } from "@basketed/core";
+import { createRedactor, type Redactor } from "@basketed/core";
 import {
   StoreRegistry,
   SimulatedAdapter,
@@ -17,6 +15,7 @@ import {
 } from "@basketed/adapters";
 import { openDb, type PurchaseDeps } from "@basketed/commerce";
 import { openVault, degradedVault, type Vault } from "@basketed/vault";
+import { loadFx } from "./fx-load.js";
 import { createPolicy, type Policy } from "./policy.js";
 
 /**
@@ -212,7 +211,9 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
 
   const ctx: AdapterCtx = { http: fetch, log, snapshots };
 
-  const fx = JSON.parse(await readFile(resolve(root, "fixtures/fx.json"), "utf8")) as FxTable;
+  // Never fatal: a currency table that will not read must not cost the
+  // shopper search, cart and orders. See fx-load.ts.
+  const fx = await loadFx(root, log);
   const db = openDb(opts.dbPath);
 
   // Every stored credential is handed to the redaction net as it is loaded, so

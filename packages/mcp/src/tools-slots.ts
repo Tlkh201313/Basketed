@@ -39,8 +39,72 @@ function respond(runtime: Runtime, payload: Record<string, unknown>, isError = f
 /** `YYYY-MM-DD`, the only date shape Tesco's slots range accepts. */
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Longest range worth asking a retailer for. No grocer books three months out. */
+export const MAX_SLOT_SPAN_DAYS = 30;
+
+const DAY_MS = 86_400_000;
+
 function isoDate(at: number): string {
   return new Date(at).toISOString().slice(0, 10);
+}
+
+/**
+ * Turns whatever the model sent into a real, bounded date range.
+ *
+ * The zod regex only proves the SHAPE of a date. `2026-02-30` and
+ * `2026-13-01` both match it, and `Date.parse` returns NaN for them, which
+ * used to travel onwards as the string "Invalid Date" -- or, when only `start`
+ * was given, made `isoDate(NaN)` throw a RangeError out of the tool handler
+ * with nothing in the message about the date that caused it. A model that
+ * miscounts the days in February should get a sentence telling it so.
+ *
+ * The span cap is here rather than at the adapter because it is a fact about
+ * asking politely, not about Tesco: an open-ended range is a request for
+ * hundreds of windows the shopper will never read, and every one of them is
+ * tokens.
+ */
+export function slotWindow(
+  args: { start?: string | undefined; end?: string | undefined },
+  now: number,
+): { ok: true; start: string; end: string } | { ok: false; error: string } {
+  const start = args.start ?? isoDate(now);
+  const startAt = parseDay(start);
+  if (startAt === null) return { ok: false, error: badDate("start", start) };
+
+  const end = args.end ?? isoDate(startAt + 7 * DAY_MS);
+  const endAt = parseDay(end);
+  if (endAt === null) return { ok: false, error: badDate("end", end) };
+
+  if (endAt < startAt) {
+    return { ok: false, error: `The slot range ends before it starts: ${start} to ${end}.` };
+  }
+  const days = Math.round((endAt - startAt) / DAY_MS) + 1;
+  if (days > MAX_SLOT_SPAN_DAYS) {
+    return {
+      ok: false,
+      error:
+        `That range covers ${days} days. Ask for at most ${MAX_SLOT_SPAN_DAYS} at a time -- ` +
+        `no store books further out, and the extra windows are tokens the shopper never reads.`,
+    };
+  }
+  return { ok: true, start, end };
+}
+
+/** Milliseconds at UTC midnight, or null if that is not a day on the calendar. */
+function parseDay(value: string): number | null {
+  if (!DATE.test(value)) return null;
+  const at = Date.parse(`${value}T00:00:00Z`);
+  if (Number.isNaN(at)) return null;
+  // Date.parse accepts 2026-02-30 in some runtimes by rolling it into March.
+  // Round-tripping is the only check that catches a day that never existed.
+  return isoDate(at) === value ? at : null;
+}
+
+function badDate(which: string, value: string): string {
+  return (
+    `"${value}" is not a date on the calendar, so there is no ${which} to look from. ` +
+    `Use YYYY-MM-DD, e.g. 2026-03-01.`
+  );
 }
 
 export function registerSlotTools(server: McpServer, runtime: Runtime): void {
@@ -56,7 +120,11 @@ export function registerSlotTools(server: McpServer, runtime: Runtime): void {
       inputSchema: z.object({
         store_id: z.string().describe("A store id from list_stores, e.g. tsc:tesco"),
         start: z.string().regex(DATE).optional().describe("YYYY-MM-DD. Defaults to today."),
-        end: z.string().regex(DATE).optional().describe("YYYY-MM-DD. Defaults to start + 7 days."),
+        end: z
+          .string()
+          .regex(DATE)
+          .optional()
+          .describe(`YYYY-MM-DD. Defaults to start + 7 days. At most ${MAX_SLOT_SPAN_DAYS} days from start.`),
       }),
       outputSchema: z
         .object({
@@ -86,9 +154,9 @@ export function registerSlotTools(server: McpServer, runtime: Runtime): void {
         );
       }
 
-      const now = Date.now();
-      const start = args.start ?? isoDate(now);
-      const end = args.end ?? isoDate(Date.parse(`${start}T00:00:00Z`) + 7 * 86_400_000);
+      const window = slotWindow(args, Date.now());
+      if (!window.ok) return respond(runtime, { error: window.error }, true);
+      const { start, end } = window;
 
       /*
        * The store's own session, or nothing. Slots are the clearest case in
