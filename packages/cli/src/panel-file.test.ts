@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { publishPanel, readPanel, clearPanel } from "./panel-file.js";
+import { publishPanel, readPanel, clearPanel, claimPanel, releasePanel } from "./panel-file.js";
 
 /**
  * Where the running panel is, on disk, so nothing has to guess.
@@ -56,5 +56,67 @@ describe("the live-panel handoff file", () => {
     clearPanel(dir);
     expect(existsSync(join(dir, "panel.json"))).toBe(false);
     expect(() => clearPanel(dir)).not.toThrow();
+  });
+});
+
+/**
+ * Two servers on one machine is normal: a stdio panel per editor, plus an
+ * HTTP one somebody started by hand. They used to fight over this file, last
+ * writer winning, so every "open the panel" link pointed at whichever process
+ * started most recently rather than the one a human was looking at.
+ */
+describe("claiming the record", () => {
+  it("takes a free record", () => {
+    const claim = claimPanel({ origin: "http://127.0.0.1:8788", pid: process.pid, mode: "stdio-panel", dir });
+    expect(claim.claimed).toBe(true);
+    expect(readPanel(dir)?.mode).toBe("stdio-panel");
+  });
+
+  it("refuses to displace a live panel of the same kind", () => {
+    publishPanel({ origin: "http://127.0.0.1:8788", pid: process.pid, mode: "stdio-panel", dir });
+    const claim = claimPanel({ origin: "http://127.0.0.1:9999", pid: process.pid + 1, mode: "stdio-panel", dir });
+    expect(claim.claimed).toBe(false);
+    expect(readPanel(dir)?.origin).toBe("http://127.0.0.1:8788");
+  });
+
+  it("lets an http panel take over from a stdio one — it also serves /mcp", () => {
+    publishPanel({ origin: "http://127.0.0.1:8788", pid: process.pid, mode: "stdio-panel", dir });
+    const claim = claimPanel({ origin: "http://127.0.0.1:8787", pid: process.pid + 1, mode: "http", dir });
+    expect(claim.claimed).toBe(true);
+    expect(readPanel(dir)?.origin).toBe("http://127.0.0.1:8787");
+  });
+
+  it("never lets a stdio panel take over from an http one", () => {
+    publishPanel({ origin: "http://127.0.0.1:8787", pid: process.pid, mode: "http", dir });
+    const claim = claimPanel({ origin: "http://127.0.0.1:8788", pid: process.pid + 1, mode: "stdio-panel", dir });
+    expect(claim.claimed).toBe(false);
+    expect(readPanel(dir)?.origin).toBe("http://127.0.0.1:8787");
+  });
+
+  it("takes a record whose process is gone", () => {
+    publishPanel({ origin: "http://127.0.0.1:8787", pid: 999_999_999, mode: "http", dir });
+    const claim = claimPanel({ origin: "http://127.0.0.1:8788", pid: process.pid, mode: "stdio-panel", dir });
+    expect(claim.claimed).toBe(true);
+  });
+
+  it("re-claims its own record without complaint", () => {
+    publishPanel({ origin: "http://127.0.0.1:8788", pid: process.pid, mode: "stdio-panel", dir });
+    expect(claimPanel({ origin: "http://127.0.0.1:8788", pid: process.pid, mode: "stdio-panel", dir }).claimed).toBe(true);
+  });
+});
+
+describe("releasing the record", () => {
+  it("clears our own", () => {
+    publishPanel({ origin: "http://127.0.0.1:8788", pid: process.pid, mode: "stdio-panel", dir });
+    releasePanel(process.pid, dir);
+    expect(readPanel(dir)).toBeNull();
+  });
+
+  it("leaves a record another live process took over", () => {
+    // Exiting must not delete the record of the panel that replaced us --
+    // that would leave a live panel undiscoverable.
+    publishPanel({ origin: "http://127.0.0.1:8787", pid: process.pid, mode: "http", dir });
+    releasePanel(process.pid + 1, dir);
+    expect(readPanel(dir)?.origin).toBe("http://127.0.0.1:8787");
   });
 });

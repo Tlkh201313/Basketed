@@ -26,7 +26,15 @@ import {
 import type { Runtime } from "@basketed/mcp";
 import { findRoot } from "./root.js";
 import { installClient, resolveTargets, expandPath } from "./install.js";
-import { publishPanel, readPanel, clearPanel } from "./panel-file.js";
+import { claimPanel, releasePanel, readPanel } from "./panel-file.js";
+import {
+  listenSomewhere,
+  describePort,
+  busyPortMessage,
+  describeOwnerLine,
+  DEFAULT_HTTP_PORT,
+  DEFAULT_PANEL_PORT,
+} from "./ports.js";
 import { runExtension } from "./extension.js";
 
 export { findRoot };
@@ -69,7 +77,7 @@ opens only with --open, because you are looking at the console already. One tab
 per process either way, and --no-open stops it.
 
 Environment:
-  BASKETED_PANEL_PORT=n  preferred panel port (default 8787, falls back to any)
+  BASKETED_PANEL_PORT=n  preferred panel port on stdio (default 8788, falls back to any)
   BASKETED_NO_OPEN=1     never open a browser (same as --no-open)
   BASKETED_SNAPSHOTS=1   replay from fixtures/snapshots instead of the network
   BASKETED_SIMULATED=1   load demo catalogues (same as --simulated)
@@ -102,34 +110,6 @@ function controlDeps(runtime: Runtime): ControlDeps {
     redactionAlarms: () => runtime.redactor.alarms(),
     vault: runtime.vault,
   };
-}
-
-/**
- * Bind the preferred port if it is free, otherwise take any port at all.
- *
- * A busy 8787 is a normal Tuesday -- it is a popular number and this server is
- * started by whichever client happens to launch first. Refusing to serve the
- * panel over it, or worse crashing the MCP server the client is waiting on,
- * would be a much bigger failure than moving to another port and saying so.
- */
-async function listenSomewhere(server: Server, preferred: number): Promise<number | null> {
-  for (const port of [preferred, 0]) {
-    const bound = await new Promise<number | null>((res) => {
-      const onError = () => {
-        server.removeListener("listening", onListening);
-        res(null);
-      };
-      const onListening = () => {
-        server.removeListener("error", onError);
-        res((server.address() as AddressInfo).port);
-      };
-      server.once("error", onError);
-      server.once("listening", onListening);
-      server.listen(port, "127.0.0.1");
-    });
-    if (bound !== null) return bound;
-  }
-  return null;
 }
 
 interface StdioPanel extends PanelHandle {
@@ -303,7 +283,7 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  const port = Number(value(argv, "port") ?? process.env["PORT"] ?? 8787);
+  const port = Number(value(argv, "port") ?? process.env["PORT"] ?? DEFAULT_HTTP_PORT);
   const origin = `http://127.0.0.1:${port}`;
   /*
    * The panel token. Minted per process, printed only on stderr, never on disk.
@@ -337,8 +317,19 @@ export async function main(argv: string[]): Promise<void> {
   const server = createServer((req, res) => {
     const path = (req.url ?? "/").split("?")[0];
     if (path === "/healthz") {
+      // Also how another Basketed process finds out who owns this port --
+      // see ports.ts. `name`, `pid` and `mode` are that contract.
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, server: SERVER_INFO, stores: runtime.summary }));
+      res.end(
+        JSON.stringify({
+          ok: true,
+          name: SERVER_INFO.name,
+          pid: process.pid,
+          mode: "http",
+          server: SERVER_INFO,
+          stores: runtime.summary,
+        }),
+      );
       return;
     }
 
@@ -399,9 +390,19 @@ export async function main(argv: string[]): Promise<void> {
   // reachable from the network.
   server.listen(port, "127.0.0.1", () => {
     // Same handoff the stdio panel writes: whatever is looking for the live
-    // panel finds this port rather than assuming the documented one.
-    publishPanel({ origin, pid: process.pid });
-    process.on("exit", () => clearPanel());
+    // panel finds this port rather than assuming the documented one. An HTTP
+    // panel outranks a stdio one, so this claim wins unless another HTTP
+    // server is already the recorded panel.
+    const claim = claimPanel({ origin, pid: process.pid, mode: "http" });
+    if (!claim.claimed) {
+      process.stderr.write(
+        `[basketed] another Basketed panel (pid ${claim.held.pid}) holds ${claim.held.origin};
+` +
+          `[basketed] this one still serves ${origin} -- open that link directly.
+`,
+      );
+    }
+    process.on("exit", () => releasePanel(process.pid));
     process.stderr.write(
       `[basketed] http · ${runtime.summary}` +
         `${runtime.policy.fastMode ? " · fast-mode (read-only tools only)" : ""}\n` +
@@ -427,6 +428,22 @@ async function startStdioPanel(runtime: Runtime, root: string, mayOpen: boolean)
   // get a 503 rather than a crash.
   let serve: ReturnType<typeof createPanelHandler> | undefined;
   const server = createServer((req, res) => {
+    // Answered before `serve` exists: this is how another process finds out
+    // who holds this port, and it must work from the first millisecond.
+    if ((req.url ?? "/").split("?")[0] === "/healthz") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          name: SERVER_INFO.name,
+          pid: process.pid,
+          mode: "stdio-panel",
+          version: SERVER_INFO.version,
+          stores: runtime.summary,
+        }),
+      );
+      return;
+    }
     if (!serve) {
       res.writeHead(503, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "Panel still starting." }));
@@ -445,8 +462,8 @@ async function startStdioPanel(runtime: Runtime, root: string, mayOpen: boolean)
       });
   });
 
-  const preferred = Number(process.env["BASKETED_PANEL_PORT"] ?? 8787);
-  const port = await listenSomewhere(server, Number.isFinite(preferred) ? preferred : 8787);
+  const preferred = Number(process.env["BASKETED_PANEL_PORT"] ?? DEFAULT_PANEL_PORT);
+  const port = await listenSomewhere(server, Number.isFinite(preferred) ? preferred : DEFAULT_PANEL_PORT);
   if (port === null) return null;
 
   /*
@@ -480,15 +497,17 @@ async function startStdioPanel(runtime: Runtime, root: string, mayOpen: boolean)
   });
 
   // Written down so nothing has to guess which port this run landed on --
-  // see panel-file.ts. The token is deliberately not in it.
-  publishPanel({ origin, pid: process.pid });
+  // see panel-file.ts. The token is deliberately not in it. A stdio panel
+  // never displaces a live one: several editors each start one of these, and
+  // the last editor to launch is not usefully the panel a human is looking at.
+  claimPanel({ origin, pid: process.pid, mode: "stdio-panel" });
 
   const panel: StdioPanel = {
     origin,
     token,
     url: (path) => `${origin}${path}?t=${token}`,
     close: () => {
-      clearPanel();
+      releasePanel(process.pid);
       server.close();
       for (const socket of sockets) socket.destroy();
     },
@@ -578,19 +597,39 @@ async function runDoctor(argv: string[]): Promise<void> {
    */
   const live = readPanel();
   if (live) {
-    say(true, "panel is running", `${live.origin}/connections  (pid ${live.pid})`);
+    const kind = live.mode === "http" ? "http" : "stdio";
+    say(true, "panel is running", `${live.origin}/connections  (${kind}, pid ${live.pid})`);
   } else {
-    const port = Number(value(argv, "port") ?? 8787);
-    const free = await new Promise<boolean>((res) => {
-      const probe = createServer();
-      probe.once("error", () => res(false));
-      probe.once("listening", () => probe.close(() => res(true)));
-      probe.listen(port, "127.0.0.1");
-    });
-    say(
-      free,
-      free ? `no panel running; port ${port} is free` : `no panel running, and port ${port} is taken`,
-      free ? "start one with `basketed serve --http --open`" : "something else is already listening — serve on another port with --port",
+    // Not a failure: no panel running is a thing to DO, and a doctor that
+    // reports a clean machine as broken teaches people to skip its output.
+    process.stdout.write(
+      "  --    panel                 not running — start one with `basketed serve --http --open`\n",
+    );
+  }
+
+  /*
+   * Who holds each of the two numbers, said plainly.
+   *
+   * These are the ports a client config names, and the failure they produce
+   * when they are wrong is silent: a client POSTs /mcp, a panel that has no
+   * /mcp answers 404, and neither side logs anything a person can act on. So
+   * both are reported every run, whether or not anything is wrong.
+   */
+  process.stdout.write("\nports\n");
+  const httpPort = Number(value(argv, "port") ?? DEFAULT_HTTP_PORT);
+  const [httpOwner, panelOwner] = await Promise.all([describePort(httpPort), describePort(DEFAULT_PANEL_PORT)]);
+  process.stdout.write(`${describeOwnerLine(httpPort, httpOwner, "MCP over Streamable HTTP")}\n`);
+  process.stdout.write(`${describeOwnerLine(DEFAULT_PANEL_PORT, panelOwner, "the panel beside a stdio server")}\n`);
+  if (httpOwner?.mode === "stdio-panel") {
+    process.stdout.write(
+      `  !     a stdio panel is on ${httpPort}, so http://127.0.0.1:${httpPort}/mcp answers 404.\n` +
+        `        A client pointed at that URL cannot connect. Either start this server with\n` +
+        `        \`basketed serve --http\`, or install the client for stdio: \`basketed install <client>\`.\n`,
+    );
+  } else if (!httpOwner) {
+    process.stdout.write(
+      `        A client configured for http://127.0.0.1:${httpPort}/mcp needs \`basketed serve --http\` running.\n` +
+        `        Clients installed for stdio launch their own server and need no port at all.\n`,
     );
   }
 

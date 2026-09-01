@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -31,6 +31,15 @@ export interface LivePanel {
   pid: number;
   /** Epoch ms, for a human reading the file by hand. */
   startedAt: number;
+  /**
+   * Which transport is serving it.
+   *
+   * An HTTP panel is strictly more useful than a stdio one -- it has an /mcp
+   * endpoint on the same origin -- so it is allowed to take the record over
+   * from a stdio panel. Never the reverse: a stdio server starting up must
+   * not redirect everything to a panel with no endpoint on it.
+   */
+  mode: "http" | "stdio-panel";
 }
 
 export function panelDir(): string {
@@ -41,16 +50,82 @@ function fileIn(dir: string): string {
   return join(dir, "panel.json");
 }
 
-export function publishPanel(input: { origin: string; pid: number; dir?: string; now?: number }): void {
+export interface PublishInput {
+  origin: string;
+  pid: number;
+  mode?: "http" | "stdio-panel";
+  dir?: string;
+  now?: number;
+}
+
+/**
+ * Write the record unconditionally. Used only where this process is known to
+ * be the one panel; everything else should call `claimPanel`.
+ */
+export function publishPanel(input: PublishInput): void {
   const dir = input.dir ?? panelDir();
   try {
     mkdirSync(dir, { recursive: true });
-    const live: LivePanel = { origin: input.origin, pid: input.pid, startedAt: input.now ?? Date.now() };
-    writeFileSync(fileIn(dir), `${JSON.stringify(live, null, 2)}\n`, "utf8");
+    const live: LivePanel = {
+      origin: input.origin,
+      pid: input.pid,
+      startedAt: input.now ?? Date.now(),
+      mode: input.mode ?? "http",
+    };
+    // Written to a sibling and renamed: a reader must never see half a JSON
+    // object, and rename is atomic within a directory on every platform here.
+    const tmp = `${fileIn(dir)}.${input.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(live, null, 2)}
+`, "utf8");
+    renameSync(tmp, fileIn(dir));
   } catch {
     // Not being able to write a convenience file is never a reason to fail to
     // serve. The banner on the console still says where the panel is.
   }
+}
+
+export type PanelClaim =
+  | { claimed: true; previous: LivePanel | null }
+  | { claimed: false; held: LivePanel };
+
+/**
+ * Take the handoff record, unless a live panel already holds it.
+ *
+ * Two servers on one machine is normal -- a stdio one per editor, plus an
+ * HTTP one someone started by hand -- and they used to fight over this file,
+ * last writer winning. That sent `doctor` and every "open the panel" link to
+ * whichever process happened to start most recently, which is not usefully
+ * the one the human is looking at.
+ *
+ * The rule is deliberately asymmetric. An HTTP panel may take the record from
+ * a live stdio panel, because it also serves /mcp and a human typed a command
+ * to start it. A stdio panel never takes it from anything alive: it came up as
+ * a side effect of an editor launching, and nobody asked for it.
+ *
+ * A record whose process is gone is held by no one, and is taken freely.
+ */
+export function claimPanel(input: PublishInput): PanelClaim {
+  const dir = input.dir ?? panelDir();
+  const mode = input.mode ?? "http";
+  const held = readPanel(dir);
+  if (held && held.pid !== input.pid) {
+    const mayTakeOver = mode === "http" && held.mode !== "http";
+    if (!mayTakeOver) return { claimed: false, held };
+  }
+  publishPanel(input);
+  return { claimed: true, previous: held };
+}
+
+/**
+ * Drop the record, but only if it is still ours.
+ *
+ * A process exiting must not delete the record of the panel that took over
+ * from it -- that would leave a live panel undiscoverable.
+ */
+export function releasePanel(pid: number, dir = panelDir()): void {
+  const held = readPanel(dir);
+  if (held && held.pid !== pid) return;
+  clearPanel(dir);
 }
 
 /** Is that pid still one of ours? Signal 0 tests without touching the process. */
@@ -78,7 +153,13 @@ export function readPanel(dir = panelDir()): LivePanel | null {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<LivePanel>;
     if (typeof parsed.origin !== "string" || typeof parsed.pid !== "number") return null;
     if (!alive(parsed.pid)) return null;
-    return { origin: parsed.origin, pid: parsed.pid, startedAt: Number(parsed.startedAt) || 0 };
+    return {
+      origin: parsed.origin,
+      pid: parsed.pid,
+      startedAt: Number(parsed.startedAt) || 0,
+      // Records written before this field existed were all HTTP panels.
+      mode: parsed.mode === "stdio-panel" ? "stdio-panel" : "http",
+    };
   } catch {
     return null;
   }

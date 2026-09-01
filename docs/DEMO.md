@@ -21,7 +21,7 @@ symptom that is otherwise maddening to diagnose:
 |---|---|
 | every tool answers `Tool not found` | the UCP agent profile is unreachable, or served without a public `Cache-Control` / `application/json` |
 | a hand-picked store returns nothing | headless or password-protected storefront — the pin file is stale |
-| server won't start | 8787 already listening |
+| server won't start | 8787 already listening — `basketed doctor` names the process holding it |
 
 **Then stop touching the live endpoints.** Rate limits are unpublished and a
 rehearsal loop is the one thing that can burn them.
