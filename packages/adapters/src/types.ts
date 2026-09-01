@@ -1,5 +1,7 @@
 import type {
+  BookedSlot,
   CapabilityTier,
+  DeliverySlot,
   Money,
   Product,
   ProductDetail,
@@ -91,6 +93,17 @@ export interface StoreAdapter {
   search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]>;
   detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail>;
   buildCart?(items: Array<{ id: string; quantity: number }>, ctx: AdapterCtx): Promise<RawCart>;
+  /**
+   * Delivery windows, for the stores that have them.
+   *
+   * Both halves or neither -- the registry refuses a store that can list a
+   * slot it cannot then book, because listing one an agent cannot take is a
+   * tour of a shop with no till. Every retailer studied requires a connected
+   * account for either call.
+   */
+  slots?(range: { start: string; end: string }, ctx: AdapterCtx): Promise<DeliverySlot[]>;
+  /** Reserve one. A commitment against a real account, so never under fast-mode. */
+  bookSlot?(slotId: string, ctx: AdapterCtx): Promise<BookedSlot>;
   handoff?(cartId: string, ctx: AdapterCtx): Promise<{ handoffUrl: string }>;
   orderStatus?(orderId: string, ctx: AdapterCtx): Promise<RawOrder>;
 }
@@ -101,6 +114,7 @@ export function implementedTiers(adapter: StoreAdapter): CapabilityTier[] {
   if (typeof adapter.search === "function") tiers.push("discovery");
   if (typeof adapter.detail === "function") tiers.push("detail");
   if (typeof adapter.buildCart === "function") tiers.push("cart");
+  if (typeof adapter.slots === "function" && typeof adapter.bookSlot === "function") tiers.push("slots");
   if (typeof adapter.handoff === "function") tiers.push("handoff");
   return tiers;
 }

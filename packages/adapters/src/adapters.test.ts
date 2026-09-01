@@ -82,6 +82,32 @@ describe("registry honesty constraint", () => {
     expect(() => r.register(liar)).toThrow(/checkout/);
   });
 
+  /*
+   * Slots are two operations, and half of the pair is not a delivery window
+   * -- listing one an agent cannot then book is a tour of a shop with no till.
+   * The registry is where that is caught, before the store ever loads.
+   */
+  it("REFUSES a store that can list delivery slots but not book one", () => {
+    const r = new StoreRegistry();
+    const halfway = adapter({
+      manifest: manifest({ capabilities: ["discovery", "detail", "slots"] }),
+      slots: async () => [],
+    });
+    expect(overclaimedTiers(halfway)).toEqual(["slots"]);
+    expect(() => r.register(halfway)).toThrow(/claims capabilities it does not implement/);
+  });
+
+  it("accepts a store that implements both halves of the slots tier", () => {
+    const r = new StoreRegistry();
+    const honest = adapter({
+      manifest: manifest({ capabilities: ["discovery", "detail", "slots"] }),
+      slots: async () => [],
+      bookSlot: async () => ({ slotId: "s", start: "", end: "", expiresAt: null }),
+    });
+    expect(overclaimedTiers(honest)).toEqual([]);
+    expect(() => r.register(honest)).not.toThrow();
+  });
+
   it("rejects duplicate store ids", () => {
     const r = new StoreRegistry();
     r.register(adapter());

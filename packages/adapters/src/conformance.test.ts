@@ -81,6 +81,11 @@ describe("every adapter conforms", () => {
   it("claims no tier it does not implement", () => {
     for (const a of adapters) {
       expect(overclaimedTiers(a), `${a.manifest.id} overclaims`).toEqual([]);
+      // Both halves or neither -- see the registry's own test for why.
+      if (a.manifest.capabilities.includes("slots")) {
+        expect(typeof a.slots, `${a.manifest.id} claims slots but cannot list them`).toBe("function");
+        expect(typeof a.bookSlot, `${a.manifest.id} claims slots but cannot book one`).toBe("function");
+      }
       // Nobody at our access tier can complete a payment programmatically.
       expect(a.manifest.capabilities).not.toContain("checkout");
       expect(implementedTiers(a)).toContain("discovery");
