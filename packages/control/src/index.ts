@@ -191,6 +191,20 @@ function originMatches(origin: string | undefined, panelOrigin: string): boolean
   }
 }
 
+/**
+ * The GET rule, which is NOT the mutating one.
+ *
+ * A browser omits Origin on a same-origin GET, so demanding a match here would
+ * refuse the panel's own polling. But a PRESENT and foreign Origin can only be
+ * another page's fetch, and reading /api/* is not harmless: approvals carry
+ * itemised carts and totals. The panel token is the real gate, and this is the
+ * layer under it -- a token that leaks through a pasted URL or a Referer
+ * should not also hand a foreign page the shopper's basket.
+ */
+function originAllowedForRead(origin: string | undefined, panelOrigin: string): boolean {
+  return origin === undefined || originMatches(origin, panelOrigin);
+}
+
 export function createPanelHandler(
   deps: ControlDeps,
   opts: PanelOptions,
@@ -247,7 +261,11 @@ export function createPanelHandler(
        * guessed. The token is checked second because it is the real one: it is
        * the only part of this a local process cannot satisfy.
        */
-      if (method !== "GET" && !originMatches(req.headers.origin, panelOrigin)) {
+      const originOk =
+        method === "GET"
+          ? originAllowedForRead(req.headers.origin, panelOrigin)
+          : originMatches(req.headers.origin, panelOrigin);
+      if (!originOk) {
         log(`403 ${method} ${path} (Origin was ${req.headers.origin ? JSON.stringify(req.headers.origin) : "absent"})`);
         send(res, 403, "application/json", JSON.stringify({ error: "Cross-origin request refused." }));
         return true;

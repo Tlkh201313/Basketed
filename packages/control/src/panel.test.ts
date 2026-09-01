@@ -303,6 +303,36 @@ describe("the browser-facing half of the gate", () => {
   });
 });
 
+describe("reading /api/* from a foreign page", () => {
+  /*
+   * The token is the real gate. This is the layer under it: a token can leak
+   * through a pasted panel URL or a Referer, and /api/approvals carries an
+   * itemised cart and a total. A page that guessed one should still not be
+   * able to read the shopper's basket out of their own browser.
+   */
+  it("refuses a GET carrying a foreign Origin, token or not", async () => {
+    const res = await panel("/api/approvals", { headers: { origin: "http://evil.example" } });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: expect.stringMatching(/cross-origin/i) });
+  });
+
+  it("refuses a GET whose Origin merely starts with ours", async () => {
+    const res = await panel("/api/approvals", { headers: { origin: `${base}0` } });
+    expect(res.status).toBe(403);
+  });
+
+  it("still serves the panel's own GET, which carries our Origin", async () => {
+    expect((await panel("/api/approvals", { headers: { origin: base } })).status).toBe(200);
+  });
+
+  it("still serves a GET with no Origin at all", async () => {
+    // Browsers omit Origin on a same-origin GET, so demanding one here would
+    // refuse the panel's own polling. Absent is allowed on reads and refused
+    // on writes -- the two rules are deliberately different.
+    expect((await panel("/api/approvals")).status).toBe(200);
+  });
+});
+
 describe("the guardrail route refuses a value that is not a policy", () => {
   it("answers 400 and changes nothing on a negative cap", async () => {
     const before = loadGuardrails(purchase.db);
@@ -704,6 +734,28 @@ describe("connecting in the user's own browser (S20)", () => {
     });
     expect(replay.status).toBe(409);
     expect(decodeSession(vault.reveal(TESCO_ID)!.secret)?.headers["cookie"]).toBe("session=super-secret-session-value");
+  });
+
+  it("reports that the extension finished it, not merely that nothing is waiting", async () => {
+    /*
+     * The capture used to delete the note, so status answered
+     * `{waiting: false, finished_by: null}` -- the identical answer it gives
+     * for a store nobody ever pressed Connect on. The panel could not tell
+     * "the extension just did it" from "nothing happened", and showed the
+     * second one.
+     */
+    await panel(`${TESCO_API}/browser-connect`, { method: "POST" });
+    const before = (await (await panel(`${TESCO_API}/browser-connect`)).json()) as Record<string, unknown>;
+    expect(before).toMatchObject({ waiting: true, finished_by: null });
+
+    await panel(`${TESCO_API}/extension-capture`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cookie_header: "session=abc", headers: TESCO_HEADERS }),
+    });
+
+    const after = (await (await panel(`${TESCO_API}/browser-connect`)).json()) as Record<string, unknown>;
+    expect(after).toMatchObject({ waiting: false, finished_by: "extension" });
   });
 
   it("an empty capture is refused rather than sealed as a connection", async () => {

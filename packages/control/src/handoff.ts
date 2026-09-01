@@ -77,23 +77,28 @@ export function pendingFor(storeId: string): PendingConnect | null {
   return pending.get(storeId) ?? null;
 }
 
-/**
- * What the extension asks for: everything currently waiting on a sign-in.
- *
- * Deliberately says nothing about whether a store is already connected --
- * that would turn a list of open tabs into a report on the vault's contents,
- * and the extension has no business knowing either way.
+/*
+ * There was a `listPending()` here, described as "what the extension asks
+ * for". The extension never asked: it is driven by messages from the panel
+ * page it is already running in, and no route ever served this. An exported
+ * function with a docstring describing a protocol that does not exist is
+ * worse than no function, so it is gone -- `pendingFor` and `statusFor` are
+ * the whole read surface.
  */
-export function listPending(): PendingConnect[] {
-  sweep();
-  return [...pending.values()];
-}
 
 export function closeConnect(storeId: string): boolean {
   return pending.delete(storeId);
 }
 
-/** Mark one finished, so the panel can say how rather than just that it did. */
+/**
+ * Mark one finished, so the panel can say how rather than just that it did.
+ *
+ * The note stays until its TTL. Deleting it here was the bug: statusFor then
+ * answered `{waiting: false, finished_by: null}`, which is the identical
+ * answer it gives for a store nobody ever pressed Connect on -- so the panel
+ * could not tell "the extension just did it" from "nothing happened", and
+ * showed the latter.
+ */
 export function finish(storeId: string, by: "extension"): void {
   const p = pending.get(storeId);
   if (p) p.finishedBy = by;

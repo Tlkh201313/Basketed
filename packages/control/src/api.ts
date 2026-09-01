@@ -426,6 +426,19 @@ export async function handleApi(
     if (!note) {
       return { status: 409, body: { error: "No sign-in is in flight for this store. Press Connect first." } };
     }
+    if (note.finishedBy) {
+      /*
+       * The note now outlives the capture that finished it, so "a note exists"
+       * is no longer proof that a capture is wanted. Without this, a retried
+       * or duplicated POST would re-seal the vault from whatever the second
+       * request happened to carry -- which is how a good session gets replaced
+       * by a worse one.
+       */
+      return {
+        status: 409,
+        body: { error: `${store.name} was already connected from this sign-in. Press Connect again to start a new one.` },
+      };
+    }
 
     const payload = await body();
     const cookieHeader = String(payload["cookie_header"] ?? "").trim();
@@ -439,8 +452,10 @@ export async function handleApi(
     const { kind, secret } = sealable;
     try {
       const saved = deps.vault.connect({ storeId, kind, username: null, secret });
+      // finish, NOT closeConnect. The note has to outlive the capture so the
+      // panel can say the extension did it; listPending already stops handing
+      // a finished note back to the extension as work.
       finish(storeId, "extension");
-      closeConnect(storeId);
       syncTescoStatus(deps, storeId);
       log(`connect ${storeId}: sealed as ${kind}, captured from the user's own browser`);
       return {
