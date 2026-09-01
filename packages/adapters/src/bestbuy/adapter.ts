@@ -11,20 +11,16 @@ import {
   type StoreManifest,
 } from "@basketed/core";
 import { mintProductId } from "../ids.js";
-import { renderPage, type RenderResult } from "../stealth/browser.js";
+import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
 
 /**
- * Real Best Buy, S21.
+ * Real Best Buy — plain HTTP, no browser.
  *
- * Best Buy's search (bestbuy.com/site/searchpage.jsp) is SSR HTML for
- * signed-out shoppers. No public JSON API without a partner key. This
- * adapter renders the page in stealth Chromium and parses the DOM.
- *
- * `mode: "native"` — Best Buy's own live data, same as Amazon/Target/eBay/Etsy.
- * Cart is local (no retailer API) and handoff goes to https://www.bestbuy.com/cart —
- * the human completes checkout. No payment is completed by Basketed
- * (HANDED_OFF/unknown).
+ * Search page is SSR HTML reachable via plain HTTP with desktop User-Agent.
+ * S22 switches from stealth render to ctx.http so all 24 stores work without
+ * Chromium. Cart remains local → handoff https://www.bestbuy.com/cart.
+ * `render` stays as test seam for canned HTML.
  */
 
 const SEARCH_BASE = "https://www.bestbuy.com/site/searchpage.jsp";
@@ -73,11 +69,11 @@ export interface BestBuyAdapterOptions {
 export class BestBuyAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
   readonly #cache = new Map<string, Cached>();
-  readonly #render: (url: string) => Promise<RenderResult>;
+  readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
   constructor(opts: BestBuyAdapterOptions = {}) {
-    this.#render = opts.render ?? renderPage;
+    this.#render = opts.render;
     this.manifest = {
       id: "bby:bestbuy",
       name: "Best Buy",
@@ -92,13 +88,31 @@ export class BestBuyAdapter implements StoreAdapter {
     };
   }
 
-  async search(q: SearchQuery, _ctx: AdapterCtx): Promise<Product[]> {
+  async search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]> {
     this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `${SEARCH_BASE}?${new URLSearchParams({ st: q.query, id: "pcat17071" })}`;
-    const { status, html } = await this.#render(url);
-    this.lastRawBytes = html.length;
-    if (status !== null && status >= 400) throw new Error(`Best Buy search returned HTTP ${status}.`);
+    let html: string;
+    let status: number | null = 200;
+    if (this.#render) {
+      const res = await this.#render(url);
+      html = res.html;
+      status = res.status;
+      this.lastRawBytes = html.length;
+      if (status !== null && status >= 400) throw new Error(`Best Buy search returned HTTP ${status}.`);
+    } else {
+      const res = await ctx.http(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) throw new Error(`Best Buy search returned HTTP ${res.status}.`);
+      status = res.status;
+    }
 
     const $ = load(html);
     const products: Product[] = [];
@@ -182,15 +196,33 @@ export class BestBuyAdapter implements StoreAdapter {
     return products;
   }
 
-  async detail(id: string, include: Include[], _ctx: AdapterCtx): Promise<ProductDetail> {
+  async detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail> {
     const cached = this.#cache.get(id);
     if (!cached) throw new Error("Unknown product id for Best Buy. Ids are server-minted; search first, then request detail.");
     if (!cached.url) throw new Error(`Best Buy product ${cached.sku} has no link to fetch.`);
 
     this.lastRawBytes = 0;
-    const { status, html } = await this.#render(cached.url);
-    this.lastRawBytes = html.length;
-    if (status !== null && status >= 400) throw new Error(`Best Buy product page returned HTTP ${status} for ${cached.sku}.`);
+    let html: string;
+    let status: number | null = 200;
+    if (this.#render) {
+      const res = await this.#render(cached.url);
+      html = res.html;
+      status = res.status;
+      this.lastRawBytes = html.length;
+      if (status !== null && status >= 400) throw new Error(`Best Buy product page returned HTTP ${status} for ${cached.sku}.`);
+    } else {
+      const res = await ctx.http(cached.url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) throw new Error(`Best Buy product page returned HTTP ${res.status} for ${cached.sku}.`);
+      status = res.status;
+    }
 
     const $ = load(html);
 

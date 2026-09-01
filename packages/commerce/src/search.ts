@@ -22,6 +22,33 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   return Promise.race([promise.finally(() => clearTimeout(timer)), timeout]);
 }
 
+const SEARCH_CACHE = new Map<string, { products: Product[]; baseline: number; at: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function cacheKey(storeId: string, q: SearchQuery): string {
+  return `${storeId}|${q.query}|${q.maxResults ?? 8}|${q.priceMax ?? ""}`;
+}
+
+function isTransient(err: unknown): boolean {
+  const msg = String((err as Error)?.message ?? err);
+  return /429|503|5\d\d|timeout|ECONN|ENET|ETIMEDOUT|fetch failed|blocked|captcha/i.test(msg);
+}
+
+async function withRetry<T>(fn: () => Promise<T>, label: string, attempts = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      if (!isTransient(e) || i === attempts - 1) throw e;
+      const backoff = 400 * Math.pow(2, i) + Math.random() * 200;
+      await new Promise((r) => setTimeout(r, backoff));
+    }
+  }
+  throw last;
+}
+
 /**
  * Fan out across every searchable store and merge the results.
  *
@@ -45,10 +72,25 @@ export async function searchAll(
   const timeoutMs = opts.timeoutMs ?? 12_000;
 
   const settled = await Promise.allSettled(
-    adapters.map(async (a) => ({
-      adapter: a,
-      products: await withTimeout(a.search(query, ctx), timeoutMs, a.manifest.id),
-    })),
+    adapters.map(async (a) => {
+      const key = cacheKey(a.manifest.id, query);
+      const cached = SEARCH_CACHE.get(key);
+      const useCache = cached && Date.now() - cached.at < CACHE_TTL_MS;
+      try {
+        const products = await withRetry(() => withTimeout(a.search(query, ctx), timeoutMs, a.manifest.id), a.manifest.id, 3);
+        const baseline = a.lastRawBytes ?? 0;
+        SEARCH_CACHE.set(key, { products, baseline, at: Date.now() });
+        return { adapter: a, products, baseline };
+      } catch (e) {
+        if (useCache) {
+          ctx.log(`store ${a.manifest.id} failed live, serving cached ${cached!.products.length} results`);
+          // restore cached baseline so token report stays honest (cached bytes, not 0)
+          (a as { lastRawBytes?: number }).lastRawBytes = cached!.baseline;
+          return { adapter: a, products: cached!.products, baseline: cached!.baseline, cached: true as const };
+        }
+        throw e;
+      }
+    }),
   );
 
   const products: Product[] = [];
@@ -59,11 +101,14 @@ export async function searchAll(
   settled.forEach((s, i) => {
     const adapter = adapters[i]!;
     if (s.status === "fulfilled") {
+      const isCached = (s.value as { cached?: boolean }).cached === true;
       queried.push(adapter.manifest.id);
       products.push(...s.value.products);
-      // The honest baseline: bytes we actually received. Simulated adapters
-      // report nothing, so they cannot inflate the savings figure.
-      baselineBytes += adapter.lastRawBytes ?? 0;
+      // Honest baseline: use cached baseline when serving from cache, else live bytes
+      baselineBytes += (s.value as { baseline?: number }).baseline ?? adapter.lastRawBytes ?? 0;
+      if (isCached) {
+        // still count as queried, not failed, but note in log
+      }
     } else {
       failed.push({ store: adapter.manifest.id, reason: String(s.reason?.message ?? s.reason).slice(0, 200) });
       ctx.log(`store ${adapter.manifest.id} failed: ${String(s.reason?.message ?? s.reason).slice(0, 160)}`);

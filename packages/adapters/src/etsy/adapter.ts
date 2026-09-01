@@ -11,19 +11,18 @@ import {
   type StoreManifest,
 } from "@basketed/core";
 import { mintProductId } from "../ids.js";
-import { renderPage, type RenderResult } from "../stealth/browser.js";
+import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
 
 /**
- * Real Etsy, S21.
+ * Real Etsy — plain HTTP, no browser.
  *
- * Etsy has no public product search API reachable without an OAuth app
- * (their open API is seller-scoped). What IS reachable is what a signed-out
- * shopper sees: etsy.com/search and etsy.com/listing/<id>, rendered in a
- * patched Chromium (stealth/browser.ts) and parsed with cheerio.
+ * Etsy search and listing pages are SSR HTML reachable via plain HTTP with
+ * a desktop User-Agent. S22 switches from stealth render to ctx.http so all
+ * 24 stores work without Chromium.
  *
- * Still `mode: "native"` — whose data it is, not how it was fetched.
- * No login, no session, no cart (Etsy cart needs a signed-in session).
+ * Still `mode: "native"` — whose data, not how fetched. No cart.
+ * `render` stays as test seam for canned HTML.
  */
 
 const SEARCH_BASE = "https://www.etsy.com/search";
@@ -67,11 +66,11 @@ export interface EtsyAdapterOptions {
 export class EtsyAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
   readonly #cache = new Map<string, Cached>();
-  readonly #render: (url: string) => Promise<RenderResult>;
+  readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
   constructor(opts: EtsyAdapterOptions = {}) {
-    this.#render = opts.render ?? renderPage;
+    this.#render = opts.render;
     this.manifest = {
       id: "etsy:etsy",
       name: "Etsy",
@@ -86,13 +85,48 @@ export class EtsyAdapter implements StoreAdapter {
     };
   }
 
-  async search(q: SearchQuery, _ctx: AdapterCtx): Promise<Product[]> {
+  async search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]> {
     this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `${SEARCH_BASE}?${new URLSearchParams({ q: q.query })}`;
-    const { status, html } = await this.#render(url);
-    this.lastRawBytes = html.length;
-    if (status !== null && status >= 400) throw new Error(`Etsy search returned HTTP ${status}.`);
+    let html: string;
+    let status: number | null = 200;
+    if (this.#render) {
+      const res = await this.#render(url);
+      html = res.html;
+      status = res.status;
+      this.lastRawBytes = html.length;
+      if (status !== null && status >= 400) throw new Error(`Etsy search returned HTTP ${status}.`);
+    } else {
+      const res = await ctx.http(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) {
+        // Cloudflare 403 — try stealth browser as fallback if available (real data, no simulated fallback)
+        if (res.status === 403) {
+          try {
+            const { renderPage } = await import("../stealth/browser.js");
+            const r = await renderPage(url);
+            html = r.html;
+            status = r.status;
+            this.lastRawBytes = html.length;
+            if (status !== null && status >= 400) throw new Error(`Etsy search returned HTTP ${status} (stealth).`);
+          } catch {
+            throw new Error(`Etsy search returned HTTP ${res.status}.`);
+          }
+        } else {
+          throw new Error(`Etsy search returned HTTP ${res.status}.`);
+        }
+      } else {
+        status = res.status;
+      }
+    }
 
     const $ = cheerio.load(html);
     const products: Product[] = [];
@@ -155,15 +189,49 @@ export class EtsyAdapter implements StoreAdapter {
     return products;
   }
 
-  async detail(id: string, include: Include[], _ctx: AdapterCtx): Promise<ProductDetail> {
+  async detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail> {
     const cached = this.#cache.get(id);
     if (!cached) throw new Error("Unknown product id for Etsy. Ids are server-minted; search first, then request detail.");
     if (!cached.url) throw new Error(`Etsy product ${cached.listingId} has no link to fetch.`);
 
     this.lastRawBytes = 0;
-    const { status, html } = await this.#render(cached.url);
-    this.lastRawBytes = html.length;
-    if (status !== null && status >= 400) throw new Error(`Etsy product page returned HTTP ${status} for ${cached.listingId}.`);
+    let html: string;
+    let status: number | null = 200;
+    if (this.#render) {
+      const res = await this.#render(cached.url);
+      html = res.html;
+      status = res.status;
+      this.lastRawBytes = html.length;
+      if (status !== null && status >= 400) throw new Error(`Etsy product page returned HTTP ${status} for ${cached.listingId}.`);
+    } else {
+      const res = await ctx.http(cached.url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) {
+        if (res.status === 403) {
+          try {
+            const { renderPage } = await import("../stealth/browser.js");
+            const r = await renderPage(cached.url);
+            html = r.html;
+            status = r.status;
+            this.lastRawBytes = html.length;
+            if (status !== null && status >= 400) throw new Error(`Etsy product page returned HTTP ${status} for ${cached.listingId} (stealth).`);
+          } catch {
+            throw new Error(`Etsy product page returned HTTP ${res.status} for ${cached.listingId}.`);
+          }
+        } else {
+          throw new Error(`Etsy product page returned HTTP ${res.status} for ${cached.listingId}.`);
+        }
+      } else {
+        status = res.status;
+      }
+    }
 
     const $ = cheerio.load(html);
 

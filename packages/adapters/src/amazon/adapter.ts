@@ -12,37 +12,25 @@ import {
   type StoreManifest,
 } from "@basketed/core";
 import { mintProductId } from "../ids.js";
-import { renderPage, type RenderResult } from "../stealth/browser.js";
+import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
 
 /**
- * Real Amazon, S16 store-roster expansion.
+ * Real Amazon — plain HTTP, no browser.
  *
- * Unlike Tesco (a JSON API, no auth, no scraping at all), Amazon has none of
- * that reachable at our access tier -- there is no public product-search API
- * a signed-out client can call. What IS reachable is exactly what a signed-out
- * human sees: amazon.com/s and amazon.com/dp/<ASIN>, rendered in a real,
- * patched Chromium (see ../stealth/browser.ts) and parsed with cheerio. That
- * is genuinely scraping, and this file says so rather than dressing it up.
+ * Unlike Tesco (a JSON API), Amazon has no public search API at our tier,
+ * but amazon.com/s and amazon.com/dp/<ASIN> are SSR HTML reachable via
+ * plain HTTP with a desktop User-Agent. The previous stealth-browser render
+ * is no longer needed — S22 switches to ctx.http so all 24 stores work
+ * without Chromium, and the adapter still parses the same live markup a
+ * signed-out browser would see.
  *
- * It is still `mode: "native"`, and that claim is about WHOSE data this is,
- * not HOW it was fetched: every field below came from Amazon's own live page,
- * reaching this adapter the same way it reaches a signed-out browser. Nothing
- * is proxied through a third-party catalog and nothing is invented.
+ * Still `mode: "native"` — whose data, not how fetched. No credential for
+ * search/detail, so ctx.http is just the global fetch pipeline. Cart would
+ * need a signed-in session, out of scope.
  *
- * No ctx.http here, by construction: AdapterCtx.http exists specifically so
- * an adapter can be handed a pre-authenticated request pipeline without ever
- * seeing the credential behind it (see types.ts). There is no credential for
- * Amazon search/detail -- these are pages a browser with no account can
- * already load -- so there is nothing for ctx.http to intercept, and driving
- * a real browser instead is not a workaround for the trust boundary, it's
- * just what unauthenticated Amazon requires. Cart/checkout would need the
- * shopper's own signed-in session, which is out of scope here (no capability
- * claimed for it), for the same reason the Tesco basket needs a bearer token.
- *
- * `render` is injectable so tests never touch the network -- the offline-drill
- * seam for a browser-automation adapter, playing the same role ctx.http's
- * fake plays for Tesco's tests.
+ * `render` remains as a test seam: tests inject canned HTML without needing
+ * a fake fetch. Live path uses ctx.http.
  */
 
 const SEARCH_URL = "https://www.amazon.com/s";
@@ -102,18 +90,18 @@ interface Cached {
 }
 
 export interface AmazonAdapterOptions {
-  /** Test seam: inject a fake renderer instead of driving a real browser. */
+  /** Test seam: inject a fake renderer instead of live fetch. */
   render?: (url: string) => Promise<RenderResult>;
 }
 
 export class AmazonAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
   readonly #cache = new Map<string, Cached>();
-  readonly #render: (url: string) => Promise<RenderResult>;
+  readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
   constructor(opts: AmazonAdapterOptions = {}) {
-    this.#render = opts.render ?? renderPage;
+    this.#render = opts.render;
     this.manifest = {
       id: "amz:amazon",
       name: "Amazon",
@@ -129,12 +117,28 @@ export class AmazonAdapter implements StoreAdapter {
   }
 
   async search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]> {
-    void ctx;
     this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `${SEARCH_URL}?${new URLSearchParams({ k: q.query })}`;
-    const { html } = await this.#render(url);
-    this.lastRawBytes = html.length;
+    let html: string;
+    if (this.#render) {
+      const res = await this.#render(url);
+      html = res.html;
+      this.lastRawBytes = html.length;
+      if (res.status !== null && res.status >= 400) throw new Error(`Amazon search returned HTTP ${res.status}.`);
+    } else {
+      const res = await ctx.http(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) throw new Error(`Amazon search returned HTTP ${res.status}.`);
+      if (/captcha|robot or human|are you a human/i.test(html)) throw new Error("Amazon search appears blocked (captcha).");
+    }
 
     const $ = cheerio.load(html);
     const cards = $('div[data-component-type="s-search-result"]');
@@ -182,14 +186,29 @@ export class AmazonAdapter implements StoreAdapter {
   }
 
   async detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail> {
-    void ctx;
     const cached = this.#cache.get(id);
     if (!cached) {
       throw new Error("Unknown product id for Amazon. Ids are server-minted; search first, then request detail.");
     }
 
-    const { html } = await this.#render(`${DETAIL_URL}${cached.asin}`);
-    this.lastRawBytes = html.length;
+    let html: string;
+    if (this.#render) {
+      const res = await this.#render(`${DETAIL_URL}${cached.asin}`);
+      html = res.html;
+      this.lastRawBytes = html.length;
+      if (res.status !== null && res.status >= 400) throw new Error(`Amazon product page returned HTTP ${res.status} for ${cached.asin}.`);
+    } else {
+      const res = await ctx.http(`${DETAIL_URL}${cached.asin}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      html = await res.text();
+      this.lastRawBytes = html.length;
+      if (!res.ok) throw new Error(`Amazon product page returned HTTP ${res.status} for ${cached.asin}.`);
+    }
     const $ = cheerio.load(html);
 
     const titleRaw = $("#productTitle").text().trim();

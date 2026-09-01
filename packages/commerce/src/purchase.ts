@@ -1,5 +1,23 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { FxTable, Money } from "@basketed/core";
+
+function isTransientCartError(e: unknown): boolean {
+  const msg = String((e as Error)?.message ?? e);
+  return /429|503|5\d\d|timeout|ECONN|ENET|ETIMEDOUT|fetch failed|blocked|captcha|rate.?limit/i.test(msg) && !/cannot build a cart/i.test(msg);
+}
+async function withRetryCart<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      if (!isTransientCartError(e) || i === attempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i) + Math.random() * 200));
+    }
+  }
+  throw last;
+}
 import type { AdapterCtx, StoreRegistry } from "@basketed/adapters";
 import { describeRoute, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
 import { authorizedFetch, type Vault } from "@basketed/vault";
@@ -219,7 +237,7 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
   // Vault-wrapped only for THIS store's id -- a store with no stored
   // credential gets deps.ctx.http back unchanged (authorizedFetch no-ops).
   const cartCtx = deps.vault ? { ...deps.ctx, http: authorizedFetch(deps.vault, storeId, deps.ctx.http) } : deps.ctx;
-  const raw = await adapter.buildCart(input.items, cartCtx);
+  const raw = await withRetryCart(() => adapter.buildCart!(input.items, cartCtx));
   const lineItems: MandateLine[] = raw.lineItems.map((li) => ({
     id: li.id,
     variantId: li.variantId,
