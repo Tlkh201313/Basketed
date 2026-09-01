@@ -10,8 +10,9 @@ so do not let the first three overrun.
 ```bash
 pnpm build
 pnpm preflight          # profile URL, 10 pinned stores, port 8787
-pnpm test               # 188 unit tests (vitest run)
+pnpm test               # 403 unit tests (vitest run)
 pnpm smoke              # 5 suites, all offline (mcp, purchase, panel, stdio-panel, install)
+pnpm stability          # 25 cold starts; must not print below 95%
 ```
 
 `preflight` checks the three things that silently kill the demo, each with a
@@ -21,7 +22,8 @@ symptom that is otherwise maddening to diagnose:
 |---|---|
 | every tool answers `Tool not found` | the UCP agent profile is unreachable, or served without a public `Cache-Control` / `application/json` |
 | a hand-picked store returns nothing | headless or password-protected storefront — the pin file is stale |
-| server won't start | 8787 already listening — `basketed doctor` names the process holding it |
+| server won't start | 8787 already listening — `basketed doctor` names the process holding it, and `serve --http` prints who owns the port rather than a stack trace |
+| a client cannot connect over HTTP | a `serve --stdio` panel is on 8788 and has no `/mcp`; HTTP is 8787. `basketed doctor` prints the owner of both |
 
 **Then stop touching the live endpoints.** Rate limits are unpublished and a
 rehearsal loop is the one thing that can burn them.
@@ -140,14 +142,21 @@ Then the line that closes it:
 
 ## Questions you will get
 
-**"Why not just scrape Amazon?"** — We do, for Amazon / IKEA / Target
-discovery + detail only: a stealth browser (`patchright`) renders their own
-public pages exactly as a signed-out visitor sees them. That is still
-`mode: "native"` — whose data it is, not how it was fetched — but it is
-scraping and we say so (`adapters/src/stealth/browser.ts`, S17). No login, no
-session, no cart; the alternative was building nothing at all for three of the
-most-shopped stores. Provider-sourced `provider` mode is still designed, not
-built.
+**"Why not just scrape Amazon?"** — We do, for Amazon / IKEA / Target /
+Etsy / eBay / Best Buy discovery and detail only. Their own public pages are
+fetched over plain HTTP with a real browser's headers and parsed as a
+signed-out visitor sees them; Etsy alone retries through a stealth browser
+(`patchright`) when it answers 403. That is still `mode: "native"` — whose data
+it is, not how it was fetched — but it is scraping and we say so
+(`adapters/src/stealth/browser.ts`). No login, no session, no cart; the
+alternative was building nothing at all for six of the most-shopped stores.
+Provider-sourced `provider` mode is still designed, not built.
+
+**"What happens when one of them blocks you mid-demo?"** — The store comes back
+in `stores_failed` with the reason, and the other stores answer normally. It is
+never reported as zero results: an interstitial and an empty shelf are
+different answers, and only one of them is ours to give
+(`adapters/src/blocked.ts`).
 
 **"So some of your stores are fake?"** — Every response and every card carries
 its mode. Six stores are fixture-backed because they have no lawful automated

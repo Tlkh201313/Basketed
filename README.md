@@ -84,8 +84,9 @@ and check. The absence is the feature.
 
 ```bash
 pnpm smoke        # five smoke suites, all offline
-pnpm test         # 203 unit tests
+pnpm test         # 403 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
+pnpm stability    # 25 cold starts, measured: last run 25/25 (100%)
 pnpm smoke:live   # ...and against live merchants, spending real requests
 ```
 
@@ -120,7 +121,7 @@ Every adapter declares two independent things, and neither may be overstated.
 
 | Mode | Meaning |
 |---|---|
-| `native` | the retailer's own live page or endpoint reaching a real signed-out shopper — Shopify UCP; (S16) real Tesco: `search.api.tesco.com` / `xapi.tesco.com`, the same requests tesco.com's own frontend makes, ported and verified live, not scraped; and (S17) real Amazon/IKEA/Target + (S21) real Etsy/eBay/Best Buy: no JSON API exists for any of the six, so a stealth browser renders their own public search/detail pages and the adapter parses what a signed-out visitor would see — still `native` because the label describes *whose* data it is, not *how* it was fetched |
+| `native` | the retailer's own live page or endpoint reaching a real signed-out shopper — Shopify UCP; (S16) real Tesco: `search.api.tesco.com` / `xapi.tesco.com`, the same requests tesco.com's own frontend makes, ported and verified live, not scraped; and (S17) real Amazon/IKEA/Target + (S21) real Etsy/eBay/Best Buy: no JSON API exists for any of the six, so the adapter fetches their own public search/detail pages with a real browser's headers and parses what a signed-out visitor would see (Etsy retries through a stealth browser on a 403) — still `native` because the label describes *whose* data it is, not *how* it was fetched |
 | `provider` | real retailer data via a licensed commercial provider *(designed, not built)* |
 | `connected` | the user's own account via real retailer OAuth *(designed, not built)* |
 | `simulated` | fixture-backed and stamped **SIMULATED** |
@@ -140,26 +141,40 @@ outside Tesco's Terms of Service, same as any unofficial API client. There is
 one Tesco in the live product (`tsc:tesco`). Demo catalogues (`sim:*`) load
 only with `--simulated`.
 
-**Amazon, IKEA, Target (S17) and Etsy, eBay, Best Buy (S21) do circumvent anti-bot detection.** Shopify UCP
-and Tesco are plain, unmodified HTTP calls — no anti-bot layer to get past. For
-these six there is no JSON API and no HTTP-only path in either: `patchright`
-(a stealth-patched Chromium) renders the retailer's own public search/detail
-pages the way a real signed-out browser would, specifically to defeat
-fingerprinting that would otherwise reject a plain client outright. That is a
-real, deliberate anti-bot bypass, done because the alternative was building
-nothing at all for three of the internet's most-shopped stores — scoped hard
-to unauthenticated public pages: no login, no session automation, no cart, so
-"the user is the actor" still holds for anything these adapters touch. Cart-tier
-automation would require a signed-in session and is out of scope for exactly
-that reason. Etsy, eBay and Best Buy use the same engine and same scope; eBay
-and Best Buy now expose a **local billing handoff** (S22) — `cart` built
-locally from cached search prices, `handoff` to `cart.ebay.com` /
-`bestbuy.com/cart` where the human pays. No retailer cart API is called and no
-payment is completed by Basketed (`HANDED_OFF/unknown`).
+**Amazon, IKEA, Target (S17) and Etsy, eBay, Best Buy (S21) do circumvent anti-bot detection.**
+Shopify UCP and Tesco are plain, unmodified HTTP calls — no anti-bot layer to
+get past. For these six there is no JSON API at all, so the adapter fetches the
+retailer's own public search and detail pages and parses what a signed-out
+visitor would see. Those requests carry a real browser's User-Agent,
+`Accept-Language` and `Referer` rather than a library's defaults, which is a
+deliberate step past a check that exists to keep non-browsers out. We are not
+going to describe that as anything other than what it is.
+
+Etsy is the one that still reaches for a browser. When its search or listing
+page answers 403, the adapter retries once through `patchright`, a
+stealth-patched Chromium that renders the page the way a real signed-out
+browser would — see `adapters/src/stealth/browser.ts`. That lane is bounded to
+two concurrent browsers, each on a deadline, and `BASKETED_NO_BROWSER=1` turns
+it off entirely.
+
+The scope is hard: unauthenticated public pages only. No login, no session
+automation, no retailer cart API, so "the user is the actor" still holds for
+anything these adapters touch. Cart-tier automation would need a signed-in
+session and is out of scope for exactly that reason. eBay and Best Buy expose a
+**local billing handoff** (S22) — `cart` built locally from cached search
+prices, `handoff` to `cart.ebay.com` / `bestbuy.com/cart` where the human pays.
+No retailer cart API is called and no payment is completed by Basketed
+(`HANDED_OFF/unknown`).
+
+When one of these pages comes back as an interstitial, or as markup this
+adapter no longer recognises, the store is reported in `stores_failed` with the
+reason. It is never reported as zero results: "the store does not stock it" and
+"the store would not show us" are different answers, and only one of them is
+ours to give.
 
 Costco and Walmart were tried and refused: both sit behind Akamai/PerimeterX
-configurations the same stealth browser could not get past cleanly enough to
-trust, so both stayed `simulated`. Shopee was tried, briefly misread as
+configurations neither the plain-HTTP path nor the stealth browser could get
+past cleanly enough to trust, so both stayed `simulated`. Shopee was tried, briefly misread as
 bypassed (a webpack bundle name that looked like real product markup), then
 re-verified and found genuinely blocked — its `search_items` API returns a
 risk-control error regardless of stealth config — so it also stayed `simulated`.

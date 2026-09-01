@@ -2,7 +2,7 @@
   "name": "basketed-workspace",
   "version": "0.0.0",
   "private": true,
-  "description": "Basketed — Universal Shopping MCP server + self-hosted control panel",
+  "description": "Basketed \u2014 Universal Shopping MCP server + self-hosted control panel",
   "engines": {
     "node": ">=22"
   },
@@ -29,7 +29,8 @@
     "panel": "node packages/cli/bin.js serve --http --open",
     "smoke:install": "node scripts/smoke-install.mjs",
     "doctor": "node packages/cli/bin.js doctor",
-    "install:mcp": "node packages/cli/bin.js install"
+    "install:mcp": "node packages/cli/bin.js install",
+    "stability": "node scripts/stability.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
