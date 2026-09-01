@@ -4,6 +4,7 @@ import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server
 import type { Runtime } from "./runtime.js";
 import { registerReadOnlyTools, TOOL_NAMES } from "./tools.js";
 import { registerPurchaseTools, PURCHASE_TOOL_NAMES } from "./tools-purchase.js";
+import { registerSlotTools } from "./tools-slots.js";
 
 /** The complete surface in wire order. Consumed by the install writers (S7). */
 export const ALL_TOOL_NAMES = [...TOOL_NAMES, ...PURCHASE_TOOL_NAMES] as const;
@@ -29,6 +30,7 @@ export function createServerFactory(runtime: Runtime): McpServerFactory {
     // last, and stable -- churning the list invalidates the provider prompt
     // cache, and the miss can cost more than the definitions ever saved.
     registerReadOnlyTools(server, runtime);
+    registerSlotTools(server, runtime);
     if (runtime.purchase) registerPurchaseTools(server, runtime);
     return server;
   };

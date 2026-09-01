@@ -349,4 +349,7 @@ export const TOOL_NAMES = [
   "basket_search_products",
   "basket_get_product_detail",
   "basket_get_token_report",
+  // Appended, never inserted: the four above keep their wire positions, so a
+  // provider's cached tool list is not invalidated by a fifth arriving.
+  "basket_list_delivery_slots",
 ] as const;

@@ -104,7 +104,7 @@ legacy.notify("notifications/initialized");
 const list = await legacy.send("tools/list", {});
 const tools = list.result?.tools ?? [];
 const names = tools.map((t) => t.name);
-check("tools/list returns 8 tools", tools.length === 8, names.join(", "));
+check("tools/list returns 9 tools", tools.length === 9, names.join(", "));
 check(
   "tool order is deterministic",
   JSON.stringify(names) ===
@@ -116,6 +116,7 @@ check(
       "basket_search_products",
       "basket_get_product_detail",
       "basket_get_token_report",
+      "basket_list_delivery_slots",
       "basket_cart_prepare",
       "basket_purchase_confirm",
       "basket_list_orders",
@@ -225,7 +226,7 @@ check(
 const modernList = await modern.send("tools/list", {}, { modern: true });
 check(
   "tools/list works with no initialize at all",
-  (modernList.result?.tools?.length ?? 0) === 8,
+  (modernList.result?.tools?.length ?? 0) === 9,
   `${modernList.result?.tools?.length} tools`,
 );
 

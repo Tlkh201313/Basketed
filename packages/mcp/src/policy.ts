@@ -24,7 +24,20 @@ export type ToolPolicy = "allow" | "ask" | "locked";
  * in commerce: `purchase_confirm` refuses without a human approval event on
  * record regardless of what any policy here says.
  */
-export const NEVER_ALLOW = ["basket_cart_prepare", "basket_purchase_confirm", "basket_cancel_order"] as const;
+/*
+ * Never auto-confirmable, whatever the mode.
+ *
+ * `basket_book_delivery_slot` is on this list before the tool exists, on
+ * purpose: a delivery window is a commitment a human has to make, so the name
+ * is reserved refused rather than left free for a future registration to take
+ * quietly. See tools-slots.ts for why booking is not on the wire yet.
+ */
+export const NEVER_ALLOW = [
+  "basket_cart_prepare",
+  "basket_purchase_confirm",
+  "basket_cancel_order",
+  "basket_book_delivery_slot",
+] as const;
 
 export interface Policy {
   /** Skips per-call confirmation for read-only tools. Never anything else. */
