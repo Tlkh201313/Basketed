@@ -34,7 +34,7 @@ const TRANSPORT = /\b(?:ECONNRESET|ECONNREFUSED|ECONNABORTED|ENETDOWN|ENETUNREAC
  * treated as the block it is.
  */
 const PERMANENT =
-  /captcha|are you a human|robot or human|access denied|blocked|bot detection|unusual traffic|unknown product|no such product|does not support|cannot build a cart|not loaded|no readable price|no parseable price|has no link/i;
+  /captcha|are you a human|robot or human|access denied|blocked|bot detection|unusual traffic|unknown product|no such product|does not support|cannot build a cart|not loaded|did not look like|no readable price|no parseable price|has no link/i;
 
 export function isTransientError(err: unknown): boolean {
   const msg = String((err as Error)?.message ?? err);

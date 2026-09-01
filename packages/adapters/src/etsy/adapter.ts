@@ -1,4 +1,23 @@
 import * as cheerio from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * Etsy's search results carry data-listing-id on every card, and the search
+ * wrapper is present even when nothing matched. The `empty` phrases are Etsy's
+ * own; without one of them, "no cards" means our selectors, not their stock.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "Etsy",
+  page: "search",
+  expect: [/data-listing-id/, /search-results/, /wt-grid/, /listing-card/],
+  empty: [/no results/i, /found no results/i, /couldn(?:'|&#39;|’)t find any/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "Etsy",
+  page: "listing page",
+  expect: [/data-buy-box-listing-title/, /data-listing-id/, /application\/ld\+json/, /listing-page/],
+};
 import {
   inferCategory,
   sanitiseProductName,
@@ -137,6 +156,10 @@ export class EtsyAdapter implements StoreAdapter {
       }
     }
 
+    // Etsy 403s aggressively. A refusal must reach failed[], not read as
+    // "Etsy has nothing like that". See blocked.ts.
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
+
     const $ = cheerio.load(html);
     const products: Product[] = [];
 
@@ -242,6 +265,7 @@ export class EtsyAdapter implements StoreAdapter {
       }
     }
 
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = cheerio.load(html);
 
     const titleRaw =

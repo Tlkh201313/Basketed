@@ -23,8 +23,12 @@ describe("the launcher on an unbuilt checkout", () => {
     }
   });
 
+  // 30s, not vitest's default 5: this spawns a second Node and loads the whole
+  // CLI, which is genuinely slow on a cold cache and on a machine already
+  // running the rest of the suite. It failed intermittently at 5s, and a test
+  // that fails for being slow teaches everyone to re-run rather than to look.
   it("still runs normally when dist is there", () => {
     const out = execFileSync(process.execPath, [BIN, "--help"], { encoding: "utf8" });
     expect(out).toContain("basketed serve");
-  });
+  }, 30_000);
 });

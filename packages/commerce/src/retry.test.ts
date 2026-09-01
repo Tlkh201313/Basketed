@@ -120,3 +120,20 @@ describe("withTimeout", () => {
     expect(after).toBeLessThanOrEqual(before);
   });
 });
+
+describe("the phrases the scrape adapters throw", () => {
+  it("never retries a block or a page that did not look like one", () => {
+    /*
+     * adapters/blocked.ts words its failures to land here. A second identical
+     * request from the same address is not going to be let through, and a
+     * selector that moved will not move back, so retrying either is pure
+     * latency for the shopper. The matching assertion from the adapter side
+     * is in adapters/blocked.test.ts.
+     */
+    const messages = [
+      "Amazon blocked this search request -- the page served an anti-bot interstitial.",
+      "Target answered, but the search did not look like one -- none of the markers this adapter reads were present.",
+    ];
+    for (const m of messages) expect(isTransientError(new Error(m))).toBe(false);
+  });
+});

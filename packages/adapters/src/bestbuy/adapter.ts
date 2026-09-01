@@ -1,4 +1,35 @@
 import { load } from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * Best Buy has changed its card markup several times, which is why the adapter
+ * tries four selectors. That is also why the page-level check matters more
+ * here than anywhere else: when all four miss, the honest answer is "this
+ * adapter needs updating", not "Best Buy stocks none of these".
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "Best Buy",
+  page: "search",
+  expect: [/sku-item/, /skuId=/, /data-testid="product-card"/, /shop-sku-list/],
+  empty: [/did not match any products/i, /no results found/i, /0 items?[^<]{0,20}found/i],
+  blocked: [/bestbuy\.com\/\?intl=nosplash/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "Best Buy",
+  page: "product page",
+  // Every marker the detail selectors below actually read, so the check can
+  // never refuse a page this adapter would have parsed fine.
+  expect: [
+    /sku-title/,
+    /skuId/,
+    /shop-product-title/,
+    /customer-price/,
+    /pricing-price__value/,
+    /data-testid="product-title"/,
+    /application\/ld\+json/,
+  ],
+};
 import {
   inferCategory,
   sanitiseProductName,
@@ -123,6 +154,8 @@ export class BestBuyAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
+
     const $ = load(html);
     const products: Product[] = [];
 
@@ -233,6 +266,7 @@ export class BestBuyAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = load(html);
 
     const titleRaw =

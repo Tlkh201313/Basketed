@@ -1,4 +1,23 @@
 import * as cheerio from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * `srp-river-results` is the results river. eBay renders it even for a search
+ * that matched nothing, and says so inside it -- which is why the empty case
+ * is a phrase and the ok case is a container.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "eBay",
+  page: "search",
+  expect: [/srp-river-results/, /class="[^"]*s-item/, /srp-results/],
+  empty: [/No exact matches found/i, /0 results for/i, /no results found/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "eBay",
+  page: "product page",
+  expect: [/x-item-title/, /itemId/i, /application\/ld\+json/],
+};
 import {
   inferCategory,
   sanitiseProductName,
@@ -129,6 +148,8 @@ export class EbayAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
+
     const $ = cheerio.load(html);
     const products: Product[] = [];
 
@@ -215,6 +236,7 @@ export class EbayAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = cheerio.load(html);
 
     const titleRaw =

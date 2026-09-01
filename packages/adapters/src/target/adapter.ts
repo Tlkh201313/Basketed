@@ -1,4 +1,5 @@
 import { load } from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
 import {
   fromMinor,
   inferCategory,
@@ -36,6 +37,28 @@ const CARD_TITLE_SELECTOR = '[data-test="@web/ProductCard/title"]';
 const CARD_PRICE_SELECTOR = '[data-test="current-price"], [data-test="@web/Price/PriceStandard"]';
 
 const BLOCK_PATTERNS = [/access denied/i, /robot or human/i, /are you a human/i, /captcha/i];
+
+/**
+ * Target's plain-HTTP lane never had the browser lane's block detection, so a
+ * refused request came back as `[]` and read as "Target does not stock it".
+ * `data-test` is the giveaway: Target's own build stamps it on essentially
+ * everything it renders, including the zero-result page, so its absence means
+ * we are not looking at a Target results page at all.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "Target",
+  page: "search",
+  expect: [/@web\/site-top-of-funnel/, /data-test="/, /__TGT_DATA__/],
+  empty: [/we (?:couldn|could not|can't|cannot)[^<]{0,20}find any matches/i, /0 results for/i],
+  blocked: BLOCK_PATTERNS,
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "Target",
+  page: "product page",
+  expect: [/data-test="/, /__TGT_DATA__/, /application\/ld\+json/],
+  blocked: BLOCK_PATTERNS,
+};
 const MIN_PLAUSIBLE_HTML_LENGTH = 20000;
 
 const REDSKY_KEY = "9f36aeafbe60771e321a7cc95a78140772ab99e1";
@@ -132,6 +155,8 @@ export class TargetAdapter implements StoreAdapter {
     const html = await res.text();
     this.lastRawBytes = html.length;
     if (!res.ok) throw new Error(`Target search returned HTTP ${res.status}.`);
+    // Akamai answers 200 with an interstitial, so the status told us nothing.
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
     const parsed = this.#parseSearchHtml(html);
     if (!parsed.length) return [];
     return parsed.slice(0, count).map((c) => this.#toProduct(c));
@@ -197,6 +222,7 @@ export class TargetAdapter implements StoreAdapter {
     const html = await res.text();
     this.lastRawBytes = html.length;
     if (!res.ok) throw new Error(`Target product page returned HTTP ${res.status} for ${cached.tcin}.`);
+    assertPageUsable(html, DETAIL_PAGE);
     const parsed = this.#parseDetailHtml(html);
     if (!parsed) throw new Error(`Target product page for ${cached.tcin} had no readable price.`);
     const name = sanitiseProductName(parsed.name || cached.name).text;

@@ -10,6 +10,25 @@ import {
   type StoreManifest,
 } from "@basketed/core";
 import * as cheerio from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * `plp-product-list` is IKEA's results container; a genuine zero-result search
+ * still renders it. Its absence means the page is not a results page, not that
+ * IKEA sells nothing matching.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "IKEA",
+  page: "search",
+  expect: [/plp-product-list/, /data-testid=['"]plp-product-card/, /plp-price-module/],
+  empty: [/no results for/i, /we (?:couldn|could not|can't|cannot)[^<]{0,20}find/i, /0 products/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "IKEA",
+  page: "product page",
+  expect: [/application\/ld\+json/, /pip-header-section/, /pip-price/],
+};
 import { mintProductId } from "../ids.js";
 import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
@@ -137,6 +156,9 @@ export class IkeaAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    // Blocked, or markup that moved, must not read as "IKEA has none of these".
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
+
     const $ = cheerio.load(html);
     const cards = $("[data-testid='plp-product-card']").toArray().slice(0, count);
 
@@ -208,6 +230,7 @@ export class IkeaAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = cheerio.load(html);
     const productLd = $("script[type='application/ld+json']")
       .toArray()

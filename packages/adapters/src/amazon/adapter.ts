@@ -1,4 +1,27 @@
 import * as cheerio from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * What a rendered Amazon results page has and a block page does not.
+ *
+ * `s-main-slot` is the results container: a genuine zero-result search still
+ * has it, which is exactly the line being drawn -- absent means we are not
+ * looking at a results page at all.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "Amazon",
+  page: "search",
+  expect: [/s-main-slot/, /data-component-type="s-search-result"/, /id="search"/],
+  empty: [/No results for/i, /did not match any products/i],
+  blocked: [/Enter the characters you see below/i, /api-services-support@amazon\.com/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "Amazon",
+  page: "product page",
+  expect: [/id="productTitle"/, /id="dp"/, /id="ppd"/],
+  blocked: [/Enter the characters you see below/i],
+};
 import {
   inferCategory,
   sanitiseProductName,
@@ -146,8 +169,11 @@ export class AmazonAdapter implements StoreAdapter {
       html = await res.text();
       this.lastRawBytes = html.length;
       if (!res.ok) throw new Error(`Amazon search returned HTTP ${res.status}.`);
-      if (/captcha|robot or human|are you a human/i.test(html)) throw new Error("Amazon search appears blocked (captcha).");
     }
+
+    // Blocked and "we changed our markup" both used to arrive here as an
+    // empty product list. See blocked.ts.
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
 
     const $ = cheerio.load(html);
     const cards = $('div[data-component-type="s-search-result"]');
@@ -218,6 +244,7 @@ export class AmazonAdapter implements StoreAdapter {
       this.lastRawBytes = html.length;
       if (!res.ok) throw new Error(`Amazon product page returned HTTP ${res.status} for ${cached.asin}.`);
     }
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = cheerio.load(html);
 
     const titleRaw = $("#productTitle").text().trim();
