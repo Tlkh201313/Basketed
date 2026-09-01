@@ -31,6 +31,8 @@ export interface ClientSpec {
 /** The four we click through on stage. Verified on Windows at S7 start. */
 export const PRIMARY_CLIENTS = ["claude-code", "cursor", "codex", "claude-desktop"] as const;
 
+export const CLIENT_ALIASES: Record<string, string> = { grok: "opencode" };
+
 export const CLIENTS: ClientSpec[] = [
   {
     id: "claude-code",

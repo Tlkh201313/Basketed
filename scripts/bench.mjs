@@ -33,6 +33,11 @@ const PROFILE =
 const enc = getEncoding("o200k_base");
 const count = (text) => enc.encode(typeof text === "string" ? text : JSON.stringify(text)).length;
 const fmt = (n) => (n === null ? "not measured" : n.toLocaleString("en-US"));
+function fetchWithTimeout(url, init = {}) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 12_000);
+  return fetch(url, { ...init, signal: ac.signal }).finally(() => clearTimeout(t));
+}
 
 /* ----------------------------------------------------------- MCP over stdio */
 
@@ -76,7 +81,7 @@ function openServer() {
  * unmodified. Same endpoint, same query, no normalisation and no trimming.
  */
 async function upstreamPayload(domain, currency, country) {
-  const res = await fetch(`https://${domain}/api/ucp/mcp`, {
+  const res = await fetchWithTimeout(`https://${domain}/api/ucp/mcp`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
     body: JSON.stringify({
@@ -109,7 +114,7 @@ async function upstreamPayload(domain, currency, country) {
 
 /** The HTML a web-browsing agent would ingest for the same search. */
 async function searchPageHtml(domain) {
-  const res = await fetch(`https://${domain}/search?q=${encodeURIComponent(QUERY)}`, {
+  const res = await fetchWithTimeout(`https://${domain}/search?q=${encodeURIComponent(QUERY)}`, {
     headers: { "user-agent": "basketed-benchmark/0.4 (+https://github.com/basketed)" },
   });
   if (!res.ok) throw new Error(`${domain} -> HTTP ${res.status}`);
@@ -186,6 +191,11 @@ for (const id of STORES) {
   }
 }
 if (bStores === 0) bBrowse = null;
+
+if (aStores === 0 && bStores === 0) {
+  console.error("bench: no live data for arms A and B — not overwriting docs/BENCHMARK.md");
+  process.exit(0);
+}
 
 /* --- table ---------------------------------------------------------------- */
 

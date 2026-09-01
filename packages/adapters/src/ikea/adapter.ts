@@ -126,10 +126,11 @@ export class IkeaAdapter implements StoreAdapter {
   }
 
   async search(q: SearchQuery, _ctx: AdapterCtx): Promise<Product[]> {
+    this.lastRawBytes = 0;
     const count = Math.min(q.maxResults ?? 10, 50);
     const url = `${SEARCH_BASE}?${new URLSearchParams({ q: q.query })}`;
     const { status, html } = await this.#render(url);
-    this.lastRawBytes += html.length;
+    this.lastRawBytes = html.length;
     if (status !== 200) throw new Error(`IKEA search returned HTTP ${status ?? "unknown"}.`);
 
     const $ = cheerio.load(html);
@@ -148,7 +149,8 @@ export class IkeaAdapter implements StoreAdapter {
       const rawName = [brand, desc].filter(Boolean).join(" ");
       const name = sanitiseProductName(rawName).text;
       const id = mintProductId(this.manifest.id, itemNumber);
-      const href = card.find("a[href*='/p/']").first().attr("href") ?? "";
+      const rawHref = card.find("a[href*='/p/']").first().attr("href") ?? "";
+      const href = rawHref ? new URL(rawHref, "https://www.ikea.com").toString() : "";
       this.#cache.set(id, { itemNumber, url: href, name });
 
       const product: Product = {
@@ -178,9 +180,10 @@ export class IkeaAdapter implements StoreAdapter {
     if (!cached) {
       throw new Error("Unknown product id for IKEA. Ids are server-minted; search first, then request detail.");
     }
+    if (!cached.url) throw new Error(`IKEA product ${cached.itemNumber} has no link to fetch.`);
 
     const { status, html } = await this.#render(cached.url);
-    this.lastRawBytes += html.length;
+    this.lastRawBytes = html.length;
     if (status !== 200) throw new Error(`IKEA product page returned HTTP ${status ?? "unknown"} for ${cached.itemNumber}.`);
 
     const $ = cheerio.load(html);

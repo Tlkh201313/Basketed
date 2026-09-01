@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import puppeteer, { type Browser, type Page, type HTTPRequest } from "puppeteer-core";
+import { closeConnect, TTL_MS as HANDOFF_TTL_MS } from "./handoff.js";
 
 /**
  * Sign in through the retailer's own site, in a real browser tab (S15, S18, S19).
@@ -85,7 +86,7 @@ interface CaptureSession {
 const sessions = new Map<string, CaptureSession>();
 
 /** How long an opened login tab is allowed to sit before it is auto-closed. */
-const SESSION_TTL_MS = 15 * 60 * 1000;
+const SESSION_TTL_MS = HANDOFF_TTL_MS;
 
 /** How often we re-read cookies to notice that the human has finished signing in. */
 const POLL_MS = 1_500;
@@ -306,6 +307,7 @@ async function endSession(storeId: string): Promise<void> {
   sessions.delete(storeId);
   clearTimeout(s.timeout);
   clearInterval(s.poll);
+  closeConnect(storeId);
   try {
     if (s.attached) {
       if (s.page && !s.page.isClosed()) await s.page.close();

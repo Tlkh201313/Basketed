@@ -10,6 +10,9 @@
  * Loopback stays open, because the panel and the MCP endpoint talk over it.
  */
 import net from "node:net";
+import tls from "node:tls";
+import http from "node:http";
+import https from "node:https";
 
 const LOOPBACK = /^(127(\.\d{1,3}){3}|::1|0\.0\.0\.0|localhost)$/i;
 const local = (host) => !host || LOOPBACK.test(String(host));
@@ -33,6 +36,35 @@ net.Socket.prototype.connect = function connect(...args) {
   }
   return realConnect.apply(this, args);
 };
+for (const mod of [tls]) {
+  const orig = mod.connect;
+  mod.connect = function (...args) {
+    const host = args[0] && typeof args[0] === "object" ? args[0].host : typeof args[1] === "string" ? args[1] : undefined;
+    if (!local(host)) {
+      process.stderr.write(`[offline-guard] refused TLS ${host}\n`);
+      throw new OfflineError(`TLS connect to ${host}`);
+    }
+    return orig.apply(this, args);
+  };
+}
+for (const mod of [http, https]) {
+  const orig = mod.request;
+  mod.request = function (...args) {
+    const first = args[0];
+    let host = "";
+    try {
+      if (typeof first === "string") host = new URL(first).hostname;
+      else if (first instanceof URL) host = first.hostname;
+      else host = first?.host ?? first?.hostname ?? "";
+      if (host.includes(":")) host = host.split(":")[0];
+    } catch {}
+    if (!local(host)) {
+      process.stderr.write(`[offline-guard] refused ${mod === http ? "http" : "https"} ${host}\n`);
+      throw new OfflineError(`${mod === http ? "http" : "https"} request to ${host}`);
+    }
+    return orig.apply(this, args);
+  };
+}
 
 /* Caught earlier and more cleanly than the socket, so adapters see a real
  * rejection rather than a synchronous throw from inside a connection pool. */

@@ -10,8 +10,8 @@ so do not let the first three overrun.
 ```bash
 pnpm build
 pnpm preflight          # profile URL, 10 pinned stores, port 8787
-pnpm test               # 77
-pnpm smoke              # 4 suites, all offline
+pnpm test               # 188 unit tests (vitest run)
+pnpm smoke              # 5 suites, all offline (mcp, purchase, panel, stdio-panel, install)
 ```
 
 `preflight` checks the three things that silently kill the demo, each with a
@@ -140,11 +140,14 @@ Then the line that closes it:
 
 ## Questions you will get
 
-**"Why not just scrape Amazon?"** — Because circumventing anti-bot controls
-destroys the "the user is the actor" defence that makes agentic shopping lawful
-at all, and it breaks constantly. The licensed-provider route gets the same data
-with a real commercial relationship behind it. This is not a capability we ship
-disabled; it is one we do not build.
+**"Why not just scrape Amazon?"** — We do, for Amazon / IKEA / Target
+discovery + detail only: a stealth browser (`patchright`) renders their own
+public pages exactly as a signed-out visitor sees them. That is still
+`mode: "native"` — whose data it is, not how it was fetched — but it is
+scraping and we say so (`adapters/src/stealth/browser.ts`, S17). No login, no
+session, no cart; the alternative was building nothing at all for three of the
+most-shopped stores. Provider-sourced `provider` mode is still designed, not
+built.
 
 **"So some of your stores are fake?"** — Every response and every card carries
 its mode. Six stores are fixture-backed because they have no lawful automated
@@ -163,18 +166,23 @@ enumerated fields and the normalized product name. No merchant-authored string
 reaches either. Sanitisation is defence in depth; that is the actual defence.
 
 **"What happens when your server gets breached?"** — There is no server, and
-there is nothing to take. Everything runs on this machine: the only state is a
-SQLite file under `~/.basketed`. Basketed holds no retailer credential at all
-today — the Shopify transport is anonymous — and the vault that would hold one
-is designed, not built. Say that, not "the vault is a file on this machine".
+there is nothing to take. Everything runs on this machine: SQLite at
+`~/.basketed/basketed.db` and a vault at `~/.basketed/master.key` sealed with
+AES-256-GCM (the model cannot read it — there is no tool or route that returns
+a secret). Shopify UCP is anonymous; the simulated stores have nothing to
+check — the vault is empty unless you put something in from Connect stores.
+Real Tesco (`tsc:tesco`) seals the bearer its basket API actually uses.
 
 ---
 
 ## Do not claim
 
-The credential vault, provider-sourced retailer data, real retailer OAuth,
-approval channel B (elicitation), `compare_products`, the Stores/Settings pages,
-MCPB, registry publish, or a completed paid order. All are designed in the plan;
-none are built. The pitch is *here is the architecture, and
-the two adapters plus the gate that prove it* — which is a stronger thing to say
-than six half-finished subsystems.
+Provider-sourced retailer data, real retailer OAuth, approval channel B
+(elicitation), `compare_products`, MCPB, registry publish, or a completed paid
+order. All are designed in the plan; none are built. The credential vault, real
+Tesco (`tsc:tesco`) and real Amazon / IKEA / Target discovery+detail, and
+Connect stores via browser tab + extension are now built (S14, S16, S17, S20).
+Real retailer cart for Costco / Walmart / Shopee and real checkout remain
+unbuilt by design. The pitch is *here is the architecture, and the adapters plus
+the gate that prove it* — which is a stronger thing to say than six
+half-finished subsystems.

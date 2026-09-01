@@ -34,8 +34,13 @@ export function shopifyCartPermalink(
   items: Array<{ variantId: string; quantity: number }>,
   discountCode?: string,
 ): PurchaseRoute {
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) throw new Error(`shopifyCartPermalink: invalid domain "${domain}"`);
   const pairs = items
-    .map((i) => `${i.variantId.split("/").pop() ?? i.variantId}:${i.quantity}`)
+    .map((i) => {
+      const tail = i.variantId.slice(i.variantId.lastIndexOf("/") + 1).split("?")[0]!.split("#")[0]!;
+      if (!/^\d+$/.test(tail)) throw new Error(`variantId must end in numeric id, got "${i.variantId}"`);
+      return `${tail}:${i.quantity}`;
+    })
     .join(",");
   const qs = discountCode ? `?discount=${encodeURIComponent(discountCode)}` : "";
   return {

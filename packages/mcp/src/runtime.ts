@@ -9,6 +9,9 @@ import {
   AmazonAdapter,
   IkeaAdapter,
   TargetAdapter,
+  EtsyAdapter,
+  EbayAdapter,
+  BestBuyAdapter,
   loadPinnedShopifyStores,
   type AdapterCtx,
 } from "@basketed/adapters";
@@ -182,6 +185,9 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
     () => new AmazonAdapter(),
     () => new IkeaAdapter(),
     () => new TargetAdapter(),
+    () => new EtsyAdapter(),
+    () => new EbayAdapter(),
+    () => new BestBuyAdapter(),
   ]) {
     try {
       const adapter = build();

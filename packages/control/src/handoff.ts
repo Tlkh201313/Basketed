@@ -54,7 +54,7 @@ const pending = new Map<string, PendingConnect>();
  * code, short enough that a tab abandoned an hour ago is not still asking an
  * extension to read cookies for it.
  */
-const TTL_MS = 15 * 60 * 1000;
+export const TTL_MS = 15 * 60 * 1000;
 
 function fresh(p: PendingConnect): boolean {
   return Date.now() - p.startedAt < TTL_MS;

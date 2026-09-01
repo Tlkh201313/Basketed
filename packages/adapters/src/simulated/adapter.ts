@@ -39,8 +39,11 @@ interface SeedFile {
 }
 
 /**
- * Fixture-backed adapter for retailers with no lawful automated route
- * (Tesco, Amazon, Costco, Walmart, Shopee, Taobao, IKEA -- §4).
+ * Fixture-backed adapter for retailers with no lawful signed-out route
+ * (Costco, Walmart, Shopee, Taobao, plus fixture twins sim:tesco / sim:amazon
+ * / sim:ikea -- §4). Real `tsc:tesco` (native bearer API) and `amz:amazon`,
+ * `ikea:ikea`, `tgt:target` (native stealth-browser) are separate adapters;
+ * this class is fixture-only for the offline drill.
  *
  * It implements the IDENTICAL interface to the real adapters, so the purchase
  * gate, the approval flow, the guardrails and the redaction layer are all
@@ -101,7 +104,7 @@ export class SimulatedAdapter implements StoreAdapter {
 
   async search(q: SearchQuery, _ctx: AdapterCtx): Promise<Product[]> {
     const terms = q.query.toLowerCase().split(/\s+/).filter(Boolean);
-    const scored = this.#products
+    let scored = this.#products
       .map((p) => {
         const hay = `${p.name} ${JSON.stringify(p.attrs)}`.toLowerCase();
         const score = terms.filter((t) => hay.includes(t)).length;
@@ -109,10 +112,9 @@ export class SimulatedAdapter implements StoreAdapter {
       })
       .filter((s) => s.score > 0)
       .sort((a, b) => b.score - a.score || a.p.price.value - b.p.price.value);
-
+    if (q.priceMax !== undefined) scored = scored.filter((s) => s.p.price.value <= q.priceMax!);
     const limited = (scored.length ? scored.map((s) => s.p) : []).slice(0, q.maxResults ?? 8);
-    const filtered = q.priceMax ? limited.filter((p) => p.price.value <= q.priceMax!) : limited;
-    return filtered.map((p) => this.#toProduct(p));
+    return limited.map((p) => this.#toProduct(p));
   }
 
   async detail(id: string, include: Include[], _ctx: AdapterCtx): Promise<ProductDetail> {
