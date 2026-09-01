@@ -769,6 +769,7 @@ export function renderApprovals(token: string): string {
 </p>
 
 ${h2("Waiting for you", "refreshes every 5s")}
+<p id="refresh-status" class="meta" role="status" aria-live="polite"></p>
 <div id="approvals"><div class="empty">Loading…</div></div>
 
 ${h2("Orders")}

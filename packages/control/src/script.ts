@@ -41,6 +41,27 @@ function api(path, init) {
 }
 
 /*
+ * Every repeating timer on the page, in one list.
+ *
+ * Four sections start intervals and none of them stopped. On a page left open
+ * for a working day that is four callbacks still firing against a document
+ * nobody is looking at -- polling, re-rendering, and holding the whole closure
+ * alive. "pagehide" rather than "unload", because "unload" is the one event
+ * that is not guaranteed to fire and is what disqualifies a page from the
+ * back/forward cache in the first place.
+ */
+const timers = [];
+function every(fn, ms) {
+  const id = setInterval(fn, ms);
+  timers.push(id);
+  return id;
+}
+window.addEventListener("pagehide", () => {
+  for (const id of timers) clearInterval(id);
+  timers.length = 0;
+});
+
+/*
  * theme: explicit choice beats OS, and persists per browser (S14).
  *
  * Three buttons rather than one cycling button, because "System theme" as the
@@ -163,7 +184,11 @@ if (approvalsEl) {
         '<span class="store">' + esc(a.store_id) + '</span>' +
         '<span class="ref">account <span class="num">' + esc(a.account_handle) + '</span></span>' +
         stamp +
-        countdown(a.expires_in_ms) +
+        // Wrapped and stamped with an absolute deadline so tickClocks can keep
+        // it moving WITHOUT re-rendering the card -- see refresh().
+        '<span data-clock data-deadline="' + (Date.now() + a.expires_in_ms) + '">' +
+          countdown(a.expires_in_ms) +
+        '</span>' +
       '</div>' +
       '<table class="lines">' + lines + adj +
         '<tr class="sum"><td>Total</td><td>' + money(a.total) + '</td></tr>' +
@@ -181,30 +206,134 @@ if (approvalsEl) {
     '</div>';
   }
 
+  /* The last payload rendered into each region, so an unchanged one is a no-op. */
+  const rendered = { approvals: "", orders: "", state: "" };
+  let consecutiveFailures = 0;
+
+  /**
+   * True when this region's data actually changed.
+   *
+   * The reason this matters is not performance. The approvals list re-rendered
+   * every 5 seconds unconditionally, which replaced the input a person was
+   * typing their total into -- so authorising a purchase was a race against a
+   * timer, and the workaround people found was to type faster.
+   */
+  function changed(region, payload) {
+    const next = JSON.stringify(payload);
+    if (rendered[region] === next) return false;
+    rendered[region] = next;
+    return true;
+  }
+
+  /**
+   * The payload with the ticking field taken out.
+   *
+   * expires_in_ms differs on every poll, so diffing the raw payload would
+   * always say "changed" and we would be back where we started. The countdown
+   * is driven from an absolute deadline stamped into the DOM at render time
+   * instead, and the diff is taken on everything else.
+   */
+  function withoutClocks(data) {
+    return {
+      approvals: (data.approvals || []).map((a) => {
+        const copy = Object.assign({}, a);
+        delete copy.expires_in_ms;
+        return copy;
+      }),
+    };
+  }
+
+  function tickClocks() {
+    for (const el of $$("#approvals [data-clock]")) {
+      el.innerHTML = countdown(Number(el.dataset.deadline) - Date.now());
+    }
+  }
+
+  /** What a person has typed, and whether they were still in the box. */
+  function snapshotTyped() {
+    const typed = {};
+    for (const el of $$("#approvals [data-id] [data-total]")) {
+      const card = el.closest("[data-id]");
+      if (card && el.value) typed[card.dataset.id] = { value: el.value, focused: el === document.activeElement };
+    }
+    return typed;
+  }
+
+  function restoreTyped(typed) {
+    for (const el of $$("#approvals [data-id] [data-total]")) {
+      const card = el.closest("[data-id]");
+      const saved = card && typed[card.dataset.id];
+      if (!saved) continue;
+      el.value = saved.value;
+      // Re-run the match check, or the Approve button stays disabled against a
+      // total that is now correctly typed.
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      if (saved.focused) {
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    }
+  }
+
+  /**
+   * Says out loud when the page has stopped being live.
+   *
+   * A poll that threw used to leave the last render sitting there looking
+   * current. On a page whose whole purpose is authorising money, silently
+   * stale is the worst of the three states -- worse than an error, and much
+   * worse than a blank.
+   */
+  function note(text, tone) {
+    const el = $("#refresh-status");
+    if (!el) return;
+    el.textContent = text;
+    el.className = tone ? "meta " + tone : "meta";
+  }
+
   async function refresh() {
-    const res = await api("/api/approvals");
-    const data = await res.json();
-    approvalsEl.innerHTML = data.approvals.length
-      ? data.approvals.map(card).join("")
-      : '<div class="empty">Nothing waiting. Ask your agent to prepare a cart.</div>';
+    try {
+      const data = await (await api("/api/approvals")).json();
+      if (changed("approvals", withoutClocks(data))) {
+        const typed = snapshotTyped();
+        approvalsEl.innerHTML = data.approvals.length
+          ? data.approvals.map(card).join("")
+          : '<div class="empty">Nothing waiting. Ask your agent to prepare a cart.</div>';
+        restoreTyped(typed);
+      }
+      tickClocks();
 
-    const orders = await (await api("/api/orders")).json();
-    $("#orders").innerHTML = orders.orders.length
-      ? '<div class="orders">' + orders.orders.map(order).join("") + '</div>'
-      : '<div class="empty">No orders yet.</div>';
+      const orders = await (await api("/api/orders")).json();
+      if (changed("orders", orders)) {
+        $("#orders").innerHTML = orders.orders.length
+          ? '<div class="orders">' + orders.orders.map(order).join("") + '</div>'
+          : '<div class="empty">No orders yet.</div>';
+      }
 
-    const state = await (await api("/api/state")).json();
-    const g = state.guardrails;
-    const alarms = state.redaction_alarms;
-    $("#guardrails").innerHTML =
-      tile("per order", g.perOrderCap.toFixed(2) + " " + g.homeCurrency) +
-      tile("per 24h", g.dailyCap.toFixed(2) + " " + g.homeCurrency) +
-      tile("used in 24h", g.spent_24h.toFixed(2) + " " + g.homeCurrency) +
-      tile("allowed stores", g.allowedStores.length ? String(g.allowedStores.length) : "any") +
-      // Zero is the only good number here, so zero is the only one shown in
-      // green -- an alarm count styled like every other figure is a count
-      // nobody reads.
-      tile("redaction alarms", String(alarms), alarms > 0 ? "risk" : "good");
+      const state = await (await api("/api/state")).json();
+      if (changed("state", state)) {
+        const g = state.guardrails;
+        const alarms = state.redaction_alarms;
+        $("#guardrails").innerHTML =
+          tile("per order", g.perOrderCap.toFixed(2) + " " + g.homeCurrency) +
+          tile("per 24h", g.dailyCap.toFixed(2) + " " + g.homeCurrency) +
+          tile("used in 24h", g.spent_24h.toFixed(2) + " " + g.homeCurrency) +
+          tile("allowed stores", g.allowedStores.length ? String(g.allowedStores.length) : "any") +
+          // Zero is the only good number here, so zero is the only one shown in
+          // green -- an alarm count styled like every other figure is a count
+          // nobody reads.
+          tile("redaction alarms", String(alarms), alarms > 0 ? "risk" : "good");
+      }
+
+      if (consecutiveFailures) note("", "");
+      consecutiveFailures = 0;
+    } catch (err) {
+      consecutiveFailures += 1;
+      note(
+        "Not live -- the panel could not reach the server (" + consecutiveFailures +
+          (consecutiveFailures === 1 ? " try" : " tries") + "). Showing the last state it saw.",
+        "bad",
+      );
+    }
   }
 
   function tile(label, value, tone) {
@@ -298,9 +427,11 @@ if (approvalsEl) {
   });
 
   refresh();
-  // A five-minute TTL needs a visible clock, so the page re-reads rather than
-  // letting a card sit there looking live after it has expired.
-  setInterval(refresh, 5000);
+  every(refresh, 5000);
+  // The clock is its own second-by-second timer now. Re-reading the whole list
+  // just to move a countdown is what made the list re-render on top of a
+  // half-typed total.
+  every(tickClocks, 1000);
 }
 
 /* ----------------------------------------------------------- connections */
@@ -406,7 +537,7 @@ if (storesEl) {
   });
 
   refreshStatus().then(applyFilter);
-  setInterval(() => refreshStatus().then(applyFilter), 8000);
+  every(() => refreshStatus().then(applyFilter), 8000);
 }
 
 /*
@@ -677,7 +808,7 @@ function watchConnect(cfg) {
   }
 
   void tick();
-  pumps.set(cfg.storeId, setInterval(tick, 2500));
+  pumps.set(cfg.storeId, every(tick, 2500));
 }
 
 /*
@@ -752,7 +883,7 @@ if (connectPage) {
 
   function watchForLogin() {
     stopWatch();
-    watch = setInterval(async () => {
+    watch = every(async () => {
       if (capturing) return;
       try {
         const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login");
