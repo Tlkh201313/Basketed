@@ -1,6 +1,7 @@
 import type { Product, SearchQuery, SearchResult } from "@basketed/core";
 import { buildMeta, trimResults, type TrimOptions } from "@basketed/core";
 import type { AdapterCtx, StoreAdapter, StoreRegistry } from "@basketed/adapters";
+import { withRetry, withTimeout } from "./retry.js";
 
 export interface SearchOptions extends TrimOptions {
   stores?: string[];
@@ -14,39 +15,11 @@ export interface SearchDiagnostics {
   baselineBytes: number;
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise.finally(() => clearTimeout(timer)), timeout]);
-}
-
 const SEARCH_CACHE = new Map<string, { products: Product[]; baseline: number; at: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 function cacheKey(storeId: string, q: SearchQuery): string {
   return `${storeId}|${q.query}|${q.maxResults ?? 8}|${q.priceMax ?? ""}`;
-}
-
-function isTransient(err: unknown): boolean {
-  const msg = String((err as Error)?.message ?? err);
-  return /429|503|5\d\d|timeout|ECONN|ENET|ETIMEDOUT|fetch failed|blocked|captcha/i.test(msg);
-}
-
-async function withRetry<T>(fn: () => Promise<T>, label: string, attempts = 3): Promise<T> {
-  let last: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      last = e;
-      if (!isTransient(e) || i === attempts - 1) throw e;
-      const backoff = 400 * Math.pow(2, i) + Math.random() * 200;
-      await new Promise((r) => setTimeout(r, backoff));
-    }
-  }
-  throw last;
 }
 
 /**
@@ -77,7 +50,7 @@ export async function searchAll(
       const cached = SEARCH_CACHE.get(key);
       const useCache = cached && Date.now() - cached.at < CACHE_TTL_MS;
       try {
-        const products = await withRetry(() => withTimeout(a.search(query, ctx), timeoutMs, a.manifest.id), a.manifest.id, 3);
+        const products = await withRetry(() => withTimeout(a.search(query, ctx), timeoutMs, a.manifest.id));
         const baseline = a.lastRawBytes ?? 0;
         SEARCH_CACHE.set(key, { products, baseline, at: Date.now() });
         return { adapter: a, products, baseline };

@@ -1,27 +1,11 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { FxTable, Money } from "@basketed/core";
 
-function isTransientCartError(e: unknown): boolean {
-  const msg = String((e as Error)?.message ?? e);
-  return /429|503|5\d\d|timeout|ECONN|ENET|ETIMEDOUT|fetch failed|blocked|captcha|rate.?limit/i.test(msg) && !/cannot build a cart/i.test(msg);
-}
-async function withRetryCart<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
-  let last: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      last = e;
-      if (!isTransientCartError(e) || i === attempts - 1) throw e;
-      await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i) + Math.random() * 200));
-    }
-  }
-  throw last;
-}
 import type { AdapterCtx, StoreRegistry } from "@basketed/adapters";
 import { describeRoute, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
 import { authorizedFetch, type Vault } from "@basketed/vault";
 import type { Db } from "./db.js";
+import { withRetry, withTimeout } from "./retry.js";
 import { cartHash, describeMandate, type CartMandate, type MandateLine } from "./mandate.js";
 import {
   evaluateGuardrails,
@@ -43,6 +27,9 @@ import {
 
 export const APPROVAL_TTL_MS = 5 * 60 * 1000;
 export const MAX_CODE_ATTEMPTS = 5;
+
+/** Default ceiling on one call to a retailer's cart API. See PurchaseDeps. */
+export const BUILD_CART_TIMEOUT_MS = 20_000;
 
 /**
  * Stores whose cart/trolley requires a sealed browser session (Connect).
@@ -104,6 +91,16 @@ export interface PurchaseDeps {
    */
   summon?: (approvalId: string) => void;
   now?: () => number;
+  /**
+   * How long one `buildCart` attempt may take before it is abandoned.
+   *
+   * `buildCart` is the only place in the purchase path that calls a retailer,
+   * and an adapter is not obliged to have a timeout of its own -- a hung
+   * socket there would otherwise hold `cart_prepare` open until the client
+   * gave up, with the human staring at nothing. Twenty seconds is long
+   * enough for Tesco's basket round trip and short enough to report.
+   */
+  buildCartTimeoutMs?: number;
 }
 
 interface ApprovalRow {
@@ -237,7 +234,10 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
   // Vault-wrapped only for THIS store's id -- a store with no stored
   // credential gets deps.ctx.http back unchanged (authorizedFetch no-ops).
   const cartCtx = deps.vault ? { ...deps.ctx, http: authorizedFetch(deps.vault, storeId, deps.ctx.http) } : deps.ctx;
-  const raw = await withRetryCart(() => adapter.buildCart!(input.items, cartCtx));
+  const raw = await withRetry(
+    () => withTimeout(adapter.buildCart!(input.items, cartCtx), deps.buildCartTimeoutMs ?? BUILD_CART_TIMEOUT_MS, `${storeId} cart`),
+    { attempts: 2 },
+  );
   const lineItems: MandateLine[] = raw.lineItems.map((li) => ({
     id: li.id,
     variantId: li.variantId,
