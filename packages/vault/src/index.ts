@@ -33,7 +33,87 @@ import { homedir } from "node:os";
  * "reconnect this store" rather than thrown.
  */
 
-export type CredentialKind = "password" | "token" | "cookie";
+/**
+ * `password` is deliberately absent (S19): there is no field anywhere in
+ * Basketed that accepts a retailer password, so a kind that could only have
+ * come from one is a kind nothing can create.
+ */
+export type CredentialKind = "token" | "cookie" | "session";
+
+/**
+ * What a `session` credential seals: the exact headers a signed-in browser
+ * sent, lifted from the store's own API call (S21).
+ *
+ * One string was enough while every store's credential was one header. Tesco's
+ * is not -- its basket API authenticates on `authorization` AND
+ * `customer-uuid` together, and a bearer alone returns a basket that is not
+ * yours. Rather than teach the vault about retailers, the capture side names
+ * the headers and the vault carries whatever it was handed.
+ */
+export interface SessionSecret {
+  /** Header name (lower-case) -> value. Sent verbatim, in this order. */
+  headers: Record<string, string>;
+  /** Unix ms this stops working, when the store said so (a JWT `exp`). */
+  expiresAt?: number;
+  /**
+   * How to get a fresh one without asking the human again.
+   *
+   * Every session Basketed holds today is a snapshot that dies in hours, and
+   * that is the single biggest reason a connected store stops working. Two
+   * shapes, because the retailers studied split cleanly in two:
+   *
+   *   - `"endpoint"` replays an OAuth refresh against the store's own token
+   *     endpoint. This is what thehesiod/costco-mcp (MIT) does with Azure AD
+   *     B2C, and it works with no browser open at all.
+   *   - `"browser"` asks the Basketed extension to read the session again out
+   *     of the browser the human is still signed into. It needs no endpoint,
+   *     no client id and no guessing -- which is why it is the default for
+   *     retailers that publish no refresh contract. The reference MCPs cannot
+   *     do this: they have no live browser. We do.
+   */
+  refresh?: SessionRefresh;
+}
+
+export type SessionRefresh =
+  | {
+      via: "endpoint";
+      url: string;
+      /** Form fields posted verbatim. The refresh token lives here. */
+      body: Record<string, string>;
+      /** Which JSON field of the response carries the new access token. */
+      tokenField: string;
+      /** Which header that token becomes, and how it is formatted. */
+      header: string;
+      prefix?: string;
+    }
+  | {
+      via: "browser";
+      /** Which store's connect flow can re-read this. Always the store's own id. */
+      storeId: string;
+    };
+
+export function encodeSession(session: SessionSecret): string {
+  return JSON.stringify(session);
+}
+
+/**
+ * Parse a sealed session envelope.
+ *
+ * Returns null rather than throwing on anything malformed: a credential that
+ * will not parse must degrade to "no credential attached" and let the retailer
+ * answer 401, not take a request down with an exception from inside the
+ * interceptor's closure.
+ */
+export function decodeSession(raw: string): SessionSecret | null {
+  try {
+    const parsed = JSON.parse(raw) as SessionSecret;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed.headers || typeof parsed.headers !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 /** What the panel is allowed to see: everything except the secret itself. */
 export interface Connection {
@@ -50,6 +130,18 @@ export interface Connection {
    * is exactly the failure a shopping agent must never paper over.
    */
   broken: boolean;
+  /**
+   * Unix ms this session stops working, when the store said so. Null for a
+   * credential that carries no expiry -- which is not the same as "never
+   * expires", only "did not say".
+   */
+  expiresAt: number | null;
+  /**
+   * True once that moment has passed. Held separately from `broken` because
+   * the fixes differ: a broken credential lost its key, an expired one just
+   * needs the browser to look again.
+   */
+  expired: boolean;
 }
 
 export interface RevealedCredential {
@@ -185,22 +277,37 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
   }
 
   function view(r: Record<string, unknown>): Connection {
+    // One unseal for both answers: whether the bytes still decrypt, and what
+    // the session said about its own lifetime. Doing it twice would double
+    // the crypto on every list() for no gain.
+    const plain = unseal(key, String(r["sealed"]));
+    const kind = String(r["kind"]) as CredentialKind;
+    const session = plain !== null && kind === "session" ? decodeSession(plain) : null;
+    const expiresAt = session?.expiresAt ?? null;
     return {
       storeId: String(r["store_id"]),
-      kind: String(r["kind"]) as CredentialKind,
+      kind,
       username: r["username"] === null || r["username"] === undefined ? null : String(r["username"]),
       createdAt: Number(r["created_at"]),
       lastUsedAt: r["last_used_at"] === null || r["last_used_at"] === undefined ? null : Number(r["last_used_at"]),
-      broken: unseal(key, String(r["sealed"])) === null,
+      broken: plain === null,
+      expiresAt,
+      expired: expiresAt !== null && expiresAt <= Date.now(),
     };
   }
 
   // Watch what is already stored, so a process that never touches a connection
   // still has the net up for it.
   if (opts.watch) {
-    for (const r of db.prepare(`SELECT sealed FROM credentials`).all() as Array<Record<string, unknown>>) {
+    for (const r of db.prepare(`SELECT kind, sealed FROM credentials`).all() as Array<Record<string, unknown>>) {
       const plain = unseal(key, String(r["sealed"]));
-      if (plain) opts.watch(plain);
+      if (!plain) continue;
+      if (String(r["kind"]) === "session") {
+        const session = decodeSession(plain);
+        for (const value of Object.values(session?.headers ?? {})) opts.watch(value);
+        continue;
+      }
+      opts.watch(plain);
     }
   }
 
@@ -230,7 +337,13 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
            created_at = excluded.created_at,
            last_used_at = NULL`,
       ).run(storeId, kind, username, seal(key, secret), now);
-      opts.watch?.(secret);
+      // Same rule as secrets(): watch the header values, not the envelope.
+      if (kind === "session") {
+        const session = decodeSession(secret);
+        for (const value of Object.values(session?.headers ?? {})) opts.watch?.(value);
+      } else {
+        opts.watch?.(secret);
+      }
       return view(row(storeId)!);
     },
 
@@ -252,8 +365,23 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
     },
 
     secrets() {
-      const rows = db.prepare(`SELECT sealed FROM credentials`).all() as Array<Record<string, unknown>>;
-      return rows.map((r) => unseal(key, String(r["sealed"]))).filter((s): s is string => s !== null);
+      const rows = db.prepare(`SELECT kind, sealed FROM credentials`).all() as Array<Record<string, unknown>>;
+      const out: string[] = [];
+      for (const r of rows) {
+        const plain = unseal(key, String(r["sealed"]));
+        if (plain === null) continue;
+        // A session seals several secrets in one envelope. The redaction net
+        // watches for the VALUES: the envelope is a shape no response body
+        // will ever contain, so registering it would be a rule that cannot
+        // fire -- and would leave the real secrets unwatched.
+        if (String(r["kind"]) === "session") {
+          const session = decodeSession(plain);
+          if (session) out.push(...Object.values(session.headers));
+          continue;
+        }
+        out.push(plain);
+      }
+      return out;
     },
   };
 }
@@ -266,11 +394,10 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
  * attached inside this closure, on the way out, after the adapter has finished
  * describing the request it wants.
  *
- * `password` connections attach nothing: a username and password are not a
- * bearer credential, and pretending otherwise by inventing an Authorization
- * header would send the user's retailer password to whatever host the adapter
- * happened to name. They are held for a login step that must be written per
- * retailer, and until one exists this returns plain fetch.
+ * A `session` attaches the whole header set it was sealed with, because one
+ * header is not always the credential: Tesco's basket wants `authorization`
+ * and `customer-uuid` together. The vault never interprets them -- the capture
+ * side named them, and this closure only sets them.
  */
 export function authorizedFetch(vault: Vault, storeId: string, base: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
@@ -280,7 +407,16 @@ export function authorizedFetch(vault: Vault, storeId: string, base: typeof fetc
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     if (cred.kind === "token") headers.set("authorization", `Bearer ${cred.secret}`);
     else if (cred.kind === "cookie") headers.set("cookie", cred.secret);
-    else return base(input, init);
+    else if (cred.kind === "session") {
+      const session = decodeSession(cred.secret);
+      // An envelope that will not parse attaches nothing, so the retailer
+      // answers 401 and the panel says "reconnect" -- rather than an
+      // exception thrown from inside the one closure an adapter cannot see.
+      if (!session) return base(input, init);
+      // Verbatim, in the order the browser sent them. The vault does not know
+      // or care what any of these mean.
+      for (const [name, value] of Object.entries(session.headers)) headers.set(name, value);
+    } else return base(input, init);
 
     return base(input, { ...init, headers });
   };

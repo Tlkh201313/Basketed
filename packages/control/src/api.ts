@@ -406,9 +406,6 @@ export async function handleApi(
     const secret = String(payload["secret"] ?? "");
     const username = payload["username"] === undefined ? null : String(payload["username"]);
     if (!secret.trim()) return { status: 400, body: { error: "Nothing was entered." } };
-    if (kind === "password" && !username?.trim()) {
-      return { status: 400, body: { error: "A password connection needs the account it belongs to." } };
-    }
 
     try {
       const saved = deps.vault.connect({ storeId, kind, username, secret });

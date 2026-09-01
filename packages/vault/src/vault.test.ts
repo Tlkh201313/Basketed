@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { openVault, degradedVault, authorizedFetch, type Vault } from "./index.js";
+import { openVault, degradedVault, authorizedFetch, encodeSession, decodeSession, type Vault } from "./index.js";
 
 /**
  * The vault's one job: hold a secret so a human can add it, and make sure the
@@ -29,9 +29,9 @@ describe("round trip", () => {
   });
 
   it("stores a secret and reveals it back", () => {
-    vault.connect({ storeId: "sim:tesco", kind: "password", username: "me@example.com", secret: "hunter2" });
+    vault.connect({ storeId: "sim:tesco", kind: "token", username: "me@example.com", secret: "hunter2" });
     const revealed = vault.reveal("sim:tesco");
-    expect(revealed).toEqual({ kind: "password", username: "me@example.com", secret: "hunter2" });
+    expect(revealed).toEqual({ kind: "token", username: "me@example.com", secret: "hunter2" });
   });
 
   it("list() and get() never carry the secret", () => {
@@ -61,7 +61,7 @@ describe("round trip", () => {
   });
 
   it("what is on disk is not the plaintext", () => {
-    vault.connect({ storeId: "sim:tesco", kind: "password", username: "me@example.com", secret: "hunter2plaintext" });
+    vault.connect({ storeId: "sim:tesco", kind: "token", username: "me@example.com", secret: "hunter2plaintext" });
     const raw = db.prepare(`SELECT sealed FROM credentials WHERE store_id = ?`).get("sim:tesco") as {
       sealed: string;
     };
@@ -69,7 +69,7 @@ describe("round trip", () => {
   });
 
   it("secrets() feeds the redaction net, exactly the stored plaintexts", () => {
-    vault.connect({ storeId: "sim:tesco", kind: "password", username: "a", secret: "secret-one-value" });
+    vault.connect({ storeId: "sim:tesco", kind: "token", username: "a", secret: "secret-one-value" });
     vault.connect({ storeId: "sim:costco", kind: "token", secret: "secret-two-value" });
     expect(vault.secrets().sort()).toEqual(["secret-one-value", "secret-two-value"]);
   });
@@ -142,20 +142,6 @@ describe("authorizedFetch — the trust boundary an adapter cannot cross", () =>
     expect(sentCookie).toBe("session=abc123xyz789");
   });
 
-  it("a password connection attaches nothing -- there is no login step to send it through", async () => {
-    const db = new DatabaseSync(":memory:");
-    const vault = openVault(db, { keyPath: tmpKeyPath() });
-    vault.connect({ storeId: "sim:tesco", kind: "password", username: "me", secret: "hunter2plaintext" });
-
-    let sawHeaders: Headers | null = null;
-    const base: typeof fetch = async (_input, init) => {
-      sawHeaders = new Headers(init?.headers);
-      return new Response("{}");
-    };
-    await authorizedFetch(vault, "sim:tesco", base)("https://example.com/x");
-    expect([...sawHeaders!.values()].join(" ")).not.toContain("hunter2plaintext");
-  });
-
   it("a store with no connection at all just passes the request through", async () => {
     const db = new DatabaseSync(":memory:");
     const vault = openVault(db, { keyPath: tmpKeyPath() });
@@ -203,5 +189,110 @@ describe("reveal() has exactly the call sites README claims", () => {
       if (/\.reveal\(/.test(src)) offenders.push(rel);
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------- session credentials */
+
+/**
+ * One store's credential stopped being one string (S21).
+ *
+ * Tesco's basket API authenticates on `authorization` AND `customer-uuid`
+ * together -- a bearer on its own returns a basket that is not yours. Rather
+ * than teach the vault about retailers, the capture side names the headers and
+ * the vault carries whatever it was handed.
+ */
+describe("session credentials", () => {
+  let db: DatabaseSync;
+  let vault: Vault;
+
+  beforeEach(() => {
+    db = new DatabaseSync(":memory:");
+    vault = openVault(db, { keyPath: tmpKeyPath() });
+  });
+
+  it("a session credential attaches every header it was sealed with", async () => {
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      username: null,
+      secret: encodeSession({
+        headers: { authorization: "Bearer abc123", "customer-uuid": "uuid-999" },
+        expiresAt: 4102444800000,
+      }),
+    });
+
+    let seen: Headers | undefined;
+    const spy: typeof fetch = async (_input, init) => {
+      seen = new Headers(init?.headers);
+      return new Response("{}", { status: 200 });
+    };
+
+    await authorizedFetch(vault, "tsc:tesco", spy)("https://xapi.tesco.com/", { method: "POST" });
+    expect(seen?.get("authorization")).toBe("Bearer abc123");
+    expect(seen?.get("customer-uuid")).toBe("uuid-999");
+  });
+
+  it("registers each header value for redaction, never the JSON envelope", () => {
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      username: null,
+      secret: encodeSession({ headers: { authorization: "Bearer abc123", "customer-uuid": "uuid-999" } }),
+    });
+    const secrets = vault.secrets();
+    expect(secrets).toContain("Bearer abc123");
+    expect(secrets).toContain("uuid-999");
+    // The envelope itself would never appear in a response body; watching for
+    // it would be a redaction rule that can never fire.
+    expect(secrets.some((s) => s.startsWith("{"))).toBe(false);
+  });
+
+  it("reports a session's expiry, and that it has passed", () => {
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      username: null,
+      secret: encodeSession({ headers: { authorization: "Bearer x" }, expiresAt: 1_000 }),
+    });
+    const held = vault.get("tsc:tesco");
+    expect(held?.expiresAt).toBe(1_000);
+    expect(held?.expired).toBe(true);
+  });
+
+  it("a session with no expiry is not treated as expired", () => {
+    vault.connect({
+      storeId: "tsc:tesco",
+      kind: "session",
+      username: null,
+      secret: encodeSession({ headers: { authorization: "Bearer x" } }),
+    });
+    const held = vault.get("tsc:tesco");
+    expect(held?.expiresAt).toBeNull();
+    expect(held?.expired).toBe(false);
+  });
+
+  it("a token or cookie credential has no expiry to report", () => {
+    vault.connect({ storeId: "sim:amazon", kind: "cookie", secret: "at-main=x" });
+    expect(vault.get("sim:amazon")?.expiresAt).toBeNull();
+    expect(vault.get("sim:amazon")?.expired).toBe(false);
+  });
+
+  /*
+   * A malformed envelope must not become a request with no credential that
+   * silently succeeds as an anonymous call -- it attaches nothing and the
+   * adapter gets the retailer's own 401, which is the honest outcome.
+   */
+  it("a session whose envelope will not parse attaches nothing", async () => {
+    vault.connect({ storeId: "tsc:tesco", kind: "session", username: null, secret: "not json at all" });
+    expect(decodeSession("not json at all")).toBeNull();
+
+    let seen: Headers | undefined;
+    const spy: typeof fetch = async (_input, init) => {
+      seen = new Headers(init?.headers);
+      return new Response("{}", { status: 401 });
+    };
+    await authorizedFetch(vault, "tsc:tesco", spy)("https://xapi.tesco.com/");
+    expect(seen?.get("authorization")).toBeNull();
   });
 });
