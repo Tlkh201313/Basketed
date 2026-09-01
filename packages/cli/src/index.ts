@@ -23,6 +23,7 @@ import {
   closeAllChromeLogins,
   readExtensionSeen,
   type ControlDeps,
+  installedBrowser,
 } from "@basketed/control";
 import type { Runtime } from "@basketed/mcp";
 import { findRoot } from "./root.js";
@@ -658,6 +659,26 @@ async function runDoctor(argv: string[]): Promise<void> {
    * in this program mentioned the extension at all, and "Connect does nothing"
    * had no diagnosis anywhere.
    */
+  /*
+   * Which browser Connect would actually open, said before anyone clicks it.
+   *
+   * "Chrome was not found" used to arrive at the moment of the click, after a
+   * person had already decided to sign in. It was also wrong as often as it
+   * was right, because the search only ever looked for Chrome: Edge ships
+   * with Windows, and Brave and Chromium drive the same engine. Any of them
+   * does this job, so any of them counts as a pass.
+   */
+  const browser = installedBrowser();
+  if (browser) {
+    say(true, `${browser.name} will open for Connect`, browser.path);
+  } else {
+    say(
+      false,
+      "no Chromium-family browser found",
+      "install Chrome, Edge, Brave or Chromium, or set BASKETED_CHROME to the executable",
+    );
+  }
+
   const ext = readExtensionSeen();
   if (ext) {
     say(true, "browser extension has connected", `${ext.version ? `v${ext.version}, ` : ""}last seen ${new Date(ext.seenAt).toLocaleString()}`);

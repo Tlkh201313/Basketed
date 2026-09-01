@@ -165,28 +165,95 @@ async function attachToRunningChrome(browserURL: string, pinned: boolean): Promi
   }
 }
 
-function candidateChromePaths(): string[] {
+/**
+ * Every Chromium-family browser this machine might actually have.
+ *
+ * The list used to be Chrome and nothing else, so Connect told anyone running
+ * Edge, Brave or a distro Chromium to "install Chrome" -- on Windows, where
+ * Edge ships with the operating system and is often the browser they are
+ * reading the panel in. The CDP flow does not care which of these it drives;
+ * they are the same engine, and the sign-in happens on the retailer's page
+ * either way.
+ *
+ * Chrome stays first because a session captured in the browser someone
+ * already uses is the one most likely to be signed in already.
+ *
+ * BASKETED_CHROME wins outright, for a build in a place none of these guesses
+ * would find.
+ */
+export function candidateChromePaths(): string[] {
+  const pinned = String(process.env["BASKETED_CHROME"] ?? "").trim();
   const home = homedir();
-  switch (process.platform) {
-    case "win32":
-      return [
-        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-        resolve(home, "AppData\\Local\\Google\\Chrome\\Application\\chrome.exe"),
-      ];
-    case "darwin":
-      return [
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        resolve(home, "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-      ];
-    default:
-      return [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-      ];
+  const found = (() => {
+    switch (process.platform) {
+      case "win32": {
+        const pf = process.env["ProgramFiles"] ?? "C:\\Program Files";
+        const pf86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+        const local = process.env["LOCALAPPDATA"] ?? resolve(home, "AppData\\Local");
+        return [
+          `${pf}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${pf86}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${local}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${pf86}\\Microsoft\\Edge\\Application\\msedge.exe`,
+          `${pf}\\Microsoft\\Edge\\Application\\msedge.exe`,
+          `${pf}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+          `${pf86}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+          `${local}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+          `${pf}\\Chromium\\Application\\chrome.exe`,
+          `${local}\\Chromium\\Application\\chrome.exe`,
+        ];
+      }
+      case "darwin":
+        return [
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          resolve(home, "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+          "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+          "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+          "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ];
+      default:
+        return [
+          "/usr/bin/google-chrome",
+          "/usr/bin/google-chrome-stable",
+          "/usr/bin/microsoft-edge",
+          "/usr/bin/microsoft-edge-stable",
+          "/usr/bin/brave-browser",
+          "/usr/bin/brave",
+          "/usr/bin/chromium-browser",
+          "/usr/bin/chromium",
+          "/snap/bin/chromium",
+          "/var/lib/flatpak/exports/bin/com.google.Chrome",
+        ];
+    }
+  })();
+  return pinned ? [pinned, ...found] : found;
+}
+
+/**
+ * The name a human would use for one of those paths, for the doctor line and
+ * the connect card. A path is not an answer to "which browser will open?".
+ */
+export function browserNameFor(path: string): string {
+  const p = path.toLowerCase();
+  if (p.includes("msedge") || p.includes("microsoft edge")) return "Microsoft Edge";
+  if (p.includes("brave")) return "Brave";
+  if (p.includes("chromium")) return "Chromium";
+  if (p.includes("chrome")) return "Google Chrome";
+  return path;
+}
+
+/**
+ * The first of those that is actually installed, or null.
+ *
+ * Exported so `doctor` can print it before anyone clicks Connect. "Chrome was
+ * not found" arriving at the moment of the click, after a sign-in has been
+ * started in someone's head, is the worst possible time to learn it.
+ */
+export function installedBrowser(): { path: string; name: string } | null {
+  for (const path of candidateChromePaths()) {
+    if (existsSync(path)) return { path, name: browserNameFor(path) };
   }
+  return null;
 }
 
 /**
@@ -238,9 +305,13 @@ async function launchRealChrome(): Promise<Browser> {
     );
   }
   if (!failures.length) {
-    throw new Error("Google Chrome was not found on this machine. Install Chrome and try Connect again.");
+    throw new Error(
+      "No Chromium-family browser was found on this machine. Basketed can drive Chrome, Edge, " +
+        "Brave or Chromium; install any one of them, or set BASKETED_CHROME to the executable, " +
+        "then try Connect again.",
+    );
   }
-  throw new Error(`Chrome would not start: ${failures[failures.length - 1]}`);
+  throw new Error(`No browser would start: ${failures[failures.length - 1]}`);
 }
 
 /**
@@ -248,12 +319,13 @@ async function launchRealChrome(): Promise<Browser> {
  * before the click rather than after the surprise. Async because the honest
  * answer requires asking whether the user's own Chrome is reachable.
  */
-export async function chromeMode(): Promise<{ attached: boolean; where: string }> {
+export async function chromeMode(): Promise<{ attached: boolean; where: string; browser: string | null }> {
   const found = await discoverEndpoint();
-  if (!found) return { attached: false, where: chromeProfileDir() };
+  const installed = installedBrowser();
+  if (!found) return { attached: false, where: chromeProfileDir(), browser: installed?.name ?? null };
   // A pinned endpoint is reported as the user's own browser because that is
   // what they asked for; if it is not actually up, Connect says so loudly.
-  return { attached: true, where: `your own Chrome (${found.endpoint})` };
+  return { attached: true, where: `your own browser (${found.endpoint})`, browser: installed?.name ?? null };
 }
 
 export type CaptureState = "idle" | "waiting" | "logged_in";

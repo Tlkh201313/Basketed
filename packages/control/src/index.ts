@@ -11,7 +11,7 @@ import type { ControlDeps } from "./types.js";
 
 export * from "./clients.js";
 export type { ControlDeps } from "./types.js";
-export { closeAll as closeAllChromeLogins } from "./browser-connect.js";
+export { closeAll as closeAllChromeLogins, installedBrowser, browserNameFor, candidateChromePaths } from "./browser-connect.js";
 export { readExtensionSeen, noteExtensionSeen, type ExtensionSeen } from "./extension-file.js";
 
 /**
