@@ -14,6 +14,7 @@ import type { BookedSlot, DeliverySlot } from "@basketed/core";
 import { mintProductId } from "../ids.js";
 import { DELIVERY_SLOTS_QUERY, FULFILMENT_MUTATION, SLOTS_MFE, flattenBooking, flattenSlots } from "./slots.js";
 import type { AdapterCtx, CartLineItem, RawCart, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 /**
  * Real Tesco, S16.
@@ -152,7 +153,15 @@ function graphqlHeaders(): Record<string, string> {
 
 export class TescoAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
-  readonly #cache = new Map<string, Cached>();
+  #idCache: IdCache<Cached> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<Cached> {
+    return (this.#idCache ??= new IdCache<Cached>(this.manifest.id));
+  }
   lastRawBytes = 0;
 
   constructor() {

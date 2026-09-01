@@ -1,5 +1,7 @@
 export * from "./types.js";
 export * from "./ids.js";
+export * from "./id-cache.js";
+export * from "./state-dir.js";
 export * from "./registry.js";
 export * from "./permalinks.js";
 export * from "./shopify-ucp/index.js";

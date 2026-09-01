@@ -13,6 +13,7 @@ import * as cheerio from "cheerio";
 import { mintProductId } from "../ids.js";
 import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 /**
  * Real IKEA — plain HTTP, no browser.
@@ -82,7 +83,15 @@ export interface IkeaAdapterOptions {
 
 export class IkeaAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
-  readonly #cache = new Map<string, Cached>();
+  #idCache: IdCache<Cached> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<Cached> {
+    return (this.#idCache ??= new IdCache<Cached>(this.manifest.id));
+  }
   readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 

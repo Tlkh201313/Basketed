@@ -12,6 +12,7 @@ import {
 } from "@basketed/core";
 import { mintProductId } from "../ids.js";
 import type { AdapterCtx, CartLineItem, RawCart, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 interface SeedProduct {
   store: string;
@@ -58,7 +59,15 @@ interface SeedFile {
 export class SimulatedAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
   readonly #products: SeedProduct[];
-  readonly #cache = new Map<string, SeedProduct>();
+  #idCache: IdCache<SeedProduct> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<SeedProduct> {
+    return (this.#idCache ??= new IdCache<SeedProduct>(this.manifest.id));
+  }
   readonly note: string;
 
   constructor(store: SeedStore, products: SeedProduct[]) {

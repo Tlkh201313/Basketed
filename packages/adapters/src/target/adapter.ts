@@ -13,6 +13,7 @@ import {
 import { mintProductId } from "../ids.js";
 import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 /**
  * Real Target — plain HTTP via redsky JSON, no browser.
@@ -57,7 +58,15 @@ interface Cached {
 
 export class TargetAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
-  readonly #cache = new Map<string, Cached>();
+  #idCache: IdCache<Cached> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<Cached> {
+    return (this.#idCache ??= new IdCache<Cached>(this.manifest.id));
+  }
   readonly #render?: typeof import("../stealth/browser.js").renderPage;
   lastRawBytes = 0;
 
