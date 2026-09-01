@@ -43,6 +43,49 @@ export interface IdCacheOptions {
   maxRows?: number;
 }
 
+/*
+ * Every cache this process has made, so exit can write them all.
+ *
+ * The batching timer below is deliberately unreffed, which means a process
+ * that finishes its work inside the batch window exits before the write. That
+ * is not the rare case it sounds like: the common shape is a client that
+ * starts the stdio server, runs one search, and is restarted by the editor
+ * minutes later. Every id from that search was lost, so the very next
+ * `get_product_detail` answered "search first" -- which reads as the tool
+ * being broken, and is exactly the failure persisting the cache was for.
+ *
+ * A WeakRef set, because a cache the adapter has dropped should not be kept
+ * alive by the exit hook.
+ */
+const LIVE = new Set<WeakRef<{ flush(): void }>>();
+let hookInstalled = false;
+
+/** Write every live cache. Safe to call more than once; each is a no-op if clean. */
+export function flushAllIdCaches(): void {
+  for (const ref of LIVE) {
+    const cache = ref.deref();
+    if (!cache) {
+      LIVE.delete(ref);
+      continue;
+    }
+    try {
+      cache.flush();
+    } catch {
+      // One store's cache failing to write must not stop the others.
+    }
+  }
+}
+
+function installExitHook(): void {
+  if (hookInstalled) return;
+  hookInstalled = true;
+  // `exit` only, and only synchronous work inside it: this fires on the way
+  // out of a stdio server whose stdin just closed, where nothing asynchronous
+  // will ever be given a turn. `beforeExit` does not run on an explicit
+  // process.exit() and would miss the case this is here for.
+  process.on("exit", flushAllIdCaches);
+}
+
 export class IdCache<T> {
   readonly #store: string;
   readonly #max: number;
@@ -55,6 +98,8 @@ export class IdCache<T> {
     this.#store = store;
     this.#max = opts.maxRows ?? MAX_ROWS;
     this.#dir = opts.dir ?? null;
+    LIVE.add(new WeakRef(this));
+    installExitHook();
   }
 
   #file(): string {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { IdCache } from "./id-cache.js";
+import { IdCache, flushAllIdCaches } from "./id-cache.js";
 import { mintProductId, __setServerKey } from "./ids.js";
 import { randomBytes } from "node:crypto";
 
@@ -102,5 +102,44 @@ describe("the id cache", () => {
     expect(() => cache.flush()).not.toThrow();
     // Still a working cache in memory.
     expect(cache.get(id)).toEqual({ asin: "B0TEST" });
+  });
+});
+
+describe("writing on the way out", () => {
+  it("writes a cache the batching timer never got to", () => {
+    /*
+     * The batch timer is 250ms and unreffed, so a process that finishes
+     * inside that window exits before the write. That is not a rare case: a
+     * client starts the stdio server, runs one search, and the editor
+     * restarts it minutes later. Every id from that search was lost, so the
+     * next detail call answered "search first" -- which reads as the tool
+     * being broken, and is the exact failure this cache exists to prevent.
+     */
+    const id = mintProductId(STORE, "B08N5WRWNW");
+    const cache = new IdCache<{ asin: string }>(STORE, { dir });
+    cache.set(id, { asin: "B08N5WRWNW" });
+    // No flush() and no waiting -- this is the state the process exits in.
+    flushAllIdCaches();
+
+    const reopened = new IdCache<{ asin: string }>(STORE, { dir });
+    expect(reopened.get(id)).toEqual({ asin: "B08N5WRWNW" });
+  });
+
+  it("writes every store, not only the last one touched", () => {
+    const a = mintProductId(STORE, "B08N5WRWNW");
+    const b = mintProductId("tgt:target", "12345678");
+    new IdCache<{ n: string }>(STORE, { dir }).set(a, { n: "a" });
+    new IdCache<{ n: string }>("tgt:target", { dir }).set(b, { n: "b" });
+    flushAllIdCaches();
+
+    expect(new IdCache<{ n: string }>(STORE, { dir }).get(a)).toEqual({ n: "a" });
+    expect(new IdCache<{ n: string }>("tgt:target", { dir }).get(b)).toEqual({ n: "b" });
+  });
+
+  it("is safe to call twice, and on caches with nothing to say", () => {
+    // It runs on process exit, and an exit hook that throws takes the exit
+    // code with it.
+    new IdCache<{ n: string }>(STORE, { dir });
+    expect(() => { flushAllIdCaches(); flushAllIdCaches(); }).not.toThrow();
   });
 });

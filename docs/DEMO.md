@@ -10,7 +10,7 @@ so do not let the first three overrun.
 ```bash
 pnpm build
 pnpm preflight          # profile URL, 10 pinned stores, port 8787
-pnpm test               # 457 unit tests (vitest run)
+pnpm test               # 460 unit tests (vitest run)
 pnpm smoke              # 5 suites, all offline (mcp, purchase, panel, stdio-panel, install)
 pnpm stability          # 25 cold starts; must not print below 95%
 ```
