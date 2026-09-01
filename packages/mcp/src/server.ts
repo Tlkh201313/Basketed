@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { McpServer, createMcpHandler, type McpHttpHandler, type McpServerFactory } from "@modelcontextprotocol/server";
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
+import { MCP_BODY_LIMIT, readBody } from "@basketed/core";
 import type { Runtime } from "./runtime.js";
 import { registerReadOnlyTools, registerAuthTools, FETCH_TOOL_NAMES } from "./tools.js";
 import { registerPurchaseTools, PURCHASE_TOOL_NAMES } from "./tools-purchase.js";
@@ -91,9 +92,16 @@ export function toNodeHandler(
 
     let body: Buffer | undefined;
     if (req.method !== "GET" && req.method !== "HEAD") {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) chunks.push(chunk as Buffer);
-      body = Buffer.concat(chunks);
+      // Bounded. There is no authentication in front of this route because
+      // MCP does not have one, so a body nobody measured is a body the sender
+      // decides the size of. See core/http/body.ts.
+      const read = await readBody(req, MCP_BODY_LIMIT);
+      if (!read.ok) {
+        res.writeHead(read.status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32600, message: read.error }, id: null }));
+        return;
+      }
+      body = read.body;
     }
 
     const request = new Request(url, {
@@ -106,8 +114,15 @@ export function toNodeHandler(
 
     const outHeaders: Record<string, string | string[]> = {};
     response.headers.forEach((value, key) => {
-      outHeaders[key] = key === "set-cookie" ? [value] : value;
+      if (key === "set-cookie") return;
+      outHeaders[key] = value;
     });
+    // Headers.forEach folds repeated Set-Cookie into ONE comma-joined string,
+    // and a cookie value may legitimately contain a comma (Expires), so the
+    // browser then sets one malformed cookie instead of two good ones.
+    // getSetCookie is the only accessor that keeps them apart.
+    const cookies = response.headers.getSetCookie();
+    if (cookies.length) outHeaders["set-cookie"] = cookies;
     res.writeHead(response.status, outHeaders);
 
     if (!response.body) {

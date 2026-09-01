@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { PANEL_BODY_LIMIT, readJsonBody } from "@basketed/core";
 import { handleApi } from "./api.js";
 import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, renderSettings, type StoreRow } from "./pages.js";
 import { stateOf as chromeLoginStateOf, chromeMode } from "./browser-connect.js";
@@ -266,16 +267,20 @@ export function createPanelHandler(
         return true;
       }
 
-      const body = async (): Promise<Record<string, unknown>> => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of req) chunks.push(chunk as Buffer);
-        if (!chunks.length) return {};
-        try {
-          return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
-        } catch {
-          return {};
-        }
-      };
+      /*
+       * Read once, bounded, and answer the client instead of the route.
+       *
+       * This used to buffer the whole body unmeasured and turn a parse failure
+       * into `{}` -- so a typo in a request arrived at the handler as "you
+       * sent no fields", which reads as a bug in the route rather than in the
+       * request. 413 and 400 say which one it is.
+       */
+      const read = await readJsonBody(req, PANEL_BODY_LIMIT);
+      if (!read.ok) {
+        send(res, read.status, "application/json", JSON.stringify({ error: read.error }));
+        return true;
+      }
+      const body = async (): Promise<Record<string, unknown>> => read.value;
       let result;
       try {
         result = await handleApi(deps, method, path, body);

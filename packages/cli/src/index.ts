@@ -1,4 +1,5 @@
 import { createServer, type Server } from "node:http";
+import { MCP_TIMEOUTS, PANEL_TIMEOUTS } from "@basketed/core";
 import type { AddressInfo, Socket } from "node:net";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -367,6 +368,16 @@ export async function main(argv: string[]): Promise<void> {
   });
 
   /*
+   * A socket that sends a header line and then stops holds a connection for as
+   * long as Node's generous defaults allow. These bound both halves: how long
+   * a client may take to finish its headers, and how long the whole request
+   * may run. The request budget is the larger one because a tool call is
+   * legitimately slow when a retailer is slow.
+   */
+  server.headersTimeout = MCP_TIMEOUTS.headersTimeout;
+  server.requestTimeout = MCP_TIMEOUTS.requestTimeout;
+
+  /*
    * A busy port is a message, not a stack trace.
    *
    * Unlike the stdio panel, this one does NOT quietly move: the port is half
@@ -461,6 +472,11 @@ async function startStdioPanel(runtime: Runtime, root: string, mayOpen: boolean)
         res.end(JSON.stringify({ error: "Internal error." }));
       });
   });
+
+  // Tighter than the MCP server's: nothing posted to the panel is a document,
+  // and no panel request waits on a retailer.
+  server.headersTimeout = PANEL_TIMEOUTS.headersTimeout;
+  server.requestTimeout = PANEL_TIMEOUTS.requestTimeout;
 
   const preferred = Number(process.env["BASKETED_PANEL_PORT"] ?? DEFAULT_PANEL_PORT);
   const port = await listenSomewhere(server, Number.isFinite(preferred) ? preferred : DEFAULT_PANEL_PORT);
