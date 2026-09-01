@@ -128,7 +128,7 @@ Every adapter declares two independent things, and neither may be overstated.
 | Tier | Who has it |
 |---|---|
 | `discovery` `detail` | every adapter, plus real Tesco, and (S17) real Amazon, IKEA, Target and (S21) real Etsy, eBay, Best Buy |
-| `cart` | Shopify UCP, simulated, real Tesco (bearer, see [Connect stores](#security)), and (S22) real eBay/Best Buy (local cart, no retailer API — see below) |
+| `cart` | Shopify UCP, simulated, real Tesco (sealed session, see [Connect stores](#security)), and (S22) real eBay/Best Buy (local cart, no retailer API — see below) |
 | `handoff` | Shopify UCP, real Tesco (`tesco.com/groceries/.../trolley`), eBay (`cart.ebay.com`), Best Buy (`bestbuy.com/cart`) — local handoff, human completes checkout (`HANDED_OFF/unknown`) |
 | `checkout` | **nobody.** Shopify gates payment completion behind a hand-granted merchant token with no public application; Tesco's basket API is unofficial and this project does not touch card data regardless. Interface defined, not implemented. |
 
@@ -274,8 +274,8 @@ annotations, namespaced names.
   anonymous and the simulated stores have nothing to check it against — so
   connecting Costco, Walmart, Shopee, Taobao or `sim:amazon` holds a credential
   for an adapter that does not exist yet and changes no result you see today.
-  Real Tesco (`tsc:tesco`) is the exception: what it seals is the bearer its
-  basket adapter actually calls with. (`sim:amazon` is the sign-in target — not
+  Real Tesco (`tsc:tesco`) is the exception: what it seals is the header pair
+  its basket adapter actually calls with. (`sim:amazon` is the sign-in target — not
   the real `amz:amazon` discovery/detail adapter below, which needs no
   credential at all.)
 - **Connect signs you in at the store, in a browser — there is no password box
@@ -311,9 +311,12 @@ annotations, namespaced names.
   Every one of these retailers' Terms of Service prohibits automated access,
   including by the account owner; that risk is disclosed on the Connect page
   itself, not just here. What is sealed is what the store's adapter can
-  actually use: the cookie jar, or — for real Tesco, whose basket API is a
-  bearer API — the `Authorization` token its own frontend sends to
-  `xapi.tesco.com`, read out of the signed-in tab instead of asked for by hand.
+  actually use: the cookie jar, or — for real Tesco, whose basket API
+  authenticates on `authorization` **and** `customer-uuid` together — both of
+  those headers as its own frontend sends them to `xapi.tesco.com`, read out
+  of the signed-in tab instead of asked for by hand. A capture that is missing
+  one of them is refused rather than sealed: half a session looks connected
+  and fails at the first add-to-basket.
 - The agent sees only an **opaque account handle**, never anything that could
   become one.
 - **The approval surface is behind a per-process token** printed on the server's

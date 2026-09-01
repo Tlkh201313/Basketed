@@ -18,9 +18,10 @@ import type {
  * When a vault entry exists, `authorizedFetch` in `packages/vault` applies
  * auth as a request interceptor on `http` before the adapter is handed it, so
  * an adapter -- including a future third-party one -- still cannot read a
- * credential even by accident. Real Tesco (`tsc:tesco`) seals a bearer for
- * `xapi.tesco.com` this way; Shopify UCP and the simulated stores remain
- * anonymous and ignore it.
+ * credential even by accident. Real Tesco (`tsc:tesco`) seals a SET of
+ * headers this way -- `authorization` and `customer-uuid`, which its basket
+ * API wants together -- and the interceptor replays them verbatim; Shopify
+ * UCP and the simulated stores remain anonymous and ignore it.
  */
 export interface AdapterCtx {
   /** Pre-authenticated fetch. Auth is already applied; the adapter just calls it. */

@@ -34,13 +34,14 @@ import type { AdapterCtx, CartLineItem, RawCart, StoreAdapter } from "../types.j
  * fixture-backed, still what the offline drill depends on.
  *
  * Cart needs the shopper's own session, which nobody can hand out an API key
- * for -- there is no "Sign in with Tesco". `buildCart` sends whatever bearer
- * token the Connect-stores page has sealed for this store (via ctx.http,
- * never seen by this file -- see AdapterCtx and vault/authorizedFetch). If
- * that token is missing, expired, or Tesco's basket API additionally wants a
- * customer identifier this integration does not send, the call fails with
- * Tesco's own real error -- this file does not paper over that with a fake
- * cart, per the project's "never claim success it cannot back" rule.
+ * for -- there is no "Sign in with Tesco". `buildCart` sends whatever the
+ * Connect-stores page has sealed for this store (via ctx.http, never seen by
+ * this file -- see AdapterCtx and vault/authorizedFetch). That is a header
+ * SET, not one value: Tesco's basket authenticates on `authorization` and
+ * `customer-uuid` together, and a bearer alone returns a basket belonging to
+ * nobody in particular. If the session is missing or expired, the call fails
+ * with Tesco's own real error -- this file does not paper over that with a
+ * fake cart, per the project's "never claim success it cannot back" rule.
  */
 
 const SEARCH_URL = "https://search.api.tesco.com/search";
@@ -127,9 +128,10 @@ interface Cached {
 /**
  * Never sets Authorization itself -- an adapter has no access to a secret by
  * construction (see AdapterCtx). When ctx.http is the vault-wrapped fetch for
- * this store (see runtime.ts), it attaches `Authorization: Bearer <token>`
- * to every request these headers go out with, including the unauthenticated
- * search/detail calls -- which Tesco's API ignores when nothing needs it.
+ * this store (see runtime.ts), it attaches every header the sealed session
+ * holds -- `authorization` and `customer-uuid` for Tesco -- to every request
+ * these headers go out with, including the unauthenticated search/detail
+ * calls, which Tesco's API ignores when nothing needs them.
  */
 function graphqlHeaders(): Record<string, string> {
   return {
@@ -276,9 +278,9 @@ export class TescoAdapter implements StoreAdapter {
   }
 
   /**
-   * A real Tesco basket, via the shopper's own bearer token (see the header
+   * A real Tesco basket, via the shopper's own sealed session (see the header
    * comment). Fails loudly -- Tesco's real HTTP status, not a fabricated
-   * cart -- when the token is missing, expired, or insufficient.
+   * cart -- when that session is missing, expired, or insufficient.
    */
   async buildCart(items: Array<{ id: string; quantity: number }>, ctx: AdapterCtx): Promise<RawCart> {
     this.lastRawBytes = 0;

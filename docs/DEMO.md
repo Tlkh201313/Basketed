@@ -171,7 +171,8 @@ there is nothing to take. Everything runs on this machine: SQLite at
 AES-256-GCM (the model cannot read it — there is no tool or route that returns
 a secret). Shopify UCP is anonymous; the simulated stores have nothing to
 check — the vault is empty unless you put something in from Connect stores.
-Real Tesco (`tsc:tesco`) seals the bearer its basket API actually uses.
+Real Tesco (`tsc:tesco`) seals the header pair its basket API actually uses
+(`authorization` + `customer-uuid`), and refuses a capture missing either.
 
 ---
 
