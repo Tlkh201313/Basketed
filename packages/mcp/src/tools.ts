@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { estimateTokens, PROVENANCE_NOTE, type Include } from "@basketed/core";
 import { parseProductId } from "@basketed/adapters";
-import { searchAll, withRetry, withTimeout } from "@basketed/commerce";
+import { laneFor, needsAccount, searchAll, sessionState, usesPhrase, withRetry, withTimeout } from "@basketed/commerce";
 import type { Runtime } from "./runtime.js";
 
 /**
@@ -373,6 +373,12 @@ export function registerAuthTools(server: McpServer, runtime: Runtime): void {
               expired: z.boolean(),
               broken: z.boolean(),
               cart: z.boolean(),
+              /** True when ANY tier of this store is behind a sign-in. */
+              needs_account: z.boolean(),
+              /** "fetch" | "connected" | "unconnected" -- the panel's shelves. */
+              lane: z.string(),
+              /** "none" | "live" | "expired" | "broken". */
+              state: z.string(),
               status: z.string(),
               action: z.string(),
             })
@@ -394,12 +400,20 @@ export function registerAuthTools(server: McpServer, runtime: Runtime): void {
           const expired = Boolean(c?.expired);
           const broken = Boolean(c?.broken);
           const cart = s.capabilities.includes("cart");
-          const needsSession = s.id === "tsc:tesco";
+          // Which stores have an account, and what a session unlocks, is the
+          // adapter's own declaration. This used to be `s.id === "tsc:tesco"`
+          // with Tesco's name hard-coded into all four sentences below.
+          const needs = needsAccount(s.account);
+          const state = sessionState(c);
+          const lane = laneFor(s.account, c);
+          const unlocks = usesPhrase(s.account);
           let action = "No account needed for search.";
-          if (needsSession && connected) action = "Tesco trolley is ready.";
-          else if (needsSession && expired) action = "Tesco session expired. Reconnect Tesco in the Basketed panel.";
-          else if (needsSession && broken) action = "Tesco credential cannot be read. Reconnect Tesco in the Basketed panel.";
-          else if (needsSession) action = "Connect Tesco in the Basketed panel to use the trolley and delivery slots.";
+          if (needs && state === "live") action = `${s.name} ${unlocks} ready.`;
+          else if (needs && state === "expired")
+            action = `${s.name} session expired. Reconnect ${s.name} in the Basketed panel.`;
+          else if (needs && state === "broken")
+            action = `${s.name} credential cannot be read. Reconnect ${s.name} in the Basketed panel.`;
+          else if (needs) action = `Connect ${s.name} in the Basketed panel to use the ${unlocks}.`;
           return {
             id: s.id,
             name: s.name,
@@ -407,6 +421,9 @@ export function registerAuthTools(server: McpServer, runtime: Runtime): void {
             expired,
             broken,
             cart,
+            needs_account: needs,
+            lane,
+            state,
             status: s.status,
             action,
           };

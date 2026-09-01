@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { estimateTokens, PROVENANCE_NOTE } from "@basketed/core";
 import { authorizedFetch } from "@basketed/vault";
+import { needsAccountFor, sessionState, sessionUnusableReason } from "@basketed/commerce";
 import type { Runtime } from "./runtime.js";
 
 /**
@@ -118,7 +119,7 @@ export function registerSlotTools(server: McpServer, runtime: Runtime): void {
         "returning an empty list. Only bookable windows come back. Booking one is not an agent action -- " +
         "a human does it in the Basketed panel.",
       inputSchema: z.object({
-        store_id: z.string().describe("A store id from list_stores, e.g. tsc:tesco"),
+        store_id: z.string().describe("A store id from list_stores, e.g. the one basket_list_stores gave you"),
         start: z.string().regex(DATE).optional().describe("YYYY-MM-DD. Defaults to today."),
         end: z
           .string()
@@ -165,18 +166,20 @@ export function registerSlotTools(server: McpServer, runtime: Runtime): void {
        * unconnected and reporting the empty result as fact would be a lie
        * with a plausible shape.
        */
-      const held = runtime.vault.get(args.store_id);
-      if (!held || held.broken || held.expired) {
-        const why = held?.expired ? "the connected session has expired" : "no account is connected";
-        return respond(
-          runtime,
-          {
-            error:
-              `Cannot list ${adapter.manifest.name} delivery slots: ${why}. ` +
-              `Connect the store in the Basketed panel, then ask again.`,
-          },
-          true,
-        );
+      if (needsAccountFor(adapter.manifest.account, "slots")) {
+        const held = runtime.vault.get(args.store_id);
+        if (sessionState(held) !== "live") {
+          return respond(
+            runtime,
+            {
+              error:
+                `Cannot list ${adapter.manifest.name} delivery slots: ` +
+                `${sessionUnusableReason(held)}. ` +
+                `Connect the store in the Basketed panel, then ask again.`,
+            },
+            true,
+          );
+        }
       }
 
       const ctx = { ...runtime.ctx, http: authorizedFetch(runtime.vault, args.store_id, runtime.ctx.http) };

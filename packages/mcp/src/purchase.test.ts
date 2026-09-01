@@ -325,7 +325,7 @@ describe("session stores refuse prepare without Connect", () => {
         mode: "native" as const,
         categories: ["grocery" as const],
         capabilities: ["discovery", "detail", "cart"] as const,
-        auth: "none" as const,
+        account: { kind: "none" } as const,
       },
       search: async () => [],
       detail: async () => {

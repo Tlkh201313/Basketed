@@ -13,7 +13,7 @@ import {
   loadPinnedShopifyStores,
   type AdapterCtx,
 } from "@basketed/adapters";
-import { openDb, type PurchaseDeps } from "@basketed/commerce";
+import { openDb, syncAccountStatus, type PurchaseDeps } from "@basketed/commerce";
 import { openVault, degradedVault, type Vault } from "@basketed/vault";
 import { loadFx } from "./fx-load.js";
 import { createPolicy, type Policy } from "./policy.js";
@@ -238,11 +238,10 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
   const byMode = new Map<string, number>();
   for (const row of registry.list()) byMode.set(row.mode, (byMode.get(row.mode) ?? 0) + 1);
 
-  const tescoHeld = vault.get("tsc:tesco");
-  if (registry.get("tsc:tesco")) {
-    const live = tescoHeld !== null && !tescoHeld.broken && !tescoHeld.expired;
-    registry.setStatus("tsc:tesco", live ? "ready" : "needs_auth");
-  }
+  // Every store that declares an account starts at whatever the vault can
+  // actually back up -- "ready" only where a live session is held. Stores with
+  // no account are left where the adapter loader put them.
+  syncAccountStatus(registry, vault);
 
   return {
     registry,

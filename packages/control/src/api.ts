@@ -8,6 +8,7 @@ import {
   saveGuardrails,
   GuardrailValueError,
   spentInWindow,
+  syncAccountStatus,
   type CartMandate,
 } from "@basketed/commerce";
 import { encodeSession, type CredentialKind } from "@basketed/vault";
@@ -148,11 +149,15 @@ function sealableCredential(
   }
 }
 
-function syncTescoStatus(deps: ControlDeps, storeId: string): void {
-  if (storeId !== "tsc:tesco" || !deps.registry.get(storeId)) return;
-  const held = deps.vault.get(storeId);
-  const live = held !== null && !held.broken && !held.expired;
-  deps.registry.setStatus(storeId, live ? "ready" : "needs_auth");
+/**
+ * Push what the vault now holds into the registry, after any change to it.
+ *
+ * This was `syncTescoStatus`, which did nothing at all unless the store id
+ * read exactly "tsc:tesco". A second account store would have sat at "ready"
+ * forever no matter what the vault said, and nothing here would have noticed.
+ */
+function syncStatus(deps: ControlDeps, storeId: string): void {
+  syncAccountStatus(deps.registry, deps.vault, storeId);
 }
 
 export async function handleApi(
@@ -325,7 +330,7 @@ export async function handleApi(
     const { kind, secret } = sealable;
     try {
       const saved = deps.vault.connect({ storeId, kind, username: null, secret });
-      syncTescoStatus(deps, storeId);
+      syncStatus(deps, storeId);
       log(`connect ${storeId}: session captured and sealed as ${kind}`);
       return {
         status: 200,
@@ -456,7 +461,7 @@ export async function handleApi(
       // panel can say the extension did it; listPending already stops handing
       // a finished note back to the extension as work.
       finish(storeId, "extension");
-      syncTescoStatus(deps, storeId);
+      syncStatus(deps, storeId);
       log(`connect ${storeId}: sealed as ${kind}, captured from the user's own browser`);
       return {
         status: 200,
@@ -477,7 +482,7 @@ export async function handleApi(
 
     if (method === "DELETE") {
       const forgotten = deps.vault.forget(storeId);
-      syncTescoStatus(deps, storeId);
+      syncStatus(deps, storeId);
       return { status: forgotten ? 200 : 404, body: { ok: forgotten, store_id: storeId } };
     }
 
@@ -498,7 +503,7 @@ export async function handleApi(
 
     try {
       const saved = deps.vault.connect({ storeId, kind, username, secret });
-      syncTescoStatus(deps, storeId);
+      syncStatus(deps, storeId);
       log(`connected ${storeId} via ${kind}`);
       // Metadata back, never an echo of what was just sent.
       return {

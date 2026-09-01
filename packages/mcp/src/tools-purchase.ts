@@ -6,6 +6,8 @@ import {
   listOrders,
   prepareCart,
   approveApproval,
+  needsAccountFor,
+  sessionState,
   type PurchaseDeps,
 } from "@basketed/commerce";
 import type { Runtime } from "./runtime.js";
@@ -107,10 +109,12 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
         .filter((s) => !args.store_id || s.id === args.store_id)
         .map((s) => {
           const slug = s.id.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").toLowerCase();
-          const needsSession = s.id === "tsc:tesco";
           const c = held.get(s.id);
-          const live = Boolean(c && !c.broken && !c.expired);
-          if (needsSession) {
+          const live = sessionState(c) === "live";
+          // Gated on THIS tier, not on the store: a store could need an
+          // account for slots and not for the trolley, and listing a handle
+          // that cannot build a cart would be a lie the agent acts on.
+          if (needsAccountFor(s.account, "cart")) {
             if (!live) return null;
             return {
               handle: `acct_session_${slug}`,

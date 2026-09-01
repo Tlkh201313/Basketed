@@ -4,6 +4,7 @@ import type { FxTable, Money } from "@basketed/core";
 import type { AdapterCtx, StoreRegistry } from "@basketed/adapters";
 import { describeRoute, parseProductId, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
 import { authorizedFetch, SessionUnusableError, type Vault } from "@basketed/vault";
+import { connectHint, needsAccountFor, sessionState } from "./account.js";
 import type { Db } from "./db.js";
 import { withRetry, withTimeout } from "./retry.js";
 import { cartHash, describeMandate, type CartMandate, type MandateLine } from "./mandate.js";
@@ -30,16 +31,6 @@ export const MAX_CODE_ATTEMPTS = 5;
 
 /** Default ceiling on one call to a retailer's cart API. See PurchaseDeps. */
 export const BUILD_CART_TIMEOUT_MS = 20_000;
-
-/**
- * Stores whose cart/trolley requires a sealed browser session (Connect).
- * Additive table — same idea as control's CHROME_LOGIN map.
- */
-const SESSION_CART_STORES = new Set(["tsc:tesco"]);
-
-function storeNeedsSession(storeId: string): boolean {
-  return SESSION_CART_STORES.has(storeId);
-}
 
 export type ApprovalState = "PENDING" | "APPROVED" | "CONSUMED" | "REJECTED" | "EXPIRED";
 export type OrderState =
@@ -211,24 +202,15 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
   }
 
   /*
-   * Session stores (Tesco today) need a sealed vault credential before we hit
-   * the retailer's API. Failing here with a Connect-panel pointer beats a raw
-   * 401 that looks like a network bug.
+   * A store whose cart tier is gated needs a usable session before we reach
+   * the retailer's API. Failing here with a pointer at the Connect panel
+   * beats a raw 401, which reads like a network fault to whatever is relaying
+   * it. Which stores those are is the adapter's declaration, not a list kept
+   * here -- see needsAccountFor.
    */
-  if (storeNeedsSession(storeId)) {
+  if (needsAccountFor(adapter.manifest.account, "cart")) {
     const held = deps.vault?.get(storeId) ?? null;
-    if (!held || held.broken || held.expired) {
-      const why = held?.expired
-        ? "the connected session has expired"
-        : held?.broken
-          ? "the stored credential cannot be read"
-          : "no account is connected";
-      throw new Error(
-        `${adapter.manifest.name} trolley needs a connected session (${why}). ` +
-          `Open the Basketed panel → Connect stores → ${adapter.manifest.name}, press Connect, ` +
-          `sign in on ${adapter.manifest.domain ?? "the retailer site"} if asked.`,
-      );
-    }
+    if (sessionState(held) !== "live") throw new Error(connectHint(adapter.manifest, held));
   }
 
   // Vault-wrapped only for THIS store's id -- a store with no stored
