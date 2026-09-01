@@ -448,19 +448,20 @@ function askExtension(cfg) {
       token: TOKEN,
       domains: cfg.domains,
       authCookies: cfg.authCookies,
-      bearerMatch: cfg.bearerMatch,
+      capture: cfg.capture,
     }, window.location.origin);
   });
 }
 
 function connectConfig(el) {
   function parse(raw) { try { return JSON.parse(raw || "[]"); } catch (err) { return []; } }
+  function parseCapture(raw) { try { return JSON.parse(raw || "null"); } catch (err) { return null; } }
   return {
     storeId: el.dataset.store,
     name: el.dataset.name || el.dataset.store,
     domains: parse(el.dataset.domains),
     authCookies: parse(el.dataset.authCookies),
-    bearerMatch: el.dataset.bearer || "",
+    capture: parseCapture(el.dataset.capture),
     loginUrl: el.dataset.loginUrl || "",
   };
 }
@@ -476,7 +477,7 @@ async function tryCapture(cfg) {
     res = await api("/api/connections/" + encodeURIComponent(cfg.storeId) + "/extension-capture", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cookie_header: reply.cookieHeader, bearer: reply.bearer }),
+      body: JSON.stringify({ cookie_header: reply.cookieHeader, headers: reply.headers }),
     });
   } catch (err) {
     return { state: "waiting", error: "Could not reach the server." };

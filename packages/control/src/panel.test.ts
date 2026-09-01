@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { StoreRegistry, SimulatedAdapter, TargetAdapter, type AdapterCtx } from "@basketed/adapters";
+import { StoreRegistry, SimulatedAdapter, TargetAdapter, TescoAdapter, type AdapterCtx } from "@basketed/adapters";
 import {
   loadGuardrails,
   openDb,
@@ -13,7 +13,7 @@ import {
   type PurchaseDeps,
 } from "@basketed/commerce";
 import type { FxTable } from "@basketed/core";
-import { openVault, degradedVault, type Vault } from "@basketed/vault";
+import { openVault, degradedVault, decodeSession, type Vault } from "@basketed/vault";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -95,6 +95,9 @@ beforeEach(async () => {
   // "nothing to connect" routes need a store that genuinely has no account:
   // Target is reached signed-out, through its own public pages.
   registry.register(new TargetAdapter());
+  // Real Tesco is the one store whose credential is a header SET rather than a
+  // single value, so the session tests need it registered.
+  registry.register(new TescoAdapter());
   const tesco = registry.get("sim:tesco")!;
   const productIds = (await tesco.search({ query: "coffee", maxResults: 2 }, ctx)).map((p) => p.id);
 
@@ -689,6 +692,70 @@ describe("connecting in the user's own browser (S20)", () => {
   });
 });
 
+/* ------------------------------------ sessions that are more than one header (S21) */
+
+/** A JWT with the given expiry, unsigned -- nothing here verifies it. */
+function bearerExpiring(exp: number): string {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  return `Bearer ${b64({ alg: "none" })}.${b64({ exp })}.sig`;
+}
+
+describe("a store whose credential is a header set (S21)", () => {
+  it("seals every header the store named, with the session's expiry", async () => {
+    const token = bearerExpiring(1_800_000_000);
+    await panel("/api/connections/tsc%3Atesco/browser-connect", { method: "POST" });
+    const res = await panel("/api/connections/tsc%3Atesco/extension-capture", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        cookie_header: "junk=1",
+        headers: { authorization: token, "customer-uuid": "uuid-999" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true, store_id: "tsc:tesco", method: "session" });
+    // Neither header may come back out of the route that just took them in.
+    expect(JSON.stringify(body)).not.toContain("uuid-999");
+    expect(JSON.stringify(body)).not.toContain(token);
+
+    const held = vault.get("tsc:tesco");
+    expect(held?.expiresAt).toBe(1_800_000_000_000);
+    expect(held?.expired).toBe(false);
+
+    const session = decodeSession(vault.reveal("tsc:tesco")!.secret)!;
+    expect(session.headers["authorization"]).toBe(token);
+    expect(session.headers["customer-uuid"]).toBe("uuid-999");
+    // Renewable without asking the human again -- see SessionSecret.refresh.
+    expect(session.refresh).toEqual({ via: "browser", storeId: "tsc:tesco" });
+  });
+
+  it("refuses a capture missing a header the store requires, and names the missing one", async () => {
+    await panel("/api/connections/tsc%3Atesco/browser-connect", { method: "POST" });
+    const res = await panel("/api/connections/tsc%3Atesco/extension-capture", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cookie_header: "junk=1", headers: { authorization: "Bearer x" } }),
+    });
+    // Sealing half a session looks like success here and fails at the first
+    // basket call, which is the exact failure this whole change removes.
+    expect(res.status).toBe(409);
+    expect(String(((await res.json()) as { error: string }).error)).toMatch(/customer-uuid/);
+    expect(vault.get("tsc:tesco")).toBeNull();
+  });
+
+  it("a store with no header set still seals its cookie jar", async () => {
+    await panel("/api/connections/sim%3Aamazon/browser-connect", { method: "POST" });
+    const res = await panel("/api/connections/sim%3Aamazon/extension-capture", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cookie_header: "at-main=still-a-cookie-store" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ method: "cookie" });
+  });
+});
+
 /* -------------------------------------------------------- chrome-login (S15) */
 
 describe("chrome-login (S15)", () => {
@@ -765,7 +832,7 @@ describe("chrome-login (S15)", () => {
     vi.mocked(captureLogin).mockResolvedValueOnce({
       ok: true,
       cookieHeader: "session=super-secret-cookie-value",
-      bearer: null,
+      headers: {},
     });
     const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
     expect(res.status).toBe(200);
@@ -799,7 +866,7 @@ describe("chrome-login (S15)", () => {
   });
 
   it("a broken vault degrades capture to a clear 503, not a lost session", async () => {
-    vi.mocked(captureLogin).mockResolvedValueOnce({ ok: true, cookieHeader: "session=abc", bearer: null });
+    vi.mocked(captureLogin).mockResolvedValueOnce({ ok: true, cookieHeader: "session=abc", headers: {} });
     const broken = { ...deps, vault: degradedVault("disk is full") };
     handler = createPanelHandler(broken, {
       root: ROOT,
@@ -825,11 +892,17 @@ describe("chrome-login (S15)", () => {
  */
 describe("the README does not describe a connect build we do not have (S15, S19)", () => {
   it("names exactly the stores this build can sign in to", async () => {
-    const withChromeLogin = deps.registry
-      .list()
-      .filter((s) => authPolicyFor(s).chromeLogin)
-      .map((s) => s.name)
-      .sort();
+    // Deduped by name on purpose: the README names RETAILERS, and Tesco is
+    // reachable under two store ids -- the simulated one and the real one --
+    // both of which connect.
+    const withChromeLogin = [
+      ...new Set(
+        deps.registry
+          .list()
+          .filter((s) => authPolicyFor(s).chromeLogin)
+          .map((s) => s.name),
+      ),
+    ].sort();
     expect(withChromeLogin).toEqual(["Amazon", "Costco", "IKEA", "Shopee", "Taobao", "Tesco", "Walmart"]);
 
     const readme = await readFile(resolve(ROOT, "README.md"), "utf8");

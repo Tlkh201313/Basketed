@@ -10,10 +10,11 @@ import {
   spentInWindow,
   type CartMandate,
 } from "@basketed/commerce";
-import type { CredentialKind } from "@basketed/vault";
+import { encodeSession, type CredentialKind } from "@basketed/vault";
 import { authPolicyFor } from "./connections.js";
 import { startLogin, captureLogin, cancelLogin, stateOf, statusOf } from "./browser-connect.js";
 import { openConnect, pendingFor, closeConnect, finish, statusFor } from "./handoff.js";
+import { expiryOf } from "./jwt.js";
 import type { ControlDeps } from "./types.js";
 
 /**
@@ -72,6 +73,54 @@ function approvalView(row: Record<string, unknown>, now: number) {
     account_handle: String(row["account_handle"]),
     expires_in_ms: Math.max(0, Number(row["expires_at"]) - now),
   };
+}
+
+/**
+ * Turn a capture into the credential a store's adapter can actually use (S21).
+ *
+ * The rule that matters is the refusal: a store that named a header set and
+ * did not get all of it is a 409, never a silent downgrade to the cookie jar.
+ * Half a session looks like success here and fails at the first basket call,
+ * somewhere with far less context than this route has.
+ */
+function sealableCredential(
+  storeName: string,
+  storeId: string,
+  want: { match: string; headers: string[] } | undefined,
+  got: { cookieHeader: string; headers: Record<string, string> },
+): { ok: true; kind: CredentialKind; secret: string } | { ok: false; error: string } {
+  if (want) {
+    const headers: Record<string, string> = {};
+    for (const name of want.headers) {
+      const value = String(got.headers[name] ?? got.headers[name.toLowerCase()] ?? "").trim();
+      if (value) headers[name.toLowerCase()] = value;
+    }
+    const missing = want.headers.filter((h) => !headers[h.toLowerCase()]);
+    if (missing.length) {
+      return {
+        ok: false,
+        error:
+          `Signed in, but ${storeName} has not sent ${missing.join(" and ")} yet. ` +
+          `Open your basket in that tab and this finishes by itself.`,
+      };
+    }
+    const auth = headers["authorization"];
+    const expiresAt = auth ? expiryOf(auth) : null;
+    return {
+      ok: true,
+      kind: "session",
+      secret: encodeSession({
+        headers,
+        ...(expiresAt === null ? {} : { expiresAt }),
+        // Renewable without asking the human again: the browser they signed in
+        // with is still signed in, so the session can simply be read afresh.
+        // No refresh endpoint to guess at, and nothing to get wrong.
+        refresh: { via: "browser", storeId },
+      }),
+    };
+  }
+  if (!got.cookieHeader) return { ok: false, error: `Not signed in at ${storeName} yet.` };
+  return { ok: true, kind: "cookie", secret: got.cookieHeader };
 }
 
 export async function handleApi(
@@ -231,25 +280,9 @@ export async function handleApi(
       log(`connect ${storeId} capture failed: ${captured.error}`);
       return { status: 409, body: { error: captured.error } };
     }
-    /*
-     * Seal what the store's adapter can actually use (S19). A bearer store's
-     * cookie jar is the WRONG credential -- sealing it would look like success
-     * here and fail at the first basket call -- so a store that asked for a
-     * bearer and did not get one is a 409, not a silent downgrade.
-     */
-    const wantsBearer = policy.chromeLogin.bearer !== undefined;
-    if (wantsBearer && !captured.bearer) {
-      return {
-        status: 409,
-        body: {
-          error:
-            `Signed in, but ${store.name} has not issued a session token yet. ` +
-            `Browse to your basket in the open tab, then press Connect again.`,
-        },
-      };
-    }
-    const kind: CredentialKind = wantsBearer ? "token" : "cookie";
-    const secret = wantsBearer ? captured.bearer! : captured.cookieHeader;
+    const sealable = sealableCredential(store.name, storeId, policy.chromeLogin.capture, captured);
+    if (!sealable.ok) return { status: 409, body: { error: sealable.error } };
+    const { kind, secret } = sealable;
     try {
       const saved = deps.vault.connect({ storeId, kind, username: null, secret });
       log(`connect ${storeId}: session captured and sealed as ${kind}`);
@@ -302,7 +335,7 @@ export async function handleApi(
         url: policy.chromeLogin.url,
         domains: policy.chromeLogin.domains,
         authCookies: policy.chromeLogin.authCookies,
-        bearerMatch: policy.chromeLogin.bearer ?? null,
+        capture: policy.chromeLogin.capture ?? null,
       });
       log(`connect ${storeId}: waiting on a sign-in at ${note.url}`);
       return { status: 200, body: { ok: true, url: note.url, waiting: true } };
@@ -348,25 +381,16 @@ export async function handleApi(
 
     const payload = await body();
     const cookieHeader = String(payload["cookie_header"] ?? "").trim();
-    const bearer = String(payload["bearer"] ?? "").trim();
-    const wantsBearer = policy.chromeLogin.bearer !== undefined;
-    if (wantsBearer && !bearer) {
-      return {
-        status: 409,
-        body: {
-          error:
-            `Signed in, but ${store.name} has not issued a session token yet. ` +
-            `Open your basket in that tab and it will finish by itself.`,
-        },
-      };
-    }
-    if (!wantsBearer && !cookieHeader) {
-      return { status: 409, body: { error: `Not signed in at ${store.name} yet.` } };
-    }
+    const sent = (payload["headers"] ?? {}) as Record<string, string>;
 
-    const kind: CredentialKind = wantsBearer ? "token" : "cookie";
+    const sealable = sealableCredential(store.name, storeId, policy.chromeLogin.capture, {
+      cookieHeader,
+      headers: sent,
+    });
+    if (!sealable.ok) return { status: 409, body: { error: sealable.error } };
+    const { kind, secret } = sealable;
     try {
-      const saved = deps.vault.connect({ storeId, kind, username: null, secret: wantsBearer ? bearer : cookieHeader });
+      const saved = deps.vault.connect({ storeId, kind, username: null, secret });
       finish(storeId, "extension");
       closeConnect(storeId);
       log(`connect ${storeId}: sealed as ${kind}, captured from the user's own browser`);

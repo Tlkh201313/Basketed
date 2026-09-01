@@ -32,7 +32,7 @@ window.addEventListener("message", (event) => {
       token: msg.token,
       domains: msg.domains,
       authCookies: msg.authCookies,
-      bearerMatch: msg.bearerMatch,
+      capture: msg.capture,
     },
     (reply) => {
       window.postMessage(

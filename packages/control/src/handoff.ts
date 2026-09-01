@@ -40,8 +40,8 @@ export interface PendingConnect {
   url: string;
   domains: string[];
   authCookies: string[];
-  /** URL substring whose `Authorization` header is the credential (Tesco). */
-  bearerMatch: string | null;
+  /** Which API's request headers ARE the credential, when the jar is not (Tesco). */
+  capture: { match: string; headers: string[] } | null;
   startedAt: number;
   /** Set when a capture arrived, so the panel can report how it finished. */
   finishedBy: "extension" | null;

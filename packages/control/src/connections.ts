@@ -60,16 +60,22 @@ export interface ChromeLogin {
    */
   authCookies: string[];
   /**
-   * Capture the `Authorization` header off requests whose URL contains this
-   * string, and seal THAT rather than the cookie jar.
+   * Headers to lift off the store's own API call, when the credential is not
+   * in the cookie jar at all (S21).
    *
-   * Set only for real Tesco, whose basket API is a bearer-token API: its own
-   * frontend calls `xapi.tesco.com` with `Authorization: Bearer <token>`, and
-   * that token is exactly what the adapter needs. Reading it out of the tab
-   * the shopper just signed into yields the same value the old form asked
-   * them to dig out of DevTools by hand -- same source, minus the errand.
+   * Tesco is the case that forced this open. Its basket API authenticates on
+   * `authorization` AND `customer-uuid` together -- a bearer alone returns a
+   * basket that is not yours, which is exactly the "connected but broken"
+   * failure that is worst to debug. GavinAttard/tesco-grocery-mcp (MIT) sends
+   * the same pair, which is where the second header came from; the difference
+   * is that it asks a human to copy both out of DevTools, and this lifts them
+   * from the tab they just signed into.
+   *
+   * Every header named here is REQUIRED. A capture missing one is refused
+   * rather than sealed, because half a session succeeds here and fails later,
+   * somewhere with much less context.
    */
-  bearer?: string;
+  capture?: { match: string; headers: string[] };
 }
 
 export interface StoreAuthPolicy {
@@ -125,7 +131,7 @@ const CHROME_LOGIN: Record<string, ChromeLogin> = {
     loginUrl: "https://www.tesco.com/account/login/en-GB",
     domains: ["tesco.com"],
     authCookies: ["_ttoken", "trefresh", "atrc_", "access_token"],
-    bearer: "xapi.tesco.com",
+    capture: { match: "xapi.tesco.com", headers: ["authorization", "customer-uuid"] },
   },
   "sim:tesco": {
     url: "https://www.tesco.com/groceries/en-GB/",
@@ -163,7 +169,9 @@ const CHROME_LOGIN: Record<string, ChromeLogin> = {
     url: "https://shopee.sg/user/account/profile",
     loginUrl: "https://shopee.sg/buyer/login",
     domains: ["shopee.sg"],
-    authCookies: ["SPC_ST", "SPC_U", "SPC_R_T_ID"],
+    // SPC_EC (encrypted session) from bintangtimurlangit/shopee-mcp, which
+    // treats it and SPC_U as the pair that means "signed in".
+    authCookies: ["SPC_ST", "SPC_U", "SPC_EC", "SPC_R_T_ID"],
   },
   // Taobao's login mints `_l_g_` / `cookie2` / `unb` (the user number); a
   // signed-out visitor has none of the three.
@@ -191,10 +199,9 @@ const CHROME_LOGIN: Record<string, ChromeLogin> = {
  * synonym for "nothing to connect".
  */
 const REAL_TESCO_POLICY: StoreAuthPolicy = {
-  // The bearer token the capture lifts out of the signed-in tab. `token` is
-  // what makes the vault's interceptor attach `Authorization: Bearer ...`,
-  // which is what the Tesco basket API wants.
-  methods: ["token"],
+  // A header SET, not one value: Tesco's basket wants `authorization` and
+  // `customer-uuid` together, and `session` is the kind that can hold both.
+  methods: ["session"],
   oauth: false,
   reach:
     "Real Tesco search and product data -- no account needed for that, and it works right now. " +

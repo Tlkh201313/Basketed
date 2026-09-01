@@ -23,28 +23,32 @@
  */
 
 /**
- * Bearer tokens seen in flight, keyed by the URL fragment that identifies the
- * API they belong to.
+ * Request headers seen in flight, keyed by the URL fragment identifying the
+ * API they belong to, then by header name.
  *
- * Some retailers' credentials are not in the cookie jar at all: Tesco's
- * basket is a bearer API, and its own frontend sends the token as an
- * `Authorization` header to xapi.tesco.com. `onSendHeaders` is observational
+ * Some retailers' credentials are not in the cookie jar at all: Tesco's basket
+ * API authenticates on the `authorization` + `customer-uuid` pair its own
+ * frontend sends to xapi.tesco.com, and a bearer alone returns a basket that
+ * is not yours. `onSendHeaders` is observational
  * only — it cannot block, redirect or alter a request, and this listener does
  * not try to.
  */
-const bearers = new Map();
+const capturedHeaders = new Map(); // match -> { headerName: value }
 
-/** Only ever recorded for a URL the panel named. Nothing else is looked at. */
-const watchedMatches = new Set();
+/** match -> header names, lower-case. Only what the panel named is ever read. */
+const watched = new Map();
 
 chrome.webRequest.onSendHeaders.addListener(
   (details) => {
-    if (!watchedMatches.size) return;
-    for (const match of watchedMatches) {
+    if (!watched.size) return;
+    for (const [match, names] of watched) {
       if (!details.url.includes(match)) continue;
-      const header = (details.requestHeaders || []).find((h) => h.name.toLowerCase() === "authorization");
-      if (!header || !header.value) continue;
-      bearers.set(match, header.value.replace(/^Bearer\s+/i, "").trim());
+      const bag = capturedHeaders.get(match) || {};
+      for (const h of details.requestHeaders || []) {
+        const name = h.name.toLowerCase();
+        if (names.includes(name) && h.value) bag[name] = h.value;
+      }
+      capturedHeaders.set(match, bag);
     }
   },
   { urls: ["<all_urls>"] },
@@ -105,15 +109,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
       respond({ ok: false, error: "not the Basketed panel" });
       return;
     }
-    if (msg.bearerMatch) watchedMatches.add(msg.bearerMatch);
+    // Arm the listener before answering: the page asks repeatedly while it
+    // waits, so the first ask starts watching and a later one collects.
+    if (msg.capture) {
+      watched.set(msg.capture.match, (msg.capture.headers || []).map((h) => String(h).toLowerCase()));
+    }
 
     const cookieHeader = await cookiesFor(msg.domains || []);
-    const bearer = msg.bearerMatch ? bearers.get(msg.bearerMatch) || "" : "";
+    const headers = msg.capture ? capturedHeaders.get(msg.capture.match) || {} : {};
+    // A COMPLETE set proves a signed-in session. A partial one proves nothing:
+    // the signed-out site calls the same API with fewer headers on it.
+    const complete = msg.capture
+      ? (msg.capture.headers || []).every((h) => headers[String(h).toLowerCase()])
+      : false;
     respond({
       ok: true,
       cookieHeader,
-      bearer,
-      signedIn: looksSignedIn(cookieHeader, msg.authCookies) || Boolean(bearer),
+      headers,
+      signedIn: looksSignedIn(cookieHeader, msg.authCookies) || complete,
     });
   })();
 

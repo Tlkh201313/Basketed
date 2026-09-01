@@ -503,7 +503,7 @@ function twinsByBrand(stores: StoreRow[]): Map<string, StoreRow> {
  *
  * The `data-` attributes are what the extension needs to read that session
  * back: which domains to look in, which cookie names mean "signed in", and
- * (Tesco only) which API's `Authorization` header is the real credential.
+ * (Tesco only) which API's request headers ARE the credential.
  * All of it is public policy from connections.ts — none of it is a secret.
  */
 function connectAnchor(store: StoreRow, policy: StoreAuthPolicy, label: string, cls: string): string {
@@ -513,7 +513,7 @@ function connectAnchor(store: StoreRow, policy: StoreAuthPolicy, label: string, 
      data-connect-open data-store="${esc(store.id)}" data-name="${esc(store.name)}"
      data-domains="${esc(JSON.stringify(login.domains))}"
      data-auth-cookies="${esc(JSON.stringify(login.authCookies))}"
-     data-bearer="${esc(login.bearer ?? "")}"
+     data-capture="${esc(JSON.stringify(login.capture ?? null))}"
      data-login-url="${esc(login.loginUrl)}">${esc(label)}</a>`;
 }
 

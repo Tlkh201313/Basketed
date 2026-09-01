@@ -72,10 +72,10 @@ interface CaptureSession {
   attached: boolean;
   /** The tab we opened. Closed on teardown; the browser is not, when attached. */
   page: Page | null;
-  /** URL substring whose requests carry the bearer worth keeping. */
-  bearerMatch: string | null;
-  /** The bearer seen on such a request, if any. Never logged, never served. */
-  bearer: string | null;
+  /** What to lift, and from where. Null when the cookie jar is the credential. */
+  capture: { match: string; headers: string[] } | null;
+  /** Header name (lower-cased) -> value, as last seen. Never logged, never served. */
+  captured: Record<string, string>;
   /** Where a signed-out human is sent. Used once, when the landing page says they are out. */
   loginUrl: string | null;
   /** True once we have already redirected to `loginUrl`, so we only do it once. */
@@ -373,29 +373,32 @@ function looksLoggedIn(cookies: Array<{ name: string; value: string }>, authCook
 }
 
 /**
- * Watch the tab for the one request header worth keeping (S19).
+ * Watch the tab for the request headers worth keeping (S19, widened S21).
  *
- * Tesco's basket API is a bearer API, so the credential the adapter needs is
- * not in the cookie jar at all -- it is the `Authorization` header Tesco's own
- * frontend sends to `xapi.tesco.com`. Listening for it here is what replaced
- * "open DevTools, find a request, copy the header, paste it into a form".
+ * Some retailers' credentials are not in the cookie jar at all: Tesco's basket
+ * API authenticates on the `authorization` + `customer-uuid` pair its own
+ * frontend sends to `xapi.tesco.com`. Listening for them here is what replaced
+ * "open DevTools, find a request, copy two headers, paste them into a form".
  *
  * Read-only: the listener never blocks, rewrites or replays a request, and
- * the value it keeps lives in this process, is never logged, and leaves only
+ * what it keeps lives in this process, is never logged, and leaves only
  * through the same token-gated capture route as everything else.
  */
-function watchForBearer(page: Page, storeId: string, match: string): void {
+function watchForHeaders(page: Page, storeId: string, want: { match: string; headers: string[] }): void {
   page.on("request", (req: HTTPRequest) => {
     try {
-      if (!req.url().includes(match)) return;
-      const auth = req.headers()["authorization"];
-      if (!auth) return;
+      if (!req.url().includes(want.match)) return;
+      const sent = req.headers();
       const s = sessions.get(storeId);
       if (!s) return;
-      s.bearer = auth.replace(/^Bearer\s+/i, "").trim();
-      // A live bearer IS proof of a signed-in session, and it often arrives
-      // before the cookie signature does.
-      if (s.bearer) s.loggedIn = true;
+      for (const name of want.headers) {
+        const value = sent[name.toLowerCase()];
+        if (value) s.captured[name.toLowerCase()] = value;
+      }
+      // A COMPLETE set is proof of a signed-in session, and it usually arrives
+      // before the cookie signature does. A partial one proves nothing: the
+      // signed-out site calls the same API.
+      if (want.headers.every((h) => s.captured[h.toLowerCase()])) s.loggedIn = true;
     } catch {
       // a request that vanished mid-flight tells us nothing; ignore it
     }
@@ -407,7 +410,7 @@ export interface LoginTarget {
   loginUrl?: string;
   domains?: string[];
   authCookies?: string[];
-  bearer?: string;
+  capture?: { match: string; headers: string[] };
 }
 
 /**
@@ -482,8 +485,8 @@ export async function startLogin(
     loggedIn: false,
     attached,
     page,
-    bearerMatch: target.bearer ?? null,
-    bearer: null,
+    capture: target.capture ?? null,
+    captured: {},
     loginUrl: target.loginUrl ?? null,
     sentToLogin: false,
   };
@@ -491,7 +494,7 @@ export async function startLogin(
   // fire on the very first request, has a session to write to.
   sessions.set(storeId, session);
   browser.once("disconnected", () => void endSession(storeId));
-  if (session.bearerMatch) watchForBearer(page, storeId, session.bearerMatch);
+  if (session.capture) watchForHeaders(page, storeId, session.capture);
 
   try {
     await page.bringToFront().catch(() => {});
@@ -504,7 +507,9 @@ export async function startLogin(
   // Whether they are already in decides what they see next, so check once,
   // up front, rather than a poll interval later.
   try {
-    session.loggedIn = looksLoggedIn(await readCookies(browser, domains, page), authCookies) || session.bearer !== null;
+    const complete =
+      session.capture !== null && session.capture.headers.every((h) => session.captured[h.toLowerCase()]);
+    session.loggedIn = looksLoggedIn(await readCookies(browser, domains, page), authCookies) || complete;
   } catch {
     // not fatal; the poll picks it up
   }
@@ -527,26 +532,28 @@ export async function startLogin(
  * reachable through a route gated exactly like every other write to the vault
  * -- the panel token, checked before this function is ever called.
  *
- * A captured bearer wins over the cookie jar when the store asked for one:
- * for a bearer API, the jar is the wrong credential and would be sealed only
- * to be rejected later.
+ * A captured header set wins over the cookie jar when the store asked for one:
+ * for a header-authenticated API the jar is the wrong credential, and sealing
+ * it would look like success here and fail at the first basket call.
  */
 export async function captureLogin(
   storeId: string,
   domains: string[],
-): Promise<{ ok: true; cookieHeader: string; bearer: string | null } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; cookieHeader: string; headers: Record<string, string> } | { ok: false; error: string }
+> {
   const s = sessions.get(storeId);
   if (!s) return { ok: false, error: "No sign-in tab is open for this store. Press Connect first." };
 
   try {
     const cookies = await readCookies(s.browser, s.domains.length ? s.domains : domains, s.page);
-    const bearer = s.bearer;
-    if (!cookies.length && !bearer) {
+    const headers = { ...s.captured };
+    if (!cookies.length && !Object.keys(headers).length) {
       return { ok: false, error: "Nothing was set for that site yet -- finish signing in, then try again." };
     }
     const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
     await endSession(storeId);
-    return { ok: true, cookieHeader, bearer };
+    return { ok: true, cookieHeader, headers };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
