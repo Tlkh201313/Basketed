@@ -4,7 +4,7 @@ import type { FxTable, Money } from "@basketed/core";
 import type { AdapterCtx, StoreRegistry } from "@basketed/adapters";
 import { describeRoute, parseProductId, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
 import { authorizedFetch, SessionUnusableError, type Vault } from "@basketed/vault";
-import { connectHint, needsAccountFor, sessionState } from "./account.js";
+import { connectHint, needsAccountFor, sessionFetchFor, sessionState } from "./account.js";
 import type { Db } from "./db.js";
 import { withRetry, withTimeout } from "./retry.js";
 import { cartHash, describeMandate, type CartMandate, type MandateLine } from "./mandate.js";
@@ -213,9 +213,19 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
     if (sessionState(held) !== "live") throw new Error(connectHint(adapter.manifest, held));
   }
 
-  // Vault-wrapped only for THIS store's id -- a store with no stored
-  // credential gets deps.ctx.http back unchanged (authorizedFetch no-ops).
-  const cartCtx = deps.vault ? { ...deps.ctx, http: authorizedFetch(deps.vault, storeId, deps.ctx.http) } : deps.ctx;
+  /*
+   * Vault-wrapped only for THIS store's id, and only as hard as the store
+   * asked for.
+   *
+   * A store whose cart is GATED gets the strict wrapper, which refuses an
+   * expired session before the request -- a signed-out basket page has the
+   * right shape and reads as an empty trolley. A store whose cart merely
+   * BENEFITS from a session (eBay, Best Buy: the anonymous cart works and is
+   * handed off either way) degrades to anonymous instead, because refusing to
+   * build a cart that would have built fine is a worse answer than building
+   * it. A store with no session at all gets deps.ctx.http back unchanged.
+   */
+  const cartCtx = { ...deps.ctx, http: sessionFetchFor(adapter.manifest, "cart", deps.vault, deps.ctx.http, deps.ctx.log) };
   const raw = await withRetry(
     () => withTimeout(adapter.buildCart!(input.items, cartCtx), deps.buildCartTimeoutMs ?? BUILD_CART_TIMEOUT_MS, `${storeId} cart`),
     { attempts: 2 },
@@ -602,9 +612,10 @@ export async function confirmPurchase(
   if (adapter?.buildCart) {
     let live: Awaited<ReturnType<NonNullable<typeof adapter.buildCart>>> | null = null;
     try {
-      const ctx = deps.vault
-        ? { ...deps.ctx, http: authorizedFetch(deps.vault, mandate.storeId, deps.ctx.http) }
-        : deps.ctx;
+      const ctx = {
+        ...deps.ctx,
+        http: sessionFetchFor(adapter.manifest, "cart", deps.vault, deps.ctx.http, deps.ctx.log),
+      };
       live = await withTimeout(
         adapter.buildCart(
           mandate.lineItems.map((li) => ({ id: li.id, quantity: li.quantity })),

@@ -107,7 +107,28 @@ export class EtsyAdapter implements StoreAdapter {
       language: "en",
       categories: ["general", "apparel", "furniture"],
       mode: "native",
-      account: { kind: "none" },
+      /*
+       * Etsy is the store where being recognised matters most for getting an
+       * answer at all: an unrecognised client is the one this adapter's 403
+       * fallback exists for, and it is why Etsy is the only store still
+       * allowed to reach for Chromium. A signed-in session is the cheap fix
+       * -- it is also what makes shipping costs and delivery dates the
+       * shopper's own rather than a default to the United States.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail"],
+        refresh: "browser",
+        login: {
+          url: "https://www.etsy.com/",
+          loginUrl: "https://www.etsy.com/signin",
+          domains: ["etsy.com"],
+          // `etala` is the signed-in account marker; `etanon` is its
+          // anonymous twin and is deliberately not listed.
+          authCookies: ["etala"],
+        },
+      },
       capabilities: ["discovery", "detail"],
       domain: "etsy.com",
     };

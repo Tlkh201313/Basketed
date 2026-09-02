@@ -69,9 +69,17 @@ over stdio still has channel A.
 On stdio the panel also **opens in your browser when the server starts**. That
 is not a convenience: a client captures its MCP server's stderr, so the link is
 written where no human will ever read it, and a panel nobody can reach is not a
-channel. The tab is the channel there. One tab per process; `--no-open` (or
-`BASKETED_NO_OPEN=1`) turns it off, and the tab polls, so a cart that needs you
-later shows up in the tab that is already open. `/api` also
+channel. The tab is the channel there. **One tab per machine, not one per
+server**: Basketed installs into Claude Code, Cursor and Codex, and each of them
+starts its own stdio server, so opening three editors used to open three
+browser windows on three ports. It does not any more. Every server reads the
+same database as the same user, so the approval queue in one panel is already
+the queue for all of them: a second server finds the live panel's handoff
+record, prints that origin, opens nothing, and points its approval links there.
+It still serves a panel of its own, and falls back to it the moment the first
+editor closes. `--no-open` (or `BASKETED_NO_OPEN=1`) turns the tab off
+entirely, and the tab polls, so a cart that needs you later shows up in the tab
+that is already open. `/api` also
 refuses any request whose `Origin` is not exactly the panel's, and refuses a
 mutating request that sends none, which is what keeps a web page from driving the
 panel through your browser.
@@ -83,8 +91,8 @@ and check. The absence is the feature.
 ### The adversarial pass
 
 ```bash
-pnpm smoke        # five smoke suites, all offline
-pnpm test         # 460 unit tests
+pnpm smoke        # six smoke suites, all offline
+pnpm test         # 486 unit tests
 pnpm drill        # the whole demo path with the network genuinely severed
 pnpm stability    # 25 cold starts, measured: last run 25/25 (100%)
 pnpm smoke:live   # ...and against live merchants, spending real requests
@@ -215,12 +223,25 @@ Two lanes on one server.
 Connect opens the retailer's own site in a new tab, then a **Heartbeat** watches until you are signed in (or were already) and seals the session. Basketed never asks for a store password. Caps (per-order, rolling 24h, store allowlist) are edited under **Settings** — human approval cannot be turned off.
 
 The Connect-stores page has four tabs: **All**, **Connected**, **Unconnected**
-and **Fetch**. Fetch is where most stores live and it is not a lesser shelf —
-those stores have no account to connect, and searching them signed out is the
-product rather than a limitation. Unconnected means there genuinely is a
-sign-in still to do. Which shelf a store lands on comes from the adapter's own
-`account` declaration, so a store cannot be advertised as connectable by the
-panel while its adapter never reads a session. Connect drives Chrome, Edge,
+and **Fetch**. Fetch is where the Shopify merchants live and it is not a lesser
+shelf — their agentic endpoint is anonymous, there is no account to connect, and
+searching them signed out is the product rather than a limitation. Unconnected
+means there genuinely is a sign-in still to do.
+
+Seven retailers offer one, and only Tesco requires it. Amazon, Best Buy, eBay,
+Etsy, IKEA and Target answer perfectly well signed out and always will;
+connecting one attaches your session to their search and product pages, which
+is the difference between a generic listing and your prices, your store's stock
+and your delivery estimate — plus a request that is turned away as a robot far
+less often. Nothing is refused for want of a session on those six, and an
+expired one degrades to the signed-out answer rather than failing. Tesco is the
+exception: its search is public, its trolley and delivery slots are not.
+
+Which shelf a store lands on, and whether its session gates anything, comes
+from the adapter's own `account` declaration — `uses` for what genuinely needs
+a sign-in, `improves` for what merely answers better with one. A store cannot
+be advertised as connectable by the panel while its adapter never reads a
+session, and registration refuses a session that reads nothing at all. Connect drives Chrome, Edge,
 Brave or Chromium, whichever is installed (`BASKETED_CHROME` names another),
 and `basketed doctor` prints which one it would open.
 
@@ -309,13 +330,23 @@ annotations, namespaced names.
   the header pair its basket adapter calls with (`authorization` and
   `customer-uuid`, plus `x-customer-uuid` so Tesco's gateway accepts either
   name).
-- **Connect signs you in at Tesco, in a browser — there is no password box.
-  Covers Tesco.**
-  Tesco does not publish a consumer OAuth flow, so the alternative to a
-  password-paste box is not a nicer password-paste box: it is opening Tesco's
-  own login page in the browser you already use and letting you sign in
-  there. Basketed has **no field anywhere that accepts a retailer password**,
-  and the route refuses one even if a policy offered it — a test asserts both.
+- **Connect signs you in in the browser you already use — there is no password
+  box. Covers Amazon, Best Buy, eBay, Etsy, IKEA, Target and Tesco.**
+  Not one of those retailers publishes a consumer OAuth flow, so the
+  alternative to a password-paste box is not a nicer password-paste box: it is
+  opening the retailer's own login page in the browser you already use and
+  letting you sign in there. Basketed has
+  **no field anywhere that accepts a retailer password**, and the route refuses
+  one even if a policy offered it — a test asserts both.
+
+  Six of the seven are optional, and stay optional. Amazon, Best Buy, eBay,
+  Etsy, IKEA and Target search and price perfectly well signed out and always
+  will; connecting one buys the prices, stock and delivery estimates your own
+  account sees, and a request that is turned away as a robot far less often.
+  Nothing is refused for want of a session on those six — an expired one
+  degrades to the signed-out answer rather than failing the search. Tesco is
+  the single store where connecting unlocks something: its search is public,
+  its trolley and its delivery slots are not.
 
   Connect is a plain `<a target="_blank">`, so the tab opens in **the same
   browser window the panel is running in**, with the accounts already in it.

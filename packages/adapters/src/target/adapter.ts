@@ -103,7 +103,29 @@ export class TargetAdapter implements StoreAdapter {
       language: "en",
       categories: ["general"],
       mode: "native",
-      account: { kind: "none" },
+      /*
+       * Target is a store-local retailer pretending to be a national one.
+       *
+       * Price, stock and pickup are all scoped to a store, and signed out
+       * that store is whichever one Target guesses. A shopper's own session
+       * carries their store and their Circle pricing, which is the
+       * difference between "in stock somewhere in America" and "in stock
+       * where you are going".
+       *
+       * Not gated: there is no cart tier here, and search works signed out.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail"],
+        refresh: "browser",
+        login: {
+          url: "https://www.target.com/",
+          loginUrl: "https://www.target.com/login",
+          domains: ["target.com"],
+          authCookies: ["accessToken", "idToken", "refreshToken"],
+        },
+      },
       capabilities: ["discovery", "detail"],
       domain: "target.com",
     };

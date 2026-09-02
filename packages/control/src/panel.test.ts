@@ -4,7 +4,20 @@ import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { StoreRegistry, SimulatedAdapter, TargetAdapter, TescoAdapter, type AdapterCtx } from "@basketed/adapters";
+import {
+  StoreRegistry,
+  SimulatedAdapter,
+  ShopifyUcpAdapter,
+  AmazonAdapter,
+  BestBuyAdapter,
+  EbayAdapter,
+  EtsyAdapter,
+  IkeaAdapter,
+  TargetAdapter,
+  TescoAdapter,
+  type AdapterCtx,
+  type StoreAdapter,
+} from "@basketed/adapters";
 import {
   loadGuardrails,
   openDb,
@@ -100,13 +113,43 @@ afterAll(async () => {
   await new Promise<void>((done) => server.close(() => done()));
 });
 
+/**
+ * A store with no account whatsoever, for the routes that must refuse a
+ * sign-in. It has to be a real one: "nothing to connect" is a claim about a
+ * live store, and a fixture could drift away from every adapter we ship.
+ */
+const REAL_ADAPTERS: StoreAdapter[] = [
+  new AmazonAdapter(),
+  new BestBuyAdapter(),
+  new EbayAdapter(),
+  new EtsyAdapter(),
+  new IkeaAdapter(),
+  new TargetAdapter(),
+  new TescoAdapter(),
+];
+
+const NO_ACCOUNT_DOMAIN = "anonshop.example";
+const NO_ACCOUNT_ID = `shp:${NO_ACCOUNT_DOMAIN}`;
+const NO_ACCOUNT_PATH = encodeURIComponent(NO_ACCOUNT_ID);
+
 beforeEach(async () => {
   resetHandoff();
   const registry = new StoreRegistry();
   for (const a of await SimulatedAdapter.loadAll(ROOT)) registry.register(a);
-  // Every store with an account now offers the browser sign-in (S19), so the
-  // "nothing to connect" routes need a store that genuinely has no account:
-  // Target is reached signed-out, through its own public pages.
+  // Every store with an account offers the browser sign-in (S19), and since
+  // S22 that is seven of them -- so the "nothing to connect" routes need a
+  // store with genuinely no account at all. A Shopify UCP merchant is the
+  // real example: its agentic endpoint is anonymous, and inventing a login
+  // step for it would invent an account that does not exist.
+  registry.register(
+    new ShopifyUcpAdapter({
+      domain: NO_ACCOUNT_DOMAIN,
+      endpoint: `https://${NO_ACCOUNT_DOMAIN}/api/mcp`,
+      name: "Anonshop",
+    }),
+  );
+  // Target is a store whose session is offered and never required, which is
+  // the other half of the connect contract.
   registry.register(new TargetAdapter());
   // Real Tesco is the one store whose credential is a header SET rather than a
   // single value, so the session tests need it registered.
@@ -544,14 +587,25 @@ describe("connections (S14)", () => {
     expect(res.status).toBe(404);
   });
 
-  it("offers no connect method at all for a store reached signed-out", () => {
-    // Target has no account, so there is nothing for a card to offer. This
-    // used to be checked by POSTing a credential at it and expecting a 400;
-    // the policy itself is the honest place to ask.
+  it("offers no connect method at all for a store with no account", () => {
+    // A UCP merchant's endpoint is anonymous: there is nothing for a card to
+    // offer. This used to be checked by POSTing a credential at it and
+    // expecting a 400; the policy itself is the honest place to ask.
+    const anon = deps.registry.list().find((s) => s.id === NO_ACCOUNT_ID);
+    expect(anon).toBeTruthy();
+    expect(authPolicyFor(anon!).methods).toEqual([]);
+    expect(authPolicyFor(anon!).chromeLogin).toBeNull();
+  });
+
+  it("offers the browser sign-in on a store whose session is optional", () => {
+    // The complaint S22 answers: Target works signed out, so until now it had
+    // no Connect button at all -- and a shopper with a Target account had no
+    // way to hand it over. It has one now, and it still gates nothing.
     const target = deps.registry.list().find((s) => s.id === "tgt:target");
-    expect(target).toBeTruthy();
-    expect(authPolicyFor(target!).methods).toEqual([]);
-    expect(authPolicyFor(target!).chromeLogin).toBeNull();
+    const policy = authPolicyFor(target!);
+    expect(policy.methods).toEqual(["session"]);
+    expect(policy.chromeLogin?.domains).toContain("target.com");
+    expect(policy.reach).toMatch(/work signed out/i);
   });
 
   /*
@@ -702,7 +756,9 @@ describe("connecting in the user's own browser (S20)", () => {
 
   it("404s an unknown store and 400s one with no account to sign in to", async () => {
     expect((await panel("/api/connections/sim%3Anope/browser-connect", { method: "POST" })).status).toBe(404);
-    expect((await panel("/api/connections/tgt%3Atarget/browser-connect", { method: "POST" })).status).toBe(400);
+    expect((await panel(`/api/connections/${NO_ACCOUNT_PATH}/browser-connect`, { method: "POST" })).status).toBe(
+      400,
+    );
   });
 
   it("a capture with no sign-in in flight is refused -- the vault is not writable on demand", async () => {
@@ -1031,7 +1087,7 @@ describe("chrome-login (S15)", () => {
   });
 
   it("400s for a store with no account to sign in to", async () => {
-    const res = await panel("/api/connections/tgt%3Atarget/chrome-login", { method: "POST" });
+    const res = await panel(`/api/connections/${NO_ACCOUNT_PATH}/chrome-login`, { method: "POST" });
     expect(res.status).toBe(400);
     expect(startLogin).not.toHaveBeenCalled();
   });
@@ -1104,7 +1160,7 @@ describe("chrome-login (S15)", () => {
   });
 
   it("400s a capture for a store with no account to sign in to", async () => {
-    const res = await panel("/api/connections/tgt%3Atarget/chrome-login/capture", { method: "POST" });
+    const res = await panel(`/api/connections/${NO_ACCOUNT_PATH}/chrome-login/capture`, { method: "POST" });
     expect(res.status).toBe(400);
     expect(captureLogin).not.toHaveBeenCalled();
   });
@@ -1146,19 +1202,24 @@ describe("chrome-login (S15)", () => {
  */
 describe("the README does not describe a connect build we do not have (S15, S19)", () => {
   it("names exactly the stores this build can sign in to", async () => {
-    // README names RETAILERS. Connect covers live Tesco only.
+    /*
+     * README names RETAILERS, so this asks every real adapter we ship rather
+     * than the handful this file happens to register. That is the whole point
+     * of the check: an eighth store gaining a Connect button has to move the
+     * README with it, or the security section understates what Basketed will
+     * hold a session for.
+     */
     const withChromeLogin = [
       ...new Set(
-        deps.registry
-          .list()
-          .filter((s) => authPolicyFor(s).chromeLogin)
-          .map((s) => s.name),
+        REAL_ADAPTERS.map((a) => a.manifest)
+          .filter((m) => authPolicyFor(m).chromeLogin)
+          .map((m) => m.name),
       ),
     ].sort();
-    expect(withChromeLogin).toEqual(["Tesco"]);
+    expect(withChromeLogin).toEqual(["Amazon", "Best Buy", "Etsy", "IKEA", "Target", "Tesco", "eBay"]);
 
     const readme = await readFile(resolve(ROOT, "README.md"), "utf8");
-    const bullet = /Connect signs you in at Tesco[\s\S]{0,4000}?asked for by hand\./i.exec(readme)?.[0];
+    const bullet = /Connect signs you in in the browser[\s\S]{0,4000}?asked for by hand\./i.exec(readme)?.[0];
     expect(bullet, "README's connect bullet was not found where expected").toBeTruthy();
     for (const name of withChromeLogin) {
       expect(bullet).toMatch(new RegExp(name));

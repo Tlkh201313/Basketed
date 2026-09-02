@@ -181,7 +181,9 @@ AES-256-GCM (the model cannot read it — there is no tool or route that returns
 a secret). Shopify UCP is anonymous; the simulated stores have nothing to
 check — the vault is empty unless you put something in from Connect stores.
 Real Tesco (`tsc:tesco`) seals the header pair its basket API actually uses
-(`authorization` + `customer-uuid`), and refuses a capture missing either.
+(`authorization` + `customer-uuid`), and refuses a capture missing either. The
+other six connectable retailers seal a cookie jar and gate nothing behind it:
+disconnect one and its search keeps working, which is the point.
 
 ---
 
@@ -192,6 +194,10 @@ Provider-sourced retailer data, real retailer OAuth, approval channel B
 order. All are designed in the plan; none are built. The credential vault, real
 Tesco (`tsc:tesco`) and real Amazon / IKEA / Target discovery+detail, and
 Connect stores via browser tab + extension are now built (S14, S16, S17, S20).
+Seven retailers can be connected (S22) — Amazon, Best Buy, eBay, Etsy, IKEA,
+Target and Tesco — and only Tesco requires it: the other six attach the session
+to search and product pages when one is held and answer signed out when it is
+not.
 Real retailer cart for Costco / Walmart / Shopee and real checkout remain
 unbuilt by design. The pitch is *here is the architecture, and the adapters plus
 the gate that prove it* — which is a stronger thing to say than six

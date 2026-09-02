@@ -122,7 +122,31 @@ export class BestBuyAdapter implements StoreAdapter {
       language: "en",
       categories: ["electronics", "general"],
       mode: "native",
-      account: { kind: "none" },
+      /*
+       * Same store-local story as Target, plus a cart worth owning.
+       *
+       * Best Buy stock is per-store and its cart is per-account. Built
+       * anonymously it is a cart that exists until the cookie does; built on
+       * the shopper's session it is the cart they will find waiting when
+       * they open bestbuy.com themselves, which is the whole point of a
+       * hand-off.
+       *
+       * `cart` is in `improves`, NOT `uses`: the anonymous cart still works
+       * and is still handed off, so a session that expires must degrade to
+       * it rather than refuse. See sessionFetchFor.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail", "cart"],
+        refresh: "browser",
+        login: {
+          url: "https://www.bestbuy.com/",
+          loginUrl: "https://www.bestbuy.com/identity/signin",
+          domains: ["bestbuy.com"],
+          authCookies: ["CTT", "SID"],
+        },
+      },
       capabilities: ["discovery", "detail", "cart", "handoff"],
       domain: "bestbuy.com",
     };

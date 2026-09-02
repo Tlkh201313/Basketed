@@ -1,8 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { estimateTokens, PROVENANCE_NOTE } from "@basketed/core";
-import { authorizedFetch } from "@basketed/vault";
-import { needsAccountFor, sessionState, sessionUnusableReason } from "@basketed/commerce";
+import { needsAccountFor, sessionFetchFor, sessionState, sessionUnusableReason } from "@basketed/commerce";
 import type { Runtime } from "./runtime.js";
 
 /**
@@ -182,7 +181,13 @@ export function registerSlotTools(server: McpServer, runtime: Runtime): void {
         }
       }
 
-      const ctx = { ...runtime.ctx, http: authorizedFetch(runtime.vault, args.store_id, runtime.ctx.http) };
+      // Slots are a gated tier wherever they exist, so this resolves to the
+      // strict wrapper -- but it resolves it from the manifest rather than
+      // assuming it, so a store that ever offers anonymous slots gets them.
+      const ctx = {
+        ...runtime.ctx,
+        http: sessionFetchFor(adapter.manifest, "slots", runtime.vault, runtime.ctx.http, runtime.ctx.log),
+      };
       try {
         const slots = await adapter.slots({ start, end }, ctx);
         runtime.ledger.record(

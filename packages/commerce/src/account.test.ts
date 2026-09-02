@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { StoreAccount, StoreManifest } from "@basketed/core";
-import type { Connection } from "@basketed/vault";
+import type { Connection, Vault } from "@basketed/vault";
 import {
   connectHint,
+  hasAccount,
+  improvesPhrase,
+  improvesTier,
   laneFor,
   needsAccount,
   needsAccountFor,
+  sessionFetchFor,
+  sessionIsOptional,
   sessionState,
   sessionUnusableReason,
   syncAccountStatus,
@@ -22,9 +27,17 @@ import {
  * fail when a second account store arrived.
  */
 
-const SESSION: StoreAccount = {
+/**
+ * Typed as the session MEMBER, not as the whole union, so `{ ...SESSION,
+ * uses: [...] }` below still resolves to a session. Spreading a union value
+ * widens `kind` back to a string and the discriminated union stops matching.
+ */
+type SessionAccount = Extract<StoreAccount, { kind: "session" }>;
+
+const SESSION: SessionAccount = {
   kind: "session",
   uses: ["cart", "slots"],
+  improves: ["discovery", "detail"],
   refresh: "browser",
   login: {
     url: "https://www.tesco.com/groceries/en-GB/",
@@ -218,5 +231,155 @@ describe("no store id is hard-coded on the wire", () => {
         .filter((l) => !l.includes("loaded.push"));
       expect(branching, `${file} still branches on a store id`).toEqual([]);
     }
+  });
+});
+
+/* ------------------------------------------- offered vs required (S22) */
+
+/**
+ * Six stores gained a session that gates nothing, and the whole change turns
+ * on those two words staying different. `hasAccount` decides whether a card
+ * gets a Connect button; `needsAccount` decides whether anything is refused
+ * without one. Collapsing them either hides the button on six working shops
+ * or refuses an Amazon search to advertise a sign-in.
+ */
+const OPTIONAL: SessionAccount = { ...SESSION, uses: [], improves: ["discovery", "detail"] };
+
+describe("an offered session is not a required one", () => {
+  it("gives an optional-session store a Connect button and gates nothing", () => {
+    expect(hasAccount(OPTIONAL)).toBe(true);
+    expect(needsAccount(OPTIONAL)).toBe(false);
+    expect(sessionIsOptional(OPTIONAL)).toBe(true);
+    for (const tier of ["discovery", "detail", "cart", "slots"] as const) {
+      expect(needsAccountFor(OPTIONAL, tier), tier).toBe(false);
+    }
+  });
+
+  it("still gates what Tesco actually gates", () => {
+    expect(hasAccount(SESSION)).toBe(true);
+    expect(needsAccount(SESSION)).toBe(true);
+    expect(sessionIsOptional(SESSION)).toBe(false);
+    expect(needsAccountFor(SESSION, "cart")).toBe(true);
+    expect(needsAccountFor(SESSION, "discovery")).toBe(false);
+  });
+
+  it("reports an improved tier as improved, never as gated", () => {
+    expect(improvesTier(SESSION, "discovery")).toBe(true);
+    expect(needsAccountFor(SESSION, "discovery")).toBe(false);
+    expect(improvesPhrase(OPTIONAL)).toBe("search and product pages");
+    expect(usesPhrase(OPTIONAL)).toBe("");
+  });
+
+  it("puts a store with no account on the fetch shelf and one with an offered session on a real one", () => {
+    expect(laneFor({ kind: "none" }, null)).toBe("fetch");
+    expect(laneFor(OPTIONAL, null)).toBe("unconnected");
+    expect(laneFor(OPTIONAL, held())).toBe("connected");
+  });
+});
+
+/* ------------------------------------------------- sessionFetchFor (S22) */
+
+type FakeVault = Pick<Vault, "get" | "reveal">;
+
+function fakeVault(states: Array<Connection | null>): Vault {
+  let i = 0;
+  const v: FakeVault = {
+    get: () => states[Math.min(i++, states.length - 1)] ?? null,
+    reveal: () => ({ kind: "cookie", secret: "sid=abc", username: null }) as ReturnType<Vault["reveal"]>,
+  };
+  return v as Vault;
+}
+
+/** Records the cookie header each call went out with. `null` means signed out. */
+function recorder(): { fetch: typeof fetch; cookies: Array<string | null> } {
+  const cookies: Array<string | null> = [];
+  const f = (async (_input: unknown, init?: RequestInit) => {
+    cookies.push(new Headers(init?.headers ?? {}).get("cookie"));
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  return { fetch: f, cookies };
+}
+
+describe("sessionFetchFor", () => {
+  it("attaches the session to a gated tier", async () => {
+    const r = recorder();
+    const http = sessionFetchFor(manifest(SESSION), "cart", fakeVault([held()]), r.fetch);
+    await http("https://example.test/");
+    expect(r.cookies).toEqual(["sid=abc"]);
+  });
+
+  it("refuses a gated tier before the request when the session is expired", async () => {
+    /*
+     * The refusal is the point. A signed-out Tesco basket page has the shape
+     * of an empty trolley, so a request that goes out unauthenticated comes
+     * back plausibly wrong rather than obviously broken.
+     */
+    const r = recorder();
+    const http = sessionFetchFor(manifest(SESSION), "cart", fakeVault([held({ expired: true })]), r.fetch);
+    await expect(http("https://example.test/")).rejects.toThrow(/expired|reconnect/i);
+    expect(r.cookies).toEqual([]);
+  });
+
+  it("attaches the session to an improved tier when one is live", async () => {
+    const r = recorder();
+    const http = sessionFetchFor(manifest(OPTIONAL), "discovery", fakeVault([held()]), r.fetch);
+    await http("https://example.test/");
+    expect(r.cookies).toEqual(["sid=abc"]);
+  });
+
+  it("searches signed out when an improved store has no session at all", async () => {
+    const r = recorder();
+    const http = sessionFetchFor(manifest(OPTIONAL), "discovery", fakeVault([null]), r.fetch);
+    expect((await http("https://example.test/")).status).toBe(200);
+    expect(r.cookies).toEqual([null]);
+  });
+
+  it("searches signed out -- and says so once -- when the session has expired", async () => {
+    /*
+     * The failure this exists to prevent: an Amazon session nobody has got
+     * round to reconnecting turning every Amazon search into an error. Signed
+     * out is how that store worked before anyone thought about accounts, and
+     * it has to keep working that way. Logged, so the degradation is visible.
+     */
+    const r = recorder();
+    const logs: string[] = [];
+    const http = sessionFetchFor(
+      manifest(OPTIONAL),
+      "discovery",
+      fakeVault([held({ expired: true })]),
+      r.fetch,
+      (m) => void logs.push(m),
+    );
+    await http("https://example.test/");
+    await http("https://example.test/");
+    expect(r.cookies).toEqual([null, null]);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatch(/signed out/i);
+  });
+
+  it("retries signed out when the session dies between the check and the call", async () => {
+    // Same bug with a smaller window: losing a search to a race is still
+    // losing the search.
+    const r = recorder();
+    const logs: string[] = [];
+    const vault = fakeVault([held(), held({ broken: true })]);
+    const http = sessionFetchFor(manifest(OPTIONAL), "discovery", vault, r.fetch, (m) => void logs.push(m));
+    expect((await http("https://example.test/")).status).toBe(200);
+    expect(r.cookies).toEqual([null]);
+    expect(logs.join(" ")).toMatch(/mid-request/i);
+  });
+
+  it("leaves a tier the session neither gates nor improves completely alone", async () => {
+    const r = recorder();
+    const http = sessionFetchFor(manifest(OPTIONAL), "cart", fakeVault([held()]), r.fetch);
+    expect(http).toBe(r.fetch);
+    await http("https://example.test/");
+    expect(r.cookies).toEqual([null]);
+  });
+
+  it("does the same for a store with no account, and for no vault", async () => {
+    const r = recorder();
+    expect(sessionFetchFor(manifest({ kind: "none" }), "discovery", fakeVault([held()]), r.fetch)).toBe(r.fetch);
+    expect(sessionFetchFor(manifest(OPTIONAL), "discovery", undefined, r.fetch)).toBe(r.fetch);
   });
 });

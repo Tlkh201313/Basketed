@@ -186,10 +186,17 @@ export class TescoAdapter implements StoreAdapter {
        * `uses` names cart and slots, not discovery or detail, because those
        * two genuinely work signed out and claiming otherwise would put a
        * Connect wall in front of a search that does not need one.
+       *
+       * They are in `improves` instead, which is the honest half of the same
+       * fact: signed-out Tesco quotes national prices for no particular
+       * store, and signed in it quotes the shopper's own store, their
+       * Clubcard price and what is actually on that shelf. Better, never
+       * required.
        */
       account: {
         kind: "session",
         uses: ["cart", "slots"],
+        improves: ["discovery", "detail"],
         refresh: "browser",
         login: {
           url: "https://www.tesco.com/groceries/en-GB/",

@@ -1,6 +1,6 @@
 import type { AccountLogin, StoreAccount } from "@basketed/core";
 import type { CredentialKind } from "@basketed/vault";
-import { usesPhrase } from "@basketed/commerce";
+import { improvesPhrase, sessionIsOptional, usesPhrase } from "@basketed/commerce";
 
 /**
  * What connecting a store actually means, rendered for the panel.
@@ -20,11 +20,12 @@ import { usesPhrase } from "@basketed/commerce";
  *   - **Shopify UCP merchants** need nothing. Their agentic endpoint is
  *     anonymous; there is no account to connect and adding a login step would
  *     invent one that does not exist. (`account: none`)
- *   - **Amazon, IKEA, Target and the other scrape stores** are reached
- *     signed-out, through their own public pages. Search works without an
- *     account. Connect is not offered until an adapter actually consumes a
- *     session -- sealing cookies that nothing uses is a fake "connected"
- *     state. (`account: none`)
+ *   - **Amazon, Target, Best Buy, eBay, Etsy and IKEA** are reached through
+ *     their own public pages and search perfectly well signed out. They also
+ *     answer noticeably better signed in -- the shopper's own address, their
+ *     store's stock, their delivery estimate, and a request that is turned
+ *     away as a robot far less often -- so a session is offered and never
+ *     required. (`account: session`, `uses: []`)
  *   - **Tesco** search is public; the basket is not. Connect opens tesco.com,
  *     the human signs in there, and Basketed lifts `authorization` plus
  *     `customer-uuid` from Tesco's own `xapi.tesco.com` call (the same pair
@@ -112,15 +113,33 @@ export function authPolicyFor(store: { name: string; mode: string; account: Stor
   const account = store.account;
 
   if (account.kind === "session") {
-    const unlocks = usesPhrase(account);
     const domain = account.login.domains[0] ?? "the retailer site";
+    const how =
+      `A tab opens on ${domain}, you sign in there, and Basketed seals the session. ` +
+      `No password is typed into Basketed.`;
+
+    // A store whose session only sharpens the answer must not be described in
+    // the words of one whose trolley is locked. "Connect to use your real
+    // trolley" on Amazon would be a promise about a cart this adapter does not
+    // have; "connect for better answers" on Tesco would undersell a basket
+    // that genuinely does not exist without it.
+    if (sessionIsOptional(account)) {
+      return {
+        methods: ["session"],
+        oauth: false,
+        reach:
+          `${store.name} ${improvesPhrase(account)} work signed out. Connect to get the prices, ` +
+          `stock and delivery your own account sees — and to be turned away as a robot far less ` +
+          `often. ${how}`,
+        chromeLogin: account.login,
+      };
+    }
+
     return {
       methods: ["session"],
       oauth: false,
       reach:
-        `Search ${store.name} without an account. Connect to use your real ${unlocks}: a tab opens ` +
-        `on ${domain}, you sign in there, and Basketed seals the session. ` +
-        `No password is typed into Basketed.`,
+        `Search ${store.name} without an account. Connect to use your real ${usesPhrase(account)}: ${how}`,
       chromeLogin: account.login,
     };
   }

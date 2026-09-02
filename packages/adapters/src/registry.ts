@@ -37,12 +37,30 @@ export class StoreRegistry {
     const account = adapter.manifest.account;
     if (account.kind === "session") {
       const have = new Set(adapter.manifest.capabilities);
-      const phantom = account.uses.filter((tier) => !have.has(tier));
+      const phantom = [...account.uses, ...account.improves].filter((tier) => !have.has(tier));
       if (phantom.length) {
         throw new Error(
           `Adapter "${adapter.manifest.id}" says a session is needed for ${phantom.join(", ")}, ` +
             `but it does not implement ${phantom.length === 1 ? "that tier" : "those tiers"}. ` +
             `An account may never promise reach the adapter does not have.`,
+        );
+      }
+      /*
+       * A session has to be FOR something.
+       *
+       * `uses` empty and `improves` empty is a store that draws a Connect
+       * button, opens a retailer tab, walks a human through a sign-in and
+       * seals a credential that no code path will ever read. Nothing later
+       * can detect that: the vault holds a valid session, the panel shows a
+       * green tick, and the shopper is told they are connected to something
+       * that does not exist. It is the fake-connected state this whole
+       * account descriptor was written to make impossible, so it is refused
+       * at the only moment anybody can still fix it.
+       */
+      if (account.uses.length + account.improves.length === 0) {
+        throw new Error(
+          `Adapter "${adapter.manifest.id}" declares a session that neither gates a tier (uses) ` +
+            `nor improves one (improves). A sign-in nothing reads is a login screen for its own sake.`,
         );
       }
     }

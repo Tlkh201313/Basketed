@@ -7,6 +7,31 @@ export interface SearchOptions extends TrimOptions {
   stores?: string[];
   /** Per-store timeout. One slow store must not hold the whole response. */
   timeoutMs?: number;
+  /**
+   * The context one named store gets, when it differs from the shared one.
+   *
+   * Exists so a store the shopper has connected can be searched with their
+   * own session attached while every other store in the same fan-out stays
+   * anonymous -- see `ctxFactory`. Defaults to the shared `ctx`, which is what
+   * every caller had before and still gets by saying nothing.
+   */
+  ctxFor?: (storeId: string) => StoreContext;
+}
+
+/** One store's context, plus what makes its answers different from another's. */
+export interface StoreContext {
+  ctx: AdapterCtx;
+  /**
+   * Folded into the cache key.
+   *
+   * A signed-in search and a signed-out search of the same store for the same
+   * words are different answers -- different prices, different stock, a
+   * different delivery estimate. Sharing one cache entry between them means
+   * connecting a store appears to do nothing for five minutes, and
+   * disconnecting one keeps serving the account's own prices after the
+   * account is gone. That second one is the bad direction.
+   */
+  tag?: string;
 }
 
 export interface SearchDiagnostics {
@@ -18,8 +43,8 @@ export interface SearchDiagnostics {
 const SEARCH_CACHE = new Map<string, { products: Product[]; baseline: number; at: number }>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-function cacheKey(storeId: string, q: SearchQuery): string {
-  return `${storeId}|${q.query}|${q.maxResults ?? 8}|${q.priceMax ?? ""}`;
+function cacheKey(storeId: string, q: SearchQuery, tag = ""): string {
+  return `${storeId}|${tag}|${q.query}|${q.maxResults ?? 8}|${q.priceMax ?? ""}`;
 }
 
 /**
@@ -46,11 +71,12 @@ export async function searchAll(
 
   const settled = await Promise.allSettled(
     adapters.map(async (a) => {
-      const key = cacheKey(a.manifest.id, query);
+      const store = opts.ctxFor?.(a.manifest.id) ?? { ctx };
+      const key = cacheKey(a.manifest.id, query, store.tag);
       const cached = SEARCH_CACHE.get(key);
       const useCache = cached && Date.now() - cached.at < CACHE_TTL_MS;
       try {
-        const products = await withRetry(() => withTimeout(a.search(query, ctx), timeoutMs, a.manifest.id));
+        const products = await withRetry(() => withTimeout(a.search(query, store.ctx), timeoutMs, a.manifest.id));
         const baseline = a.lastRawBytes ?? 0;
         SEARCH_CACHE.set(key, { products, baseline, at: Date.now() });
         return { adapter: a, products, baseline };

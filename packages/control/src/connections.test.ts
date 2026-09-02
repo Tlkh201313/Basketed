@@ -11,9 +11,17 @@ import { authPolicyFor, captureComplete, methodLabel, sessionHeaderAliases } fro
  * anywhere in the mapping.
  */
 
-const SESSION: StoreAccount = {
+/**
+ * Typed as the session MEMBER, not as the whole union, so `{ ...SESSION,
+ * uses: [...] }` below still resolves to a session. Spreading a union value
+ * widens `kind` back to a string and the discriminated union stops matching.
+ */
+type SessionAccount = Extract<StoreAccount, { kind: "session" }>;
+
+const SESSION: SessionAccount = {
   kind: "session",
   uses: ["cart", "slots"],
+  improves: ["discovery", "detail"],
   refresh: "browser",
   login: {
     url: "https://www.tesco.com/groceries/en-GB/",

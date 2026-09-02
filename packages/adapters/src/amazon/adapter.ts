@@ -142,7 +142,36 @@ export class AmazonAdapter implements StoreAdapter {
       language: "en",
       categories: ["general"],
       mode: "native",
-      account: { kind: "none" },
+      /*
+       * Search is public. It is just a much worse search signed out.
+       *
+       * Amazon signed out guesses a delivery address from the exit IP and
+       * quotes the national price for it; signed in it quotes the shopper's
+       * own address, their Prime delivery date, and what their warehouse
+       * actually has. The same request is also far less likely to come back
+       * as a bot wall -- see blocked.ts, which exists because that wall is
+       * the single most common way this adapter fails.
+       *
+       * So: `improves`, never `uses`. Amazon has no cart tier here at all,
+       * and refusing a search that works perfectly well anonymously in order
+       * to advertise a nicer one would be the worst trade in the project.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail"],
+        refresh: "browser",
+        login: {
+          url: "https://www.amazon.com/",
+          loginUrl: "https://www.amazon.com/gp/sign-in.html",
+          domains: ["amazon.com"],
+          // Signature cookies, not a contract -- see AccountLoginSchema. These
+          // are the ones only a signed-in session carries; `session-id` and
+          // `ubid-main` are set for anonymous visitors too and would report
+          // everybody as logged in.
+          authCookies: ["at-main", "sess-at-main", "x-main", "sst-main"],
+        },
+      },
       capabilities: ["discovery", "detail"],
       domain: "amazon.com",
     };

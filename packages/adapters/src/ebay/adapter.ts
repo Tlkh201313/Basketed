@@ -116,7 +116,28 @@ export class EbayAdapter implements StoreAdapter {
       language: "en",
       categories: ["general", "electronics", "apparel"],
       mode: "native",
-      account: { kind: "none" },
+      /*
+       * eBay signed in is eBay with the shopper's site, currency, postage
+       * destination and saved searches applied. Signed out it is the US
+       * site with a guessed location, and it rate-limits an unrecognised
+       * client much sooner.
+       *
+       * `cart` improves for the same reason as Best Buy: the anonymous cart
+       * works and is handed off, and the signed-in one is the cart they will
+       * actually find when they get there.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail", "cart"],
+        refresh: "browser",
+        login: {
+          url: "https://www.ebay.com/",
+          loginUrl: "https://signin.ebay.com/ws/eBayISAPI.dll?SignIn",
+          domains: ["ebay.com"],
+          authCookies: ["ds1", "ds2", "ebaysid"],
+        },
+      },
       capabilities: ["discovery", "detail", "cart", "handoff"],
       domain: "ebay.com",
     };

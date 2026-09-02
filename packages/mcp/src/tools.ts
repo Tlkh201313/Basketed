@@ -2,7 +2,20 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { estimateTokens, PROVENANCE_NOTE, type Include } from "@basketed/core";
 import { parseProductId } from "@basketed/adapters";
-import { laneFor, needsAccount, searchAll, sessionState, usesPhrase, withRetry, withTimeout } from "@basketed/commerce";
+import {
+  ctxFactory,
+  hasAccount,
+  improvesPhrase,
+  laneFor,
+  needsAccount,
+  searchAll,
+  sessionFetchFor,
+  sessionIsOptional,
+  sessionState,
+  usesPhrase,
+  withRetry,
+  withTimeout,
+} from "@basketed/commerce";
 import type { Runtime } from "./runtime.js";
 
 /**
@@ -230,6 +243,15 @@ export function registerReadOnlyTools(server: McpServer, runtime: Runtime): void
           budgetTokens: args.budget_tokens,
           format: args.response_format,
           fields: args.fields,
+          // Each store is searched with its own session, where the shopper has
+          // connected one and the adapter says it makes the answer better.
+          // Everything else in the same fan-out stays anonymous.
+          ctxFor: ctxFactory(
+            runtime.registry,
+            { ...runtime.ctx, country: args.country, currency: args.currency },
+            runtime.vault,
+            "discovery",
+          ),
         },
       );
 
@@ -301,9 +323,15 @@ export function registerReadOnlyTools(server: McpServer, runtime: Runtime): void
       }
 
       const include: Include[] = (args.include as Include[] | undefined) ?? ["description", "stock"];
+      // Same session the search used, for the same reason: a product page read
+      // signed in is the shopper's own price, stock and delivery estimate.
+      const detailCtx = {
+        ...runtime.ctx,
+        http: sessionFetchFor(adapter.manifest, "detail", runtime.vault, runtime.ctx.http, runtime.ctx.log),
+      };
       try {
         const detail = await withRetry(
-          () => withTimeout(adapter.detail(args.id, include, runtime.ctx), DETAIL_TIMEOUT_MS, parsed.store),
+          () => withTimeout(adapter.detail(args.id, include, detailCtx), DETAIL_TIMEOUT_MS, parsed.store),
           { attempts: 3, baseDelayMs: 300 },
         );
         runtime.ledger.record(
@@ -373,8 +401,14 @@ export function registerAuthTools(server: McpServer, runtime: Runtime): void {
               expired: z.boolean(),
               broken: z.boolean(),
               cart: z.boolean(),
-              /** True when ANY tier of this store is behind a sign-in. */
+              /** True when a tier of this store is BLOCKED without a sign-in. */
               needs_account: z.boolean(),
+              /**
+               * True when there is an account to connect at all, gated or not.
+               * `has_account && !needs_account` is a store that works signed
+               * out and answers better signed in -- never a reason to refuse.
+               */
+              has_account: z.boolean(),
               /** "fetch" | "connected" | "unconnected" -- the panel's shelves. */
               lane: z.string(),
               /** "none" | "live" | "expired" | "broken". */
@@ -407,6 +441,18 @@ export function registerAuthTools(server: McpServer, runtime: Runtime): void {
           const state = sessionState(c);
           const lane = laneFor(s.account, c);
           const unlocks = usesPhrase(s.account);
+          const sharpens = improvesPhrase(s.account);
+          /*
+           * Two different sentences, because they lead to two different
+           * decisions by whoever is reading them.
+           *
+           * A gated store that is unconnected means STOP -- do not offer the
+           * trolley, tell the human to connect. An improved store that is
+           * unconnected means CARRY ON, and mention the upgrade if it is
+           * relevant. Wording both as "connect this store" taught agents to
+           * treat a working shop as a blocked one and refuse searches nobody
+           * needed to refuse.
+           */
           let action = "No account needed for search.";
           if (needs && state === "live") action = `${s.name} ${unlocks} ready.`;
           else if (needs && state === "expired")
@@ -414,6 +460,12 @@ export function registerAuthTools(server: McpServer, runtime: Runtime): void {
           else if (needs && state === "broken")
             action = `${s.name} credential cannot be read. Reconnect ${s.name} in the Basketed panel.`;
           else if (needs) action = `Connect ${s.name} in the Basketed panel to use the ${unlocks}.`;
+          else if (sessionIsOptional(s.account) && state === "live")
+            action = `${s.name} ${sharpens} are answering with your own account.`;
+          else if (sessionIsOptional(s.account))
+            action =
+              `${s.name} works signed out. Connecting it in the Basketed panel makes ${sharpens} ` +
+              `show the prices, stock and delivery your account sees. Nothing is blocked without it.`;
           return {
             id: s.id,
             name: s.name,
@@ -422,6 +474,7 @@ export function registerAuthTools(server: McpServer, runtime: Runtime): void {
             broken,
             cart,
             needs_account: needs,
+            has_account: hasAccount(s.account),
             lane,
             state,
             status: s.status,

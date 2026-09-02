@@ -123,7 +123,27 @@ export class IkeaAdapter implements StoreAdapter {
       language: "en",
       categories: ["furniture"],
       mode: "native",
-      account: { kind: "none" },
+      /*
+       * IKEA is store-scoped to the point of being a different shop per
+       * building: price, stock and whether a thing exists in your market all
+       * follow the store on the account. Signed out the adapter reads
+       * whichever market the URL implies and reports its stock as fact.
+       *
+       * No cart tier here, so nothing is gated -- connecting only makes the
+       * numbers the shopper's own.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail"],
+        refresh: "browser",
+        login: {
+          url: "https://www.ikea.com/us/en/",
+          loginUrl: "https://www.ikea.com/us/en/profile/login/",
+          domains: ["ikea.com"],
+          authCookies: ["idp_token", "ikeaUserId"],
+        },
+      },
       capabilities: ["discovery", "detail"],
       domain: "ikea.com",
     };

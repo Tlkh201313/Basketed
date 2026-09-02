@@ -58,9 +58,36 @@ export type AccountLogin = z.infer<typeof AccountLoginSchema>;
  *     would show a "connected" badge that means nothing.
  *   - `demo` -- a simulated store. There is a fake account handle so the
  *     purchase rail can be exercised, and it is never a real credential.
- *   - `session` -- some named tiers need a signed-in session. `uses` says
- *     which ones, and the registry refuses a store that names a tier it does
- *     not implement, so this can never claim more reach than the adapter has.
+ *   - `session` -- a signed-in session is worth having here. `uses` and
+ *     `improves` say what for, and the registry refuses a store that names a
+ *     tier it does not implement, so this can never claim more reach than the
+ *     adapter has.
+ *
+ * ## uses vs improves, and why the difference is load-bearing
+ *
+ * `uses` is a gate: the tier does not work at all without a session. Tesco's
+ * trolley is the whole of it -- there is no anonymous Tesco basket, so asking
+ * for one signed out can only produce a plausible-looking wrong answer.
+ *
+ * `improves` is not a gate. The tier works signed out, and works BETTER
+ * signed in. Amazon signed out quotes a national price for an address it
+ * guessed and serves a bot wall to anything that reads like a robot; the same
+ * request carrying the shopper's own session gets their delivery estimate,
+ * their store's stock, and gets refused far less often. That is worth
+ * connecting for, and it is emphatically not worth refusing search over.
+ *
+ * Collapsing the two -- the shape this schema had until S22 -- forces a choice
+ * between two wrong products: either Amazon search demands a login before it
+ * will do the one thing it does perfectly well without one, or the panel says
+ * "no account needed" for a store where connecting an account measurably
+ * changes the answer, and offers no way to do it. Both were shipped, in that
+ * order. Keeping them apart is what lets Connect appear on a store whose
+ * search never stops working.
+ *
+ * At least one of the two must be non-empty -- a session that unlocks nothing
+ * and improves nothing is a login screen for its own sake -- and that is
+ * checked in `registry.register()` alongside the tier check it belongs with,
+ * rather than here, so both failures read as one message about one store.
  *
  * `refresh: "browser"` is the only renewal there is: the human signs in again
  * on the retailer's own page. No retailer here publishes a consumer OAuth
@@ -71,7 +98,10 @@ export const StoreAccountSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("demo") }),
   z.object({
     kind: z.literal("session"),
-    uses: z.array(CapabilityTierSchema).min(1),
+    /** Tiers that DO NOT WORK without a session. Refused when none is held. */
+    uses: z.array(CapabilityTierSchema),
+    /** Tiers that work signed out and answer better signed in. Never gated. */
+    improves: z.array(CapabilityTierSchema),
     login: AccountLoginSchema,
     refresh: z.literal("browser"),
   }),
