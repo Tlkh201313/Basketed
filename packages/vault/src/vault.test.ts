@@ -124,8 +124,65 @@ describe("authorizedFetch — the trust boundary an adapter cannot cross", () =>
       sentAuth = new Headers(init?.headers).get("authorization");
       return new Response("{}");
     };
-    await authorizedFetch(vault, "sim:tesco", base)("https://example.com/x");
+    await authorizedFetch(vault, "sim:tesco", base, { allowedDomain: "tesco.com" })("https://www.tesco.com/x");
     expect(sentAuth).toBe("Bearer the-bearer-token-value");
+  });
+
+  it("reaches a subdomain of the store, because that is where the real basket lives", async () => {
+    const db = new DatabaseSync(":memory:");
+    const vault = openVault(db, { keyPath: tmpKeyPath() });
+    vault.connect({ storeId: "tsc:tesco", kind: "token", secret: "the-bearer-token-value" });
+
+    let sentAuth: string | null = null;
+    const base: typeof fetch = async (_input, init) => {
+      sentAuth = new Headers(init?.headers).get("authorization");
+      return new Response("{}");
+    };
+    // Tesco's authenticated GraphQL basket is on xapi.tesco.com while the
+    // manifest declares the apex. Exact-equality matching would break checkout.
+    await authorizedFetch(vault, "tsc:tesco", base, { allowedDomain: "tesco.com" })("https://xapi.tesco.com/");
+    expect(sentAuth).toBe("Bearer the-bearer-token-value");
+  });
+
+  it("withholds the credential from a host that is not the store's, and says so", async () => {
+    const db = new DatabaseSync(":memory:");
+    const vault = openVault(db, { keyPath: tmpKeyPath() });
+    vault.connect({ storeId: "sim:tesco", kind: "token", secret: "the-bearer-token-value" });
+
+    let sawHeaders: Headers | null = null;
+    const refused: string[] = [];
+    const base: typeof fetch = async (_input, init) => {
+      sawHeaders = new Headers(init?.headers);
+      return new Response("{}");
+    };
+    const http = authorizedFetch(vault, "sim:tesco", base, {
+      allowedDomain: "tesco.com",
+      onRefuse: (url) => refused.push(url),
+    });
+
+    // A lookalike registrable domain must not pass as a subdomain.
+    await http("https://nottesco.com/x");
+    expect(sawHeaders!.get("authorization")).toBeNull();
+    // Nor may an http:// downgrade on the right host.
+    await http("http://www.tesco.com/x");
+    expect(sawHeaders!.get("authorization")).toBeNull();
+    expect(refused).toEqual(["https://nottesco.com/x", "http://www.tesco.com/x"]);
+  });
+
+  it("attaches nothing when the store declares no domain, so a simulated store's real cookies stay put", async () => {
+    const db = new DatabaseSync(":memory:");
+    const vault = openVault(db, { keyPath: tmpKeyPath() });
+    vault.connect({ storeId: "sim:amazon", kind: "cookie", secret: "at-main=a-real-captured-session" });
+
+    let sawHeaders: Headers | null = null;
+    const base: typeof fetch = async (_input, init) => {
+      sawHeaders = new Headers(init?.headers);
+      return new Response("{}");
+    };
+    // Every sim:* store leaves manifest.domain undefined, and those are exactly
+    // the stores the Connect flow harvests live retailer cookies into.
+    await authorizedFetch(vault, "sim:amazon", base, { allowedDomain: undefined })("https://www.amazon.com/x");
+    expect(sawHeaders!.get("cookie")).toBeNull();
   });
 
   it("attaches a cookie for a cookie connection", async () => {
@@ -138,7 +195,7 @@ describe("authorizedFetch — the trust boundary an adapter cannot cross", () =>
       sentCookie = new Headers(init?.headers).get("cookie");
       return new Response("{}");
     };
-    await authorizedFetch(vault, "sim:tesco", base)("https://example.com/x");
+    await authorizedFetch(vault, "sim:tesco", base, { allowedDomain: "tesco.com" })("https://www.tesco.com/x");
     expect(sentCookie).toBe("session=abc123xyz789");
   });
 

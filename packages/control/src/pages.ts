@@ -1,4 +1,5 @@
 import { CLIENTS, PRIMARY_CLIENTS, pathFor, snippetFor, type SnippetInput } from "./clients.js";
+import { panelBase } from "./base.js";
 import { STYLE } from "./style.js";
 import { SCRIPT } from "./script.js";
 import { authPolicyFor, methodLabel, type ConnectMethod, type StoreAuthPolicy } from "./connections.js";
@@ -37,10 +38,10 @@ type Page = "home" | "connections" | "approvals";
  * screen, and those are the two things on this panel that genuinely need to
  * catch an eye.
  */
-function markup(link: boolean): string {
+function markup(link: string | null): string {
   const inner = `<span class="glyph" aria-hidden="true">b</span><span>basketed</span><span class="chip">local</span>`;
-  return link
-    ? `<a class="mark" href="/">${inner}</a>`
+  return link !== null
+    ? `<a class="mark" href="${link}/">${inner}</a>`
     : `<span class="mark">${inner}</span>`;
 }
 
@@ -72,6 +73,9 @@ function shell(
   bar = "",
   sheet = active === "home" ? "install" : active === "approvals" ? "appr" : "stores",
 ): string {
+  // Every in-panel link is prefixed so that navigation after the first load
+  // rides the path-scoped cookie instead of needing `?t=` in every href.
+  const base = panelBase(token);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -90,11 +94,11 @@ function shell(
 <body>
 <div class="app">
   <aside class="rail">
-    ${markup(true)}
+    ${markup(base)}
     <nav>
-      ${navItem("/", "Install", "home", active === "home")}
-      ${navItem("/connections", "Connect stores", "plug", active === "connections")}
-      ${navItem("/approvals", "Approvals", "check", active === "approvals")}
+      ${navItem(`${base}/`, "Install", "home", active === "home")}
+      ${navItem(`${base}/connections`, "Connect stores", "plug", active === "connections")}
+      ${navItem(`${base}/approvals`, "Approvals", "check", active === "approvals")}
     </nav>
     <div class="foot">
       <div class="themeseg" role="group" aria-label="Theme">
@@ -150,7 +154,7 @@ export function renderLocked(): string {
 </head>
 <body>
 <div class="app">
-<aside class="rail">${markup(false)}</aside>
+<aside class="rail">${markup(null)}</aside>
 <div class="pane">
 <main class="sheet lock">
 <span class="pill neutral">locked</span>
@@ -501,24 +505,23 @@ function twinsByBrand(stores: StoreRow[]): Map<string, StoreRow> {
  * means no popup blocker ever eats it, which a scripted open after an
  * `await` reliably would.
  *
- * The `data-` attributes are what the extension needs to read that session
- * back: which domains to look in, which cookie names mean "signed in", and
- * (Tesco only) which API's `Authorization` header is the real credential.
- * All of it is public policy from connections.ts — none of it is a secret.
+ * The `data-` attributes carry an identity and a destination, and nothing
+ * more. They used to carry the cookie policy too — which domains to open,
+ * which names mean "signed in" — but a page is the wrong place to state that:
+ * the extension now asks the panel it is pinned to instead, so no markup here
+ * can widen what gets read.
  */
 function connectAnchor(store: StoreRow, policy: StoreAuthPolicy, label: string, cls: string): string {
   const login = policy.chromeLogin;
   if (!login) return "";
   return `<a class="${cls}" href="${esc(login.url)}" target="_blank" rel="noopener noreferrer"
      data-connect-open data-store="${esc(store.id)}" data-name="${esc(store.name)}"
-     data-domains="${esc(JSON.stringify(login.domains))}"
-     data-auth-cookies="${esc(JSON.stringify(login.authCookies))}"
-     data-bearer="${esc(login.bearer ?? "")}"
      data-login-url="${esc(login.loginUrl)}">${esc(label)}</a>`;
 }
 
 export function renderConnections(input: ConnectionsInput): string {
   const twin = twinsByBrand(input.stores);
+  const base = panelBase(input.token);
 
   const card = (s: StoreRow) => {
     const policy = authPolicyFor(s);
@@ -529,7 +532,7 @@ export function renderConnections(input: ConnectionsInput): string {
   <div class="head">
     <span class="tile" aria-hidden="true">${esc(monogram(s.name))}</span>
     <div style="min-width:0">
-      <div class="name"><a href="/connections/${encodeURIComponent(s.id)}">${esc(s.name)}</a></div>
+      <div class="name"><a href="${base}/connections/${encodeURIComponent(s.id)}">${esc(s.name)}</a></div>
       <div class="where">${esc(s.id)}${s.country ? ` · ${esc(s.country)}` : ""}</div>
     </div>
     <span class="pill ${live ? "ok" : "sim"}" style="margin-left:auto">${esc(modeLabel(s.mode))}</span>
@@ -539,8 +542,8 @@ export function renderConnections(input: ConnectionsInput): string {
     other
       ? `<p class="twin">${
           live
-            ? `Also listed as <a href="/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>, the demo copy the offline drill runs on. This is the live one.`
-            : `The real ${esc(s.name)} is <a href="/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>. This row is demo data, kept so the demo works with the wifi off.`
+            ? `Also listed as <a href="${base}/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>, the demo copy the offline drill runs on. This is the live one.`
+            : `The real ${esc(s.name)} is <a href="${base}/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>. This row is demo data, kept so the demo works with the wifi off.`
         }</p>`
       : ""
   }
@@ -676,7 +679,9 @@ export function renderConnect(input: ConnectInput): string {
         Chrome 136</a> that is blocked on purpose, and it is a good rule. The way in is from the
         inside: load <span class="num">packages/extension</span> once at
         <span class="num">chrome://extensions</span> &rarr; Developer mode &rarr; Load unpacked, and
-        the connection completes by itself in this browser. Without it, use the window below instead.
+        the connection completes by itself in this browser. It answers one address only, pinned to
+        <span class="num">http://127.0.0.1:8787</span> &mdash; if this panel is on another port, paste
+        this page's origin into the extension's options once. Without it, use the window below instead.
       </p>
       <div class="row" style="margin-top:12px">
         <button class="btn sm" type="button" data-chrome-start>Sign in in a Basketed window</button>
@@ -725,7 +730,7 @@ export function renderConnect(input: ConnectInput): string {
     `Connect ${input.store.name}`,
     "connections",
     `
-<p class="small" style="margin:0 0 14px"><a href="/connections">&larr; All stores</a></p>
+<p class="small" style="margin:0 0 14px"><a href="${panelBase(input.token)}/connections">&larr; All stores</a></p>
 <div class="row" style="margin-bottom:14px">
   <span class="tile" aria-hidden="true">${esc(monogram(input.store.name))}</span>
   <span class="pill ${input.store.mode === "native" ? "ok" : "sim"}">${esc(modeLabel(input.store.mode))}</span>

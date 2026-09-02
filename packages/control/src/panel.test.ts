@@ -18,6 +18,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPanelHandler } from "./index.js";
+import { panelBase } from "./base.js";
 import { authPolicyFor } from "./connections.js";
 import { resetHandoff } from "./handoff.js";
 import type { ControlDeps } from "./types.js";
@@ -251,6 +252,33 @@ describe("the panel's own requests still work", () => {
     const html = await page.text();
     expect(page.status).toBe(200);
     expect(html).toContain(TOKEN);
+  });
+
+  /*
+   * Cookies are not port-isolated (RFC 6265 s8.5): to the browser,
+   * 127.0.0.1:9999 is the same host as 127.0.0.1:8787, so a cookie on Path=/
+   * is handed to every other local server this browser touches. That is not a
+   * metadata leak -- this token approves purchases, because the approval
+   * card's only evidence is the total and /api/approvals serves it. Path is
+   * the one attribute a browser enforces per request, so the pages live under
+   * a prefix derived from the token and the cookie is scoped to that.
+   */
+  it("the panel cookie cannot be read by another port on this machine", async () => {
+    const page = await raw(`/approvals?t=${TOKEN}`);
+    const cookie = page.headers.get("set-cookie") ?? "";
+    expect(cookie).toContain("basketed_panel=");
+
+    const path = /Path=([^;]+)/.exec(cookie)?.[1] ?? "";
+    expect(path, "a cookie on Path=/ reaches every other local port").not.toBe("/");
+    // Derived from the token, so it inherits the token's per-process life.
+    expect(path).toBe(panelBase(TOKEN));
+
+    // And the pages really are served there, with internal links that stay
+    // inside the prefix -- a relative link out of it would drop the cookie on
+    // the first click and put the token back in the query string.
+    const scoped = await raw(`${path}/approvals?t=${TOKEN}`);
+    expect(scoped.status).toBe(200);
+    expect(await scoped.text()).toContain(`href="${path}/approvals"`);
   });
 });
 
@@ -665,9 +693,25 @@ describe("connecting in the user's own browser (S20)", () => {
    */
   it("the extension's proof-of-panel check is the same token gate as everything else", async () => {
     expect((await raw("/api/extension/verify")).status).toBe(401);
-    const ok = await panel("/api/extension/verify");
-    expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual({ ok: true, panel: "basketed" });
+    const idle = await panel("/api/extension/verify");
+    expect(idle.status).toBe(200);
+    // Nothing in flight: no store is named, so there is no jar to open.
+    expect(await idle.json()).toEqual({ ok: true, panel: "basketed", pending: [] });
+
+    /*
+     * And this is where the extension learns WHICH domains to read: from the
+     * server's own pending note, never from the page that asked. A page
+     * holding the token still does not get to name the jar it wants opened --
+     * "read cookies for X" is a policy decision, and the note is also proof
+     * that Connect was pressed on this store minutes ago.
+     */
+    await panel("/api/connections/sim%3Aamazon/browser-connect", { method: "POST" });
+    const live = (await (await panel("/api/extension/verify")).json()) as {
+      pending: { store_id: string; domains: string[] }[];
+    };
+    expect(live.pending).toHaveLength(1);
+    expect(live.pending[0]?.store_id).toBe("sim:amazon");
+    expect(live.pending[0]?.domains).toContain("amazon.com");
   });
 
   /*

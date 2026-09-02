@@ -271,11 +271,64 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
  * header would send the user's retailer password to whatever host the adapter
  * happened to name. They are held for a login step that must be written per
  * retailer, and until one exists this returns plain fetch.
+ *
+ * "Whatever host the adapter happened to name" was the right worry, and it was
+ * only ever answered for `password`. A `token` or `cookie` credential is just
+ * as sendable and just as valuable, so `allowedDomain` answers it for those
+ * too: the adapter still names any URL it likes, and this decides whether that
+ * URL is the store's own before anything is attached.
  */
-export function authorizedFetch(vault: Vault, storeId: string, base: typeof fetch = fetch): typeof fetch {
+export interface AuthorizedFetchOptions {
+  /**
+   * The store's registrable domain, e.g. `tesco.com`. Matched as a suffix, not
+   * as an equality: Tesco's authenticated basket calls go to `xapi.tesco.com`
+   * and its search to `search.api.tesco.com`, while the manifest names the
+   * apex. Absent means "no domain is known for this store", which attaches
+   * nothing at all -- the simulated stores are exactly that case, and they hold
+   * real captured retailer cookies while making no network calls.
+   */
+  allowedDomain?: string | undefined;
+  /** Called with the refused URL. Attaching nothing is silent otherwise. */
+  onRefuse?: ((url: string) => void) | undefined;
+}
+
+/** `tesco.com` covers `tesco.com` and `xapi.tesco.com`, never `nottesco.com`. */
+function sameSite(host: string, domain: string): boolean {
+  const h = host.toLowerCase();
+  const d = domain.toLowerCase();
+  return h === d || h.endsWith(`.${d}`);
+}
+
+export function authorizedFetch(
+  vault: Vault,
+  storeId: string,
+  base: typeof fetch = fetch,
+  opts: AuthorizedFetchOptions = {},
+): typeof fetch {
   return async (input, init) => {
     const cred = vault.reveal(storeId);
     if (!cred) return base(input, init);
+
+    // Refusing is deliberately soft: the request still goes out, just without
+    // the credential, so an unanticipated subdomain degrades to a retailer-side
+    // failure instead of a hard adapter crash. Same shape as `password` below.
+    const target = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+    let host: string;
+    let scheme: string;
+    try {
+      const parsed = new URL(target);
+      host = parsed.hostname;
+      scheme = parsed.protocol;
+    } catch {
+      opts.onRefuse?.(target);
+      return base(input, init);
+    }
+    // https only: a credential put on the wire in clear is a credential given
+    // away, and no retailer this talks to is served over http.
+    if (scheme !== "https:" || !opts.allowedDomain || !sameSite(host, opts.allowedDomain)) {
+      opts.onRefuse?.(target);
+      return base(input, init);
+    }
 
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     if (cred.kind === "token") headers.set("authorization", `Bearer ${cred.secret}`);

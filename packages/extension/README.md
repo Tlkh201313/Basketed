@@ -9,8 +9,15 @@ accounts you are already signed into.
 2. Turn on **Developer mode** (top right)
 3. **Load unpacked** → pick this folder (`packages/extension`)
 
-That is the whole install. The Connect page will say `extension detected`
-instead of offering the fallback window.
+That is the whole install for the usual case. The extension is pinned to
+`http://127.0.0.1:8787` — the address `basketed serve` prefers — and answers
+nothing else. If your panel printed a different port, open **Details →
+Extension options** and paste that origin once; it is remembered across
+restarts. The panel's token is never stored, so there is nothing to re-paste
+after a restart.
+
+The Connect page will then say `extension detected` instead of offering the
+fallback window.
 
 Works in any Chromium browser with `chrome://extensions`: Chrome, Edge, Brave,
 Arc, Opera.
@@ -44,16 +51,22 @@ install. That is this extension.
 
 ## What it will not do
 
-- **It talks to `127.0.0.1` and nothing else.** There is no remote endpoint in
-  this code. Read `background.js` — it is 120 lines.
-- **It stores nothing.** No `chrome.storage`, no cache. Every value it reads
-  goes to the panel that asked and is gone when the handler returns.
-- **It will not answer a page that cannot prove it is the panel.** The content
-  script runs on every `127.0.0.1` page, and localhost is shared ground — any
-  local page could otherwise ask for your retailer cookies. Before reading a
-  single cookie, the service worker checks the caller's panel token against
-  the panel itself (`GET /api/extension/verify`), at the origin the *content
-  script* reports, never one the page supplied.
+- **It talks to the one pinned local origin and nothing else.** There is no
+  remote endpoint in this code. Read `background.js` — it is under 200 lines.
+- **It stores one value: that origin.** Nothing else is kept — no token, no
+  cache. Every cookie it reads goes to the panel that asked and is gone when
+  the handler returns.
+- **It will not answer a page that cannot prove it is the panel**, and "prove"
+  does not mean "say so". The content script runs on every `127.0.0.1` page,
+  and localhost is shared ground — ports are not a cookie boundary, so any
+  other local page could otherwise ask for your retailer cookies. Two things
+  must hold before a single cookie is read: Chrome itself reports the asking
+  tab's origin as the pinned one (page script cannot forge that), and the
+  token it supplied checks out against **the pinned panel**
+  (`GET /api/extension/verify`) rather than against whoever is asking.
+- **It will not open a jar the page named.** Which domains to read is taken
+  from the pinned panel's own pending sign-in note — which also proves you
+  pressed Connect on that store minutes ago. No note, nothing read.
 - **It never sees a password.** You sign in on the retailer's own page, and
   the extension only ever looks at what that produced.
 
