@@ -28,7 +28,7 @@ import {
 import type { Runtime } from "@basketed/mcp";
 import { findRoot } from "./root.js";
 import { installClient, resolveTargets, expandPath } from "./install.js";
-import { claimPanel, releasePanel, readPanel } from "./panel-file.js";
+import { claimPanel, releasePanel, readPanel, type LivePanel } from "./panel-file.js";
 import {
   listenSomewhere,
   describePort,
@@ -75,8 +75,12 @@ only on this console -- the same surface the 6-digit code goes to.
 
 On stdio the panel opens in your browser when the server starts, because a
 client swallows this console and nobody would ever see the link. On http it
-opens only with --open, because you are looking at the console already. One tab
-per process either way, and --no-open stops it.
+opens only with --open, because you are looking at the console already.
+
+One tab per MACHINE, not per server: start Basketed in three editors and the
+second and third find the first panel and use it instead of opening their own.
+They share one database, so its approval queue is already theirs. --no-open
+stops even the first.
 
 Environment:
   BASKETED_PANEL_PORT=n  preferred panel port on stdio (default 8788, falls back to any)
@@ -139,28 +143,90 @@ interface PanelHandle {
  * Either way it is one tab per process. After that the panel polls every five
  * seconds, so an approval that arrives later appears in the tab that is already
  * open rather than spawning another one. `--no-open` turns all of it off.
+ *
+ * ## One tab per MACHINE, not per process (S22)
+ *
+ * "One tab per process" was the whole bug. Three editors with Basketed
+ * installed is three stdio servers, which was three panels on three ports and
+ * three browser windows the moment they all started -- and none of them was
+ * more correct than the others, so a human had three tabs and no idea which to
+ * keep. Opening a window nobody asked for is bad enough once.
+ *
+ * They do not need to be three. Every one of these processes reads the same
+ * SQLite file and runs as the same principal, so the approval queue in ONE
+ * panel is already the queue for all of them: an approval raised in the third
+ * server shows up in the first server's open tab within one poll. So when
+ * another live panel already holds the handoff record, this process opens
+ * nothing and points every link it prints at that panel instead.
+ *
+ * It still SERVES its own panel. Binding a port costs nothing (the listener is
+ * unreffed either way), and it means the incumbent exiting -- an editor
+ * closing -- leaves the others with a working panel of their own rather than a
+ * link to a dead port. `live()` is re-read at summon time, not cached at
+ * startup, so that fallback happens on its own.
  */
-function attachPanel(
-  runtime: Runtime,
-  panel: PanelHandle,
-  opts: { mayOpen: boolean; openAtStartup: boolean },
-): void {
+export interface AttachPanelOptions {
+  mayOpen: boolean;
+  openAtStartup: boolean;
+  /** Re-read at summon time, never cached: the incumbent's editor may close. */
+  live?: () => LivePanel | null;
+  /** Injected so a test can see what would have been opened, and open nothing. */
+  open?: (url: string) => void;
+  /** Injected for the same reason: `live()`'s pid is compared against it. */
+  pid?: number;
+  write?: (line: string) => void;
+}
+
+export function attachPanel(runtime: Runtime, panel: PanelHandle, opts: AttachPanelOptions): void {
   if (!runtime.purchase) return;
   const mayOpen = opts.mayOpen;
+  const open = opts.open ?? openBrowser;
+  const self = opts.pid ?? process.pid;
+  const write = opts.write ?? ((line: string) => void process.stderr.write(line));
   let opened = false;
 
-  if (mayOpen && opts.openAtStartup) {
+  /** The panel a human is already looking at, if it is not this one. */
+  const incumbent = (): LivePanel | null => {
+    const held = opts.live?.() ?? null;
+    return held && held.pid !== self ? held : null;
+  };
+
+  const first = incumbent();
+  if (first) {
+    write(
+      `[basketed] a Basketed panel is already open at ${first.origin} (pid ${first.pid}).\n` +
+        `[basketed] Using it rather than opening a second one — same database, same approvals.\n`,
+    );
+  } else if (mayOpen && opts.openAtStartup) {
     opened = true;
-    openBrowser(panel.url("/"));
+    open(panel.url("/"));
   }
 
-  runtime.purchase.panelBase = panel.origin;
+  /*
+   * A getter, not a value.
+   *
+   * `approve_url` is built when a cart is prepared, which can be an hour after
+   * this runs. Freezing the incumbent's origin here would keep handing out a
+   * link to a panel whose editor has since been closed.
+   */
+  Object.defineProperty(runtime.purchase, "panelBase", {
+    configurable: true,
+    enumerable: true,
+    get: () => incumbent()?.origin ?? panel.origin,
+  });
+
   runtime.purchase.summon = (approvalId) => {
-    const link = panel.url(`/approvals/${approvalId}`);
-    process.stderr.write(`[basketed] approve here    ${link}\n`);
-    if (!mayOpen || opened) return;
+    const shared = incumbent();
+    // No token on a shared link: this process does not have the other panel's,
+    // and deliberately cannot get it -- see panel-file.ts. It does not need
+    // one. The tab that panel opened holds its cookie, so the link authenticates
+    // in the browser the human is already using, and their open tab would have
+    // polled this approval into view anyway.
+    const link = shared ? `${shared.origin}/approvals/${approvalId}` : panel.url(`/approvals/${approvalId}`);
+    write(`[basketed] approve here    ${link}\n`);
+    if (shared || !mayOpen || opened) return;
     opened = true;
-    openBrowser(link);
+    open(link);
   };
 }
 
@@ -529,7 +595,10 @@ async function startStdioPanel(runtime: Runtime, root: string, mayOpen: boolean)
       for (const socket of sockets) socket.destroy();
     },
   };
-  attachPanel(runtime, panel, { mayOpen, openAtStartup: true });
+  // `readPanel` and not the claim result: the question "is someone already
+  // looking at a panel" has to be asked again later, and it has a different
+  // answer once the incumbent's editor is closed.
+  attachPanel(runtime, panel, { mayOpen, openAtStartup: true, live: () => readPanel() });
   return panel;
 }
 

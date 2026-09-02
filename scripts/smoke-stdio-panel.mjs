@@ -38,6 +38,10 @@ const child = spawn(process.execPath, [resolve(ROOT, "packages/cli/bin.js"), "se
     ...process.env,
     BASKETED_DB: join(DB_DIR, "stdio.db"),
     BASKETED_NO_OPEN: "1",
+    // Its own handoff record, for the reason smoke-shared-panel.mjs exists:
+    // a second server points its links at the panel that is already open,
+    // so this one has to be the only panel in its own directory.
+    BASKETED_STATE_DIR: DB_DIR,
     // Deliberately a port nothing else in the suite uses, so a busy 8787 on
     // the developer's machine cannot make this look like a code failure.
     BASKETED_PANEL_PORT: "8796",

@@ -42,8 +42,16 @@ export interface LivePanel {
   mode: "http" | "stdio-panel";
 }
 
+/**
+ * The directory the handoff record lives in.
+ *
+ * `BASKETED_STATE_DIR` is honoured for the same reason every other piece of
+ * Basketed state honours it: a smoke that starts three real servers has to be
+ * able to watch them agree on one panel WITHOUT touching the record of the
+ * panel the developer running it has open.
+ */
 export function panelDir(): string {
-  return resolve(homedir(), ".basketed");
+  return process.env["BASKETED_STATE_DIR"] ?? resolve(homedir(), ".basketed");
 }
 
 function fileIn(dir: string): string {
