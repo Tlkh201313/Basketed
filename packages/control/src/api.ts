@@ -13,7 +13,7 @@ import {
 import type { CredentialKind } from "@basketed/vault";
 import { authPolicyFor } from "./connections.js";
 import { startLogin, captureLogin, cancelLogin, stateOf, statusOf } from "./browser-connect.js";
-import { openConnect, pendingFor, closeConnect, finish, statusFor } from "./handoff.js";
+import { openConnect, pendingFor, listPending, closeConnect, finish, statusFor } from "./handoff.js";
 import type { ControlDeps } from "./types.js";
 
 /**
@@ -320,7 +320,30 @@ export async function handleApi(
    * gate as everything else in this file; answering at all is the answer.
    */
   if (method === "GET" && path === "/api/extension/verify") {
-    return { status: 200, body: { ok: true, panel: "basketed" } };
+    /*
+     * The reply also carries what the extension is allowed to read, because
+     * the alternative is letting the PAGE say. A page that has the token is
+     * the panel, but "which domains may I open the cookie jar for" is a
+     * decision that belongs to the server's own policy table either way --
+     * and routing it through the pending note means the extension will only
+     * ever read cookies for a store the user just pressed Connect on.
+     *
+     * None of this is secret: it is `connections.ts` policy, already rendered
+     * into the Connect page as data- attributes.
+     */
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        panel: "basketed",
+        pending: listPending().map((p) => ({
+          store_id: p.storeId,
+          domains: p.domains,
+          auth_cookies: p.authCookies,
+          bearer_match: p.bearerMatch,
+        })),
+      },
+    };
   }
 
   /*

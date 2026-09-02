@@ -425,7 +425,9 @@ function extensionPresent() {
  * One round trip to the extension. The token goes with it because the
  * extension refuses to read a cookie for a local page that cannot prove it is
  * the panel -- localhost is shared ground, and "a page on 127.0.0.1" is not
- * an identity.
+ * an identity. Note which way that check runs: the extension validates this
+ * token against the panel origin ITS OWN settings name, not against whatever
+ * origin the asking page happens to be served from.
  */
 function askExtension(cfg) {
   return new Promise((resolve) => {
@@ -446,21 +448,22 @@ function askExtension(cfg) {
       type: "capture",
       id: id,
       token: TOKEN,
-      domains: cfg.domains,
-      authCookies: cfg.authCookies,
-      bearerMatch: cfg.bearerMatch,
+      // Which store, not which domains. The extension resolves the domains
+      // from the server's own pending note, so this page cannot widen them.
+      storeId: cfg.storeId,
     }, window.location.origin);
   });
 }
 
+/*
+ * Deliberately just an identity and a link. The cookie policy that used to
+ * live here in data- attributes moved to the server's pending note, because
+ * anything this page can state is something a page can misstate.
+ */
 function connectConfig(el) {
-  function parse(raw) { try { return JSON.parse(raw || "[]"); } catch (err) { return []; } }
   return {
     storeId: el.dataset.store,
     name: el.dataset.name || el.dataset.store,
-    domains: parse(el.dataset.domains),
-    authCookies: parse(el.dataset.authCookies),
-    bearerMatch: el.dataset.bearer || "",
     loginUrl: el.dataset.loginUrl || "",
   };
 }

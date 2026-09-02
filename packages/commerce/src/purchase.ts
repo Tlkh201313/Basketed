@@ -205,7 +205,23 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
 
   // Vault-wrapped only for THIS store's id -- a store with no stored
   // credential gets deps.ctx.http back unchanged (authorizedFetch no-ops).
-  const cartCtx = deps.vault ? { ...deps.ctx, http: authorizedFetch(deps.vault, storeId, deps.ctx.http) } : deps.ctx;
+  //
+  // The manifest's own domain is the leash: the credential is attached only to
+  // requests aimed at the store it belongs to. A store with no declared domain
+  // (every simulated one) attaches nothing, which is correct -- those hold real
+  // captured cookies and make no network calls.
+  const cartCtx = deps.vault
+    ? {
+        ...deps.ctx,
+        http: authorizedFetch(deps.vault, storeId, deps.ctx.http, {
+          allowedDomain: adapter.manifest.domain,
+          onRefuse: (url) =>
+            deps.ctx.log(
+              `vault: withheld ${storeId} credential from ${url} — not https on ${adapter.manifest.domain ?? "(no domain declared)"}`,
+            ),
+        }),
+      }
+    : deps.ctx;
   const raw = await withRetryCart(() => adapter.buildCart!(input.items, cartCtx));
   const lineItems: MandateLine[] = raw.lineItems.map((li) => ({
     id: li.id,

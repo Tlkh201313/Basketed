@@ -25,14 +25,13 @@ window.addEventListener("message", (event) => {
   chrome.runtime.sendMessage(
     {
       type: "basketed-capture",
-      // location.origin, not anything the page handed us: the service worker
-      // verifies the token against THIS origin, so the page cannot point it
-      // at some other server.
-      origin: window.location.origin,
+      // Only the token and which store is being connected. The origin is not
+      // ours to state -- Chrome tells the worker where this message came from,
+      // and the worker compares that against the panel origin the user pinned.
+      // The domains are not ours to state either: the worker asks the pinned
+      // panel what is waiting on a sign-in and reads only that.
       token: msg.token,
-      domains: msg.domains,
-      authCookies: msg.authCookies,
-      bearerMatch: msg.bearerMatch,
+      storeId: msg.storeId,
     },
     (reply) => {
       window.postMessage(

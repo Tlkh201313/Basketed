@@ -301,9 +301,12 @@ annotations, namespaced names.
   exactly so that no process can lift another profile's cookies. Basketed does
   not route around that — no profile copying, no decrypting Chrome's cookie
   store, no injection. It goes in the sanctioned way instead: a small extension
-  (`packages/extension`, load-unpacked, ~120 lines) that reads the session from
-  the inside, talks to `127.0.0.1` and nothing else, stores nothing, and
-  refuses any local page that cannot prove it holds the panel token. Without
+  (`packages/extension`, load-unpacked, under 200 lines) that reads the session
+  from the inside, talks to one pinned local origin and nothing else, stores
+  only that origin, and refuses any page that is not served from it — the
+  token is checked against the pinned panel, not against whoever is asking,
+  because ports are not a cookie boundary and "I am the panel" is not proof
+  coming from the caller. Without
   the extension the tab still opens — the panel then offers a Basketed-driven
   window on its own persistent profile, which does auto-capture, rather than
   spinning forever.

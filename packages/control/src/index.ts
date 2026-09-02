@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { handleApi } from "./api.js";
+import { panelBase } from "./base.js";
 import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, type StoreRow } from "./pages.js";
 import { stateOf as chromeLoginStateOf, chromeMode } from "./browser-connect.js";
 import type { ControlDeps } from "./types.js";
@@ -195,12 +196,20 @@ export function createPanelHandler(
 ): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
   let benchmark: Benchmark | undefined;
   const panelOrigin = new URL(opts.origin).origin;
-  const setCookie = `${PANEL_TOKEN_COOKIE}=${encodeURIComponent(opts.token)}; Path=/; SameSite=Strict; HttpOnly`;
+  const base = panelBase(opts.token);
+  // Scoped to `base`, not to `/`. See panelBase() for why that one attribute is
+  // the whole fix: it is the only part of a cookie the browser refuses to send
+  // to a path that does not match, and ports are not a boundary here.
+  const setCookie = `${PANEL_TOKEN_COOKIE}=${encodeURIComponent(opts.token)}; Path=${base}; SameSite=Strict; HttpOnly`;
   const log = (msg: string): void => deps.purchase.ctx.log(`panel: ${msg}`);
 
   return async (req, res) => {
     const url = new URL(req.url ?? "/", panelOrigin);
-    const path = url.pathname;
+    // The prefixed form is an ALIAS, not a move: `/approvals?t=…` still serves,
+    // which is what the printed URL, the smoke scripts and every test use. The
+    // alias exists so that once a browser is inside the panel, its navigation
+    // rides a cookie no other port can be handed.
+    const path = url.pathname.startsWith(base) ? url.pathname.slice(base.length) || "/" : url.pathname;
     const method = (req.method ?? "GET").toUpperCase();
     // Never the token itself, on either side of the compare -- this line is
     // meant to answer "why was I refused" from the server's own console
@@ -341,7 +350,7 @@ export function createPanelHandler(
             res,
             404,
             "text/html; charset=utf-8",
-            `<!doctype html><meta charset="utf-8"><p>No such store: ${storeId.replace(/[<>&]/g, "")}. <a href="/connections">Back to Connect stores.</a></p>`,
+            `<!doctype html><meta charset="utf-8"><p>No such store: ${storeId.replace(/[<>&]/g, "")}. <a href="${base}/connections">Back to Connect stores.</a></p>`,
           );
           return true;
         }
