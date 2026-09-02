@@ -2,7 +2,7 @@
   "name": "basketed-workspace",
   "version": "0.0.0",
   "private": true,
-  "description": "Basketed — Universal Shopping MCP server + self-hosted control panel",
+  "description": "Basketed \u2014 Universal Shopping MCP server + self-hosted control panel",
   "engines": {
     "node": ">=22"
   },
@@ -18,7 +18,7 @@
     "serve:http": "node packages/cli/bin.js serve --http",
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
     "smoke:purchase": "node scripts/smoke-purchase.mjs",
-    "smoke": "node scripts/smoke-mcp.mjs && node scripts/smoke-purchase.mjs && node scripts/smoke-panel.mjs && node scripts/smoke-stdio-panel.mjs && node scripts/smoke-install.mjs",
+    "smoke": "node scripts/smoke-mcp.mjs && node scripts/smoke-purchase.mjs && node scripts/smoke-panel.mjs && node scripts/smoke-stdio-panel.mjs && node scripts/smoke-shared-panel.mjs && node scripts/smoke-install.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
     "drill": "node scripts/drill-offline.mjs",
     "preflight": "node scripts/preflight.mjs",
@@ -26,10 +26,12 @@
     "bench": "node scripts/bench.mjs",
     "smoke:panel": "node scripts/smoke-panel.mjs",
     "smoke:stdio": "node scripts/smoke-stdio-panel.mjs",
+    "smoke:shared": "node scripts/smoke-shared-panel.mjs",
     "panel": "node packages/cli/bin.js serve --http --open",
     "smoke:install": "node scripts/smoke-install.mjs",
     "doctor": "node packages/cli/bin.js doctor",
-    "install:mcp": "node packages/cli/bin.js install"
+    "install:mcp": "node packages/cli/bin.js install",
+    "stability": "node scripts/stability.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

@@ -31,7 +31,49 @@ export interface ClientSpec {
 /** The four we click through on stage. Verified on Windows at S7 start. */
 export const PRIMARY_CLIENTS = ["claude-code", "cursor", "codex", "claude-desktop"] as const;
 
-export const CLIENT_ALIASES: Record<string, string> = { grok: "opencode" };
+/**
+ * The names people actually type, mapped to the ids in the table.
+ *
+ * Every entry here exists because somebody typed it and got nothing. A CLI
+ * that answers only to its formal id is a CLI that fails silently on the
+ * first try, which is the same failure mode as a wrong config key.
+ *
+ * `grok` -> opencode because Grok CLI is an opencode build and reads
+ * opencode's config file.
+ */
+/**
+ * Fetch-lane tool names, for clients that pre-approve by name (Kiro autoApprove).
+ *
+ * Duplicated from `@basketed/mcp`'s FETCH_TOOL_NAMES rather than imported:
+ * control does not depend on mcp. A test in `packages/cli` asserts the two
+ * lists are identical and that none of these appears in NEVER_ALLOW.
+ *
+ * Slots are purchase-lane (need a connected session) and must never auto-approve.
+ */
+export const READ_ONLY_TOOL_NAMES = [
+  "basket_list_stores",
+  "basket_search_products",
+  "basket_get_product_detail",
+  "basket_get_token_report",
+  "basket_auth_status",
+] as const;
+
+export const CLIENT_ALIASES: Record<string, string> = {
+  grok: "opencode",
+  "grok-cli": "opencode",
+  claude: "claude-code",
+  "claude-cli": "claude-code",
+  "claude-code-cli": "claude-code",
+  desktop: "claude-desktop",
+  "codex-cli": "codex",
+  gemini: "gemini-cli",
+  copilot: "vscode",
+  "vs-code": "vscode",
+  code: "vscode",
+  intellij: "jetbrains",
+  pycharm: "jetbrains",
+  webstorm: "jetbrains",
+};
 
 export const CLIENTS: ClientSpec[] = [
   {
@@ -93,11 +135,21 @@ export const CLIENTS: ClientSpec[] = [
   {
     id: "opencode",
     name: "opencode",
-    path: { win32: "opencode.json", darwin: "opencode.json", linux: "opencode.json" },
+    // The GLOBAL config, not the project-scoped `opencode.json`. Writing the
+    // project one from a `basketed install` run puts the config in whatever
+    // repo you happened to be standing in -- which is never the one you shop
+    // from. Grok CLI is an opencode build and reads this same file.
+    path: {
+      win32: "%USERPROFILE%\\.config\\opencode\\opencode.json",
+      darwin: "~/.config/opencode/opencode.json",
+      linux: "~/.config/opencode/opencode.json",
+    },
     key: "mcp",
     format: "jsonc",
     transports: ["stdio", "http"],
-    gotcha: "Key is `mcp`, `command` is an ARRAY, and the env key is `environment`.",
+    gotcha:
+      "Key is `mcp`, `command` is an ARRAY, and the env key is `environment`. " +
+      "A project-scoped `opencode.json` beside your code overrides this one.",
     verified: false,
   },
   {
@@ -132,7 +184,7 @@ export const CLIENTS: ClientSpec[] = [
     key: "mcpServers",
     format: "json",
     transports: ["stdio", "http"],
-    gotcha: "Uses `serverUrl` for remote, and caps at 100 tools across ALL servers. We add 8.",
+    gotcha: "Uses `serverUrl` for remote, and caps at 100 tools across ALL servers. We add 9.",
     verified: false,
   },
   {
@@ -225,14 +277,12 @@ export function snippetFor(client: ClientSpec, input: SnippetInput): string {
       const entry: Record<string, unknown> = { command: "node", args };
       if (client.id === "claude-code") entry["type"] = "stdio";
       if (client.id === "kiro") {
-        // Read-only tools only. Pre-approving a money-adjacent tool is exactly
-        // the thing the purchase gate exists to prevent.
-        entry["autoApprove"] = [
-          "basket_list_stores",
-          "basket_search_products",
-          "basket_get_product_detail",
-          "basket_get_token_report",
-        ];
+        // Read-only tools only, and the list is checked against the MCP
+        // package's own tables by a test -- pre-approving a money-adjacent
+        // tool is exactly the thing the purchase gate exists to prevent, and
+        // a hand-maintained list here would drift the first time a tool is
+        // added.
+        entry["autoApprove"] = [...READ_ONLY_TOOL_NAMES];
       }
       return JSON.stringify({ [client.key]: { basketed: entry } }, null, 2);
     }

@@ -7,7 +7,7 @@ export const SourcingModeSchema = z.enum(["native", "provider", "connected", "si
 export type SourcingMode = z.infer<typeof SourcingModeSchema>;
 
 /** What an adapter can actually do (§1.3). An adapter may never claim a tier it fakes. */
-export const CapabilityTierSchema = z.enum(["discovery", "detail", "cart", "handoff", "checkout"]);
+export const CapabilityTierSchema = z.enum(["discovery", "detail", "cart", "slots", "handoff", "checkout"]);
 export type CapabilityTier = z.infer<typeof CapabilityTierSchema>;
 
 export const RatingSchema = z.object({

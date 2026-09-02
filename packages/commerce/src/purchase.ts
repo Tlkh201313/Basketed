@@ -1,27 +1,12 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { FxTable, Money } from "@basketed/core";
 
-function isTransientCartError(e: unknown): boolean {
-  const msg = String((e as Error)?.message ?? e);
-  return /429|503|5\d\d|timeout|ECONN|ENET|ETIMEDOUT|fetch failed|blocked|captcha|rate.?limit/i.test(msg) && !/cannot build a cart/i.test(msg);
-}
-async function withRetryCart<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
-  let last: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      last = e;
-      if (!isTransientCartError(e) || i === attempts - 1) throw e;
-      await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i) + Math.random() * 200));
-    }
-  }
-  throw last;
-}
 import type { AdapterCtx, StoreRegistry } from "@basketed/adapters";
-import { describeRoute, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
-import { authorizedFetch, type Vault } from "@basketed/vault";
+import { describeRoute, parseProductId, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
+import { authorizedFetch, SessionUnusableError, type Vault } from "@basketed/vault";
+import { connectHint, needsAccountFor, sessionFetchFor, sessionState } from "./account.js";
 import type { Db } from "./db.js";
+import { withRetry, withTimeout } from "./retry.js";
 import { cartHash, describeMandate, type CartMandate, type MandateLine } from "./mandate.js";
 import {
   evaluateGuardrails,
@@ -43,6 +28,9 @@ import {
 
 export const APPROVAL_TTL_MS = 5 * 60 * 1000;
 export const MAX_CODE_ATTEMPTS = 5;
+
+/** Default ceiling on one call to a retailer's cart API. See PurchaseDeps. */
+export const BUILD_CART_TIMEOUT_MS = 20_000;
 
 export type ApprovalState = "PENDING" | "APPROVED" | "CONSUMED" | "REJECTED" | "EXPIRED";
 export type OrderState =
@@ -94,6 +82,16 @@ export interface PurchaseDeps {
    */
   summon?: (approvalId: string) => void;
   now?: () => number;
+  /**
+   * How long one `buildCart` attempt may take before it is abandoned.
+   *
+   * `buildCart` is the only place in the purchase path that calls a retailer,
+   * and an adapter is not obliged to have a timeout of its own -- a hung
+   * socket there would otherwise hold `cart_prepare` open until the client
+   * gave up, with the human staring at nothing. Twenty seconds is long
+   * enough for Tesco's basket round trip and short enough to report.
+   */
+  buildCartTimeoutMs?: number;
 }
 
 interface ApprovalRow {
@@ -203,10 +201,35 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
     throw new Error(`Store "${storeId}" cannot build a cart. It reaches only ${adapter.manifest.capabilities.join(", ")}.`);
   }
 
-  // Vault-wrapped only for THIS store's id -- a store with no stored
-  // credential gets deps.ctx.http back unchanged (authorizedFetch no-ops).
-  const cartCtx = deps.vault ? { ...deps.ctx, http: authorizedFetch(deps.vault, storeId, deps.ctx.http) } : deps.ctx;
-  const raw = await withRetryCart(() => adapter.buildCart!(input.items, cartCtx));
+  /*
+   * A store whose cart tier is gated needs a usable session before we reach
+   * the retailer's API. Failing here with a pointer at the Connect panel
+   * beats a raw 401, which reads like a network fault to whatever is relaying
+   * it. Which stores those are is the adapter's declaration, not a list kept
+   * here -- see needsAccountFor.
+   */
+  if (needsAccountFor(adapter.manifest.account, "cart")) {
+    const held = deps.vault?.get(storeId) ?? null;
+    if (sessionState(held) !== "live") throw new Error(connectHint(adapter.manifest, held));
+  }
+
+  /*
+   * Vault-wrapped only for THIS store's id, and only as hard as the store
+   * asked for.
+   *
+   * A store whose cart is GATED gets the strict wrapper, which refuses an
+   * expired session before the request -- a signed-out basket page has the
+   * right shape and reads as an empty trolley. A store whose cart merely
+   * BENEFITS from a session (eBay, Best Buy: the anonymous cart works and is
+   * handed off either way) degrades to anonymous instead, because refusing to
+   * build a cart that would have built fine is a worse answer than building
+   * it. A store with no session at all gets deps.ctx.http back unchanged.
+   */
+  const cartCtx = { ...deps.ctx, http: sessionFetchFor(adapter.manifest, "cart", deps.vault, deps.ctx.http, deps.ctx.log) };
+  const raw = await withRetry(
+    () => withTimeout(adapter.buildCart!(input.items, cartCtx), deps.buildCartTimeoutMs ?? BUILD_CART_TIMEOUT_MS, `${storeId} cart`),
+    { attempts: 2 },
+  );
   const lineItems: MandateLine[] = raw.lineItems.map((li) => ({
     id: li.id,
     variantId: li.variantId,
@@ -331,16 +354,18 @@ function resolveRoute(handoffUrl: string | null, mode: string, name: string, dom
   return productDeepLink(domain ? `https://${domain}` : "", name);
 }
 
+/**
+ * Which store an id belongs to -- with its signature checked.
+ *
+ * This used to be a string-prefix test, which reads the readable half of the
+ * id and ignores the half that makes it unforgeable. Anything shaped like
+ * `bk_tsc-tesco_anything_XXXXXXXX` resolved to Tesco, so a synthesised id got
+ * as far as `buildCart` before the adapter's own cache turned it down --
+ * failing for the wrong reason, and only because the adapter happened to
+ * check. `parseProductId` verifies the HMAC, which is what the tag is for.
+ */
 function parseStoreOf(registry: StoreRegistry, productId: string): string | null {
-  for (const adapter of registry.all()) {
-    // Adapters cache the ids they minted, so membership is the authoritative
-    // check -- it also means an id from a store that has not been searched in
-    // this process is correctly rejected rather than half-resolved.
-    if (productId.startsWith(`bk_${adapter.manifest.id.replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}_`)) {
-      return adapter.manifest.id;
-    }
-  }
-  return null;
+  return parseProductId(productId, registry.all().map((a) => a.manifest.id))?.store ?? null;
 }
 
 /* -------------------------------------------------------- the approval act */
@@ -376,6 +401,24 @@ export function approveApproval(
   // identically. Distinguishing them would confirm that a guessed id exists.
   if (!row || row.principal !== principal) {
     return { ok: false, reason: "No such approval.", state: "EXPIRED" };
+  }
+  /*
+   * Already approved is not an error.
+   *
+   * The two channels race by design: a human reads the code off the console
+   * and hands it over, but they may also have clicked Approve in the panel
+   * while doing so. The agent then arrives with a valid code for a cart that
+   * is already APPROVED, and refusing that told them their purchase had
+   * failed when in fact it was ready to go -- so they prepared it again and
+   * asked the human a second time.
+   *
+   * Idempotent, and deliberately without touching the attempt budget: no
+   * guess was made and none should be charged. It is not a way in, either --
+   * a caller who could reach this already holds a handle bound to this
+   * principal, and the state it returns is one they could read anyway.
+   */
+  if (row.state === "APPROVED" && row.expires_at > now) {
+    return { ok: true, state: "APPROVED" };
   }
   if (row.state !== "PENDING") {
     return { ok: false, reason: `Approval is already ${row.state}.`, state: row.state };
@@ -485,6 +528,30 @@ export interface ConfirmResult {
   next?: string;
 }
 
+/**
+ * What confirm does BEFORE it spends the approval, and why the order matters.
+ *
+ * The old sequence consumed the approval first and checked afterwards, which
+ * made every later refusal cost the human's click:
+ *
+ *   - A guardrail refusal ("over the daily cap") left the approval CONSUMED
+ *     with no order behind it. The person had approved a cart, been told no
+ *     by a rule they could go and change, and then had to get a fresh
+ *     approval anyway.
+ *   - A merchant that was simply unreachable did the same.
+ *
+ * So everything that can refuse now runs while the approval is still
+ * APPROVED, and the atomic consume happens last -- immediately before the
+ * order is written. The consume is still ONE statement whose WHERE clause
+ * carries the state, the principal and the expiry, so two concurrent confirms
+ * still cannot both execute; that has not changed and is what the race test
+ * pins.
+ *
+ * The one refusal that does NOT leave the approval reusable is drift. A cart
+ * whose contents or price no longer match what the human looked at is not a
+ * cart they approved, and quietly leaving it available to confirm again is
+ * how a re-priced basket gets bought at the new price. Drift REJECTS it.
+ */
 export async function confirmPurchase(
   deps: PurchaseDeps,
   approvalId: string,
@@ -492,14 +559,118 @@ export async function confirmPurchase(
 ): Promise<ConfirmResult> {
   const now = deps.now?.() ?? Date.now();
 
+  const row = readApproval(deps.db, approvalId);
+  if (!row || row.principal !== principal || row.state !== "APPROVED" || row.expires_at <= now) {
+    audit(deps.db, "confirm_refused", `${fingerprint(approvalId)} state=${row?.state ?? "none"}`, now);
+    return { ok: false, reason: refusalFor(row, principal, now) };
+  }
+
+  const mandate = JSON.parse(row.cart_json) as CartMandate;
+
   /*
-   * Consumption is ONE atomic statement. A read-then-write would leave a race
-   * where two concurrent confirms both see APPROVED and both execute; zero
-   * rows returned here is the whole concurrency story.
+   * The stored mandate against the hash taken when it was approved.
    *
-   * The principal is part of the WHERE clause, not a check afterwards:
-   * possession of the handle is never sufficient (2026-07-28 State Handle
-   * Hijacking).
+   * This catches tampering with the row itself -- an edit to cart_json that
+   * did not also forge cart_hash. It says nothing about the retailer's
+   * current price, which is what the live check below is for.
+   */
+  if (cartHash(mandate) !== row.cart_hash) {
+    voidApproval(deps.db, approvalId, now, "hash_drift");
+    return {
+      ok: false,
+      reason:
+        "The stored cart does not match what was approved, so it has been voided. " +
+        "Prepare it again and have a human approve the new total.",
+    };
+  }
+
+  /*
+   * Ask the retailer what this cart costs NOW.
+   *
+   * The old check re-hashed the stored mandate and compared it to the hash of
+   * the same stored mandate, which is true by construction -- it could only
+   * ever catch a hand-edited database row. The thing an approval is actually
+   * protecting against is the price moving between the human looking at it
+   * and the purchase going through, and that can only be found out by asking.
+   *
+   * Three outcomes, and they are deliberately different:
+   *   - same cart: proceed.
+   *   - different cart: the approval covers something that no longer exists.
+   *     Void it. Nothing is bought and the human is told what changed.
+   *   - could not ask: leave the approval alone. A retailer being down is not
+   *     evidence of drift, and burning a human's click on a network blip
+   *     would be punishing them for the merchant's outage.
+   *
+   * Simulated stores are re-checked too. Their carts are deterministic so it
+   * always passes, but it means the demo and the drill exercise the same code
+   * path a real purchase does rather than a shorter one that is never tested.
+   *
+   * A cart id or a handoff URL the merchant regenerates per request is NOT
+   * drift -- see describeDrift, which compares only what the human was shown.
+   */
+  const adapter = deps.registry.get(mandate.storeId);
+  if (adapter?.buildCart) {
+    let live: Awaited<ReturnType<NonNullable<typeof adapter.buildCart>>> | null = null;
+    try {
+      const ctx = {
+        ...deps.ctx,
+        http: sessionFetchFor(adapter.manifest, "cart", deps.vault, deps.ctx.http, deps.ctx.log),
+      };
+      live = await withTimeout(
+        adapter.buildCart(
+          mandate.lineItems.map((li) => ({ id: li.id, quantity: li.quantity })),
+          ctx,
+        ),
+        deps.buildCartTimeoutMs ?? BUILD_CART_TIMEOUT_MS,
+        `${mandate.storeId} cart re-check`,
+      );
+    } catch (err) {
+      audit(deps.db, "recheck_unreachable", `${fingerprint(approvalId)} ${(err as Error).message}`, now);
+      // A dead session is not an outage: waiting will not fix it. The
+      // approval survives either way, because neither is the human's fault.
+      const next =
+        err instanceof SessionUnusableError
+          ? "Nothing was bought and the approval is still good — reconnect the store, then confirm again."
+          : "Nothing was bought and the approval is still good — try again in a moment.";
+      return {
+        ok: false,
+        reason: `Could not re-check the cart with ${adapter.manifest.name} before buying: ${(err as Error).message}. ${next}`,
+      };
+    }
+
+    const drift = describeDrift(mandate, live);
+    if (drift) {
+      voidApproval(deps.db, approvalId, now, "price_drift");
+      return {
+        ok: false,
+        reason:
+          `${drift} The approval covered the old cart, so it has been voided and nothing was bought. ` +
+          "Prepare it again and have a human approve the new total.",
+      };
+    }
+  }
+
+  const guardrails: Guardrails = loadGuardrails(deps.db);
+  const verdict = evaluateGuardrails(deps.db, mandate, guardrails, deps.fx, now);
+  if (!verdict.allowed) {
+    audit(deps.db, "guardrail_refused", `${fingerprint(approvalId)} ${verdict.reason}`, now);
+    /*
+     * The approval survives. A guardrail is a rule the human owns and can
+     * change -- raise the daily cap, allow the currency -- and the cart is
+     * still exactly the one they approved. Making them approve it again after
+     * fixing their own setting is a punishment for using the feature.
+     */
+    return { ok: false, reason: verdict.reason!, guardrails: verdict.checks };
+  }
+
+  /*
+   * Consumption is ONE atomic statement, and it is the last thing that can
+   * fail before an order exists. A read-then-write would leave a race where
+   * two concurrent confirms both see APPROVED and both execute; zero rows
+   * here is the whole concurrency story.
+   *
+   * The principal is in the WHERE clause, not checked afterwards: possession
+   * of the handle is never sufficient (2026-07-28 State Handle Hijacking).
    */
   const consumed = deps.db
     .prepare(
@@ -510,39 +681,14 @@ export async function confirmPurchase(
     .all(now, approvalId, principal, now) as unknown as ApprovalRow[];
 
   if (consumed.length === 0) {
-    const row = readApproval(deps.db, approvalId);
-    audit(deps.db, "confirm_refused", `${fingerprint(approvalId)} state=${row?.state ?? "none"}`, now);
-    return { ok: false, reason: refusalFor(row, principal, now) };
+    const current = readApproval(deps.db, approvalId);
+    audit(deps.db, "confirm_refused", `${fingerprint(approvalId)} state=${current?.state ?? "none"}`, now);
+    return { ok: false, reason: refusalFor(current, principal, now) };
   }
 
-  const row = consumed[0]!;
-  const mandate = JSON.parse(row.cart_json) as CartMandate;
-
-  // Re-hash from the stored mandate. If a price moved after the human looked
-  // at it, the approval covers a cart that no longer exists.
-  const rehashed = cartHash(mandate);
-  if (rehashed !== row.cart_hash) {
-    audit(deps.db, "hash_drift", fingerprint(approvalId), now);
-    return {
-      ok: false,
-      reason:
-        "The cart changed after it was approved, so the approval no longer covers it. " +
-        "Prepare it again and have a human approve the new total.",
-    };
-  }
-
-  const guardrails: Guardrails = loadGuardrails(deps.db);
-  const verdict = evaluateGuardrails(deps.db, mandate, guardrails, deps.fx, now);
-  if (!verdict.allowed) {
-    audit(deps.db, "guardrail_refused", `${fingerprint(approvalId)} ${verdict.reason}`, now);
-    // The approval is already spent. A refused execution does not hand it
-    // back -- retrying needs a fresh human.
-    return { ok: false, reason: verdict.reason!, guardrails: verdict.checks };
-  }
+  const simulated = mandate.mode === "simulated";
 
   const orderId = `ord_${randomBytes(9).toString("base64url")}`;
-  const adapter = deps.registry.get(mandate.storeId);
-  const simulated = mandate.mode === "simulated";
 
   let state: OrderState;
   let outcome: string;
@@ -612,6 +758,59 @@ export async function confirmPurchase(
     guardrails: verdict.checks,
     next,
   };
+}
+
+/**
+ * Mark an approval dead because the cart it covered no longer exists.
+ *
+ * REJECTED rather than CONSUMED: nothing was bought, and the state a human
+ * reads in the panel should say the purchase was called off, not that it went
+ * through. It is a terminal state either way -- a voided approval cannot be
+ * confirmed again, which is the point.
+ */
+function voidApproval(db: Db, approvalId: string, now: number, why: string): void {
+  db.prepare("UPDATE approvals SET state = 'REJECTED' WHERE id = ? AND state = 'APPROVED'").run(approvalId);
+  audit(db, why, fingerprint(approvalId), now);
+}
+
+/** A cart, reduced to the things a human was actually shown. */
+interface ComparableCart {
+  lineItems: Array<{ id: string; quantity: number; unitPrice: Money }>;
+  total: Money;
+}
+
+/**
+ * What changed between the approved cart and the live one, in a sentence a
+ * person can act on -- or null when nothing did.
+ *
+ * Deliberately compares what was on screen: the total, the currency, and each
+ * line's product, quantity and unit price. A cart id that the retailer
+ * regenerates per request is not drift, and treating it as such would void
+ * every approval against stores that do that.
+ */
+function describeDrift(approved: ComparableCart, live: ComparableCart): string | null {
+  if (approved.total.currency !== live.total.currency) {
+    return `The price is now quoted in ${live.total.currency}, not ${approved.total.currency}.`;
+  }
+  if (approved.total.value !== live.total.value) {
+    const dir = live.total.value > approved.total.value ? "risen" : "fallen";
+    return `The total has ${dir} from ${money(approved.total)} to ${money(live.total)}.`;
+  }
+  if (approved.lineItems.length !== live.lineItems.length) {
+    return `The cart now has ${live.lineItems.length} line(s), not ${approved.lineItems.length}.`;
+  }
+  const liveById = new Map(live.lineItems.map((li) => [li.id, li]));
+  for (const want of approved.lineItems) {
+    const got = liveById.get(want.id);
+    if (!got) return `${want.id} is no longer in the cart.`;
+    if (got.quantity !== want.quantity) {
+      return `The quantity of ${want.id} changed from ${want.quantity} to ${got.quantity}.`;
+    }
+    if (got.unitPrice.value !== want.unitPrice.value || got.unitPrice.currency !== want.unitPrice.currency) {
+      return `The unit price of ${want.id} changed from ${money(want.unitPrice)} to ${money(got.unitPrice)}.`;
+    }
+  }
+  return null;
 }
 
 function refusalFor(row: ApprovalRow | undefined, principal: string, now: number): string {

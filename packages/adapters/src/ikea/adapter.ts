@@ -10,9 +10,29 @@ import {
   type StoreManifest,
 } from "@basketed/core";
 import * as cheerio from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * `plp-product-list` is IKEA's results container; a genuine zero-result search
+ * still renders it. Its absence means the page is not a results page, not that
+ * IKEA sells nothing matching.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "IKEA",
+  page: "search",
+  expect: [/plp-product-list/, /data-testid=['"]plp-product-card/, /plp-price-module/],
+  empty: [/no results for/i, /we (?:couldn|could not|can't|cannot)[^<]{0,20}find/i, /0 products/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "IKEA",
+  page: "product page",
+  expect: [/application\/ld\+json/, /pip-header-section/, /pip-price/],
+};
 import { mintProductId } from "../ids.js";
 import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 /**
  * Real IKEA — plain HTTP, no browser.
@@ -82,7 +102,15 @@ export interface IkeaAdapterOptions {
 
 export class IkeaAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
-  readonly #cache = new Map<string, Cached>();
+  #idCache: IdCache<Cached> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<Cached> {
+    return (this.#idCache ??= new IdCache<Cached>(this.manifest.id));
+  }
   readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
@@ -95,7 +123,27 @@ export class IkeaAdapter implements StoreAdapter {
       language: "en",
       categories: ["furniture"],
       mode: "native",
-      auth: "none",
+      /*
+       * IKEA is store-scoped to the point of being a different shop per
+       * building: price, stock and whether a thing exists in your market all
+       * follow the store on the account. Signed out the adapter reads
+       * whichever market the URL implies and reports its stock as fact.
+       *
+       * No cart tier here, so nothing is gated -- connecting only makes the
+       * numbers the shopper's own.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail"],
+        refresh: "browser",
+        login: {
+          url: "https://www.ikea.com/us/en/",
+          loginUrl: "https://www.ikea.com/us/en/profile/login/",
+          domains: ["ikea.com"],
+          authCookies: ["idp_token", "ikeaUserId"],
+        },
+      },
       capabilities: ["discovery", "detail"],
       domain: "ikea.com",
     };
@@ -127,6 +175,9 @@ export class IkeaAdapter implements StoreAdapter {
       if (!res.ok) throw new Error(`IKEA search returned HTTP ${res.status}.`);
       status = res.status;
     }
+
+    // Blocked, or markup that moved, must not read as "IKEA has none of these".
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
 
     const $ = cheerio.load(html);
     const cards = $("[data-testid='plp-product-card']").toArray().slice(0, count);
@@ -199,6 +250,7 @@ export class IkeaAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = cheerio.load(html);
     const productLd = $("script[type='application/ld+json']")
       .toArray()

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import puppeteer, { type Browser, type Page, type HTTPRequest } from "puppeteer-core";
 import { closeConnect, TTL_MS as HANDOFF_TTL_MS } from "./handoff.js";
+import { sessionHeaderAliases, captureComplete } from "./connections.js";
 
 /**
  * Sign in through the retailer's own site, in a real browser tab (S15, S18, S19).
@@ -73,10 +74,10 @@ interface CaptureSession {
   attached: boolean;
   /** The tab we opened. Closed on teardown; the browser is not, when attached. */
   page: Page | null;
-  /** URL substring whose requests carry the bearer worth keeping. */
-  bearerMatch: string | null;
-  /** The bearer seen on such a request, if any. Never logged, never served. */
-  bearer: string | null;
+  /** What to lift, and from where. Null when the cookie jar is the credential. */
+  capture: { match: string; headers: string[] } | null;
+  /** Header name (lower-cased) -> value, as last seen. Never logged, never served. */
+  captured: Record<string, string>;
   /** Where a signed-out human is sent. Used once, when the landing page says they are out. */
   loginUrl: string | null;
   /** True once we have already redirected to `loginUrl`, so we only do it once. */
@@ -164,28 +165,95 @@ async function attachToRunningChrome(browserURL: string, pinned: boolean): Promi
   }
 }
 
-function candidateChromePaths(): string[] {
+/**
+ * Every Chromium-family browser this machine might actually have.
+ *
+ * The list used to be Chrome and nothing else, so Connect told anyone running
+ * Edge, Brave or a distro Chromium to "install Chrome" -- on Windows, where
+ * Edge ships with the operating system and is often the browser they are
+ * reading the panel in. The CDP flow does not care which of these it drives;
+ * they are the same engine, and the sign-in happens on the retailer's page
+ * either way.
+ *
+ * Chrome stays first because a session captured in the browser someone
+ * already uses is the one most likely to be signed in already.
+ *
+ * BASKETED_CHROME wins outright, for a build in a place none of these guesses
+ * would find.
+ */
+export function candidateChromePaths(): string[] {
+  const pinned = String(process.env["BASKETED_CHROME"] ?? "").trim();
   const home = homedir();
-  switch (process.platform) {
-    case "win32":
-      return [
-        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-        resolve(home, "AppData\\Local\\Google\\Chrome\\Application\\chrome.exe"),
-      ];
-    case "darwin":
-      return [
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        resolve(home, "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-      ];
-    default:
-      return [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-      ];
+  const found = (() => {
+    switch (process.platform) {
+      case "win32": {
+        const pf = process.env["ProgramFiles"] ?? "C:\\Program Files";
+        const pf86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
+        const local = process.env["LOCALAPPDATA"] ?? resolve(home, "AppData\\Local");
+        return [
+          `${pf}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${pf86}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${local}\\Google\\Chrome\\Application\\chrome.exe`,
+          `${pf86}\\Microsoft\\Edge\\Application\\msedge.exe`,
+          `${pf}\\Microsoft\\Edge\\Application\\msedge.exe`,
+          `${pf}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+          `${pf86}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+          `${local}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+          `${pf}\\Chromium\\Application\\chrome.exe`,
+          `${local}\\Chromium\\Application\\chrome.exe`,
+        ];
+      }
+      case "darwin":
+        return [
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          resolve(home, "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+          "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+          "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+          "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ];
+      default:
+        return [
+          "/usr/bin/google-chrome",
+          "/usr/bin/google-chrome-stable",
+          "/usr/bin/microsoft-edge",
+          "/usr/bin/microsoft-edge-stable",
+          "/usr/bin/brave-browser",
+          "/usr/bin/brave",
+          "/usr/bin/chromium-browser",
+          "/usr/bin/chromium",
+          "/snap/bin/chromium",
+          "/var/lib/flatpak/exports/bin/com.google.Chrome",
+        ];
+    }
+  })();
+  return pinned ? [pinned, ...found] : found;
+}
+
+/**
+ * The name a human would use for one of those paths, for the doctor line and
+ * the connect card. A path is not an answer to "which browser will open?".
+ */
+export function browserNameFor(path: string): string {
+  const p = path.toLowerCase();
+  if (p.includes("msedge") || p.includes("microsoft edge")) return "Microsoft Edge";
+  if (p.includes("brave")) return "Brave";
+  if (p.includes("chromium")) return "Chromium";
+  if (p.includes("chrome")) return "Google Chrome";
+  return path;
+}
+
+/**
+ * The first of those that is actually installed, or null.
+ *
+ * Exported so `doctor` can print it before anyone clicks Connect. "Chrome was
+ * not found" arriving at the moment of the click, after a sign-in has been
+ * started in someone's head, is the worst possible time to learn it.
+ */
+export function installedBrowser(): { path: string; name: string } | null {
+  for (const path of candidateChromePaths()) {
+    if (existsSync(path)) return { path, name: browserNameFor(path) };
   }
+  return null;
 }
 
 /**
@@ -237,9 +305,13 @@ async function launchRealChrome(): Promise<Browser> {
     );
   }
   if (!failures.length) {
-    throw new Error("Google Chrome was not found on this machine. Install Chrome and try Connect again.");
+    throw new Error(
+      "No Chromium-family browser was found on this machine. Basketed can drive Chrome, Edge, " +
+        "Brave or Chromium; install any one of them, or set BASKETED_CHROME to the executable, " +
+        "then try Connect again.",
+    );
   }
-  throw new Error(`Chrome would not start: ${failures[failures.length - 1]}`);
+  throw new Error(`No browser would start: ${failures[failures.length - 1]}`);
 }
 
 /**
@@ -247,12 +319,13 @@ async function launchRealChrome(): Promise<Browser> {
  * before the click rather than after the surprise. Async because the honest
  * answer requires asking whether the user's own Chrome is reachable.
  */
-export async function chromeMode(): Promise<{ attached: boolean; where: string }> {
+export async function chromeMode(): Promise<{ attached: boolean; where: string; browser: string | null }> {
   const found = await discoverEndpoint();
-  if (!found) return { attached: false, where: chromeProfileDir() };
+  const installed = installedBrowser();
+  if (!found) return { attached: false, where: chromeProfileDir(), browser: installed?.name ?? null };
   // A pinned endpoint is reported as the user's own browser because that is
   // what they asked for; if it is not actually up, Connect says so loudly.
-  return { attached: true, where: `your own Chrome (${found.endpoint})` };
+  return { attached: true, where: `your own browser (${found.endpoint})`, browser: installed?.name ?? null };
 }
 
 export type CaptureState = "idle" | "waiting" | "logged_in";
@@ -375,29 +448,35 @@ function looksLoggedIn(cookies: Array<{ name: string; value: string }>, authCook
 }
 
 /**
- * Watch the tab for the one request header worth keeping (S19).
+ * Watch the tab for the request headers worth keeping (S19, widened S21).
  *
- * Tesco's basket API is a bearer API, so the credential the adapter needs is
- * not in the cookie jar at all -- it is the `Authorization` header Tesco's own
- * frontend sends to `xapi.tesco.com`. Listening for it here is what replaced
- * "open DevTools, find a request, copy the header, paste it into a form".
+ * Some retailers' credentials are not in the cookie jar at all: Tesco's basket
+ * API authenticates on the `authorization` + `customer-uuid` pair its own
+ * frontend sends to `xapi.tesco.com`. Listening for them here is what replaced
+ * "open DevTools, find a request, copy two headers, paste them into a form".
  *
  * Read-only: the listener never blocks, rewrites or replays a request, and
- * the value it keeps lives in this process, is never logged, and leaves only
+ * what it keeps lives in this process, is never logged, and leaves only
  * through the same token-gated capture route as everything else.
  */
-function watchForBearer(page: Page, storeId: string, match: string): void {
+function watchForHeaders(page: Page, storeId: string, want: { match: string; headers: string[] }): void {
   page.on("request", (req: HTTPRequest) => {
     try {
-      if (!req.url().includes(match)) return;
-      const auth = req.headers()["authorization"];
-      if (!auth) return;
+      if (!req.url().includes(want.match)) return;
+      const sent = req.headers();
       const s = sessions.get(storeId);
       if (!s) return;
-      s.bearer = auth.replace(/^Bearer\s+/i, "").trim();
-      // A live bearer IS proof of a signed-in session, and it often arrives
-      // before the cookie signature does.
-      if (s.bearer) s.loggedIn = true;
+      for (const name of want.headers) {
+        for (const alias of sessionHeaderAliases(name)) {
+          const value = sent[alias];
+          if (value) s.captured[alias] = value;
+        }
+      }
+      // A COMPLETE set is proof of a signed-in session, and it usually arrives
+      // before the cookie signature does. A partial one proves nothing: the
+      // signed-out site calls the same API. Tesco's customer id may arrive as
+      // either header name; aliases count as the same required header.
+      if (captureComplete(want, s.captured)) s.loggedIn = true;
     } catch {
       // a request that vanished mid-flight tells us nothing; ignore it
     }
@@ -409,7 +488,7 @@ export interface LoginTarget {
   loginUrl?: string;
   domains?: string[];
   authCookies?: string[];
-  bearer?: string;
+  capture?: { match: string; headers: string[] };
 }
 
 /**
@@ -484,8 +563,8 @@ export async function startLogin(
     loggedIn: false,
     attached,
     page,
-    bearerMatch: target.bearer ?? null,
-    bearer: null,
+    capture: target.capture ?? null,
+    captured: {},
     loginUrl: target.loginUrl ?? null,
     sentToLogin: false,
   };
@@ -493,7 +572,7 @@ export async function startLogin(
   // fire on the very first request, has a session to write to.
   sessions.set(storeId, session);
   browser.once("disconnected", () => void endSession(storeId));
-  if (session.bearerMatch) watchForBearer(page, storeId, session.bearerMatch);
+  if (session.capture) watchForHeaders(page, storeId, session.capture);
 
   try {
     await page.bringToFront().catch(() => {});
@@ -506,7 +585,12 @@ export async function startLogin(
   // Whether they are already in decides what they see next, so check once,
   // up front, rather than a poll interval later.
   try {
-    session.loggedIn = looksLoggedIn(await readCookies(browser, domains, page), authCookies) || session.bearer !== null;
+    // Alias-aware: Tesco sends the customer id as `customer-uuid` on one
+    // route and `x-customer-uuid` on another, and this check did not know
+    // they were the same header. A capture that was in fact complete read as
+    // still waiting, leaving a human watching a tab that would never finish.
+    const complete = captureComplete(session.capture, session.captured);
+    session.loggedIn = looksLoggedIn(await readCookies(browser, domains, page), authCookies) || complete;
   } catch {
     // not fatal; the poll picks it up
   }
@@ -529,26 +613,28 @@ export async function startLogin(
  * reachable through a route gated exactly like every other write to the vault
  * -- the panel token, checked before this function is ever called.
  *
- * A captured bearer wins over the cookie jar when the store asked for one:
- * for a bearer API, the jar is the wrong credential and would be sealed only
- * to be rejected later.
+ * A captured header set wins over the cookie jar when the store asked for one:
+ * for a header-authenticated API the jar is the wrong credential, and sealing
+ * it would look like success here and fail at the first basket call.
  */
 export async function captureLogin(
   storeId: string,
   domains: string[],
-): Promise<{ ok: true; cookieHeader: string; bearer: string | null } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; cookieHeader: string; headers: Record<string, string> } | { ok: false; error: string }
+> {
   const s = sessions.get(storeId);
   if (!s) return { ok: false, error: "No sign-in tab is open for this store. Press Connect first." };
 
   try {
     const cookies = await readCookies(s.browser, s.domains.length ? s.domains : domains, s.page);
-    const bearer = s.bearer;
-    if (!cookies.length && !bearer) {
+    const headers = { ...s.captured };
+    if (!cookies.length && !Object.keys(headers).length) {
       return { ok: false, error: "Nothing was set for that site yet -- finish signing in, then try again." };
     }
     const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
     await endSession(storeId);
-    return { ok: true, cookieHeader, bearer };
+    return { ok: true, cookieHeader, headers };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

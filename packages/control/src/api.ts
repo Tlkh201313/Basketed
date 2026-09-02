@@ -8,12 +8,19 @@ import {
   saveGuardrails,
   GuardrailValueError,
   spentInWindow,
+  connectHint,
+  laneFor,
+  needsAccount,
+  sessionState,
+  syncAccountStatus,
   type CartMandate,
 } from "@basketed/commerce";
-import type { CredentialKind } from "@basketed/vault";
-import { authPolicyFor } from "./connections.js";
+import { encodeSession, type CredentialKind } from "@basketed/vault";
+import { noteExtensionSeen } from "./extension-file.js";
+import { authPolicyFor, sessionHeaderAliases } from "./connections.js";
 import { startLogin, captureLogin, cancelLogin, stateOf, statusOf } from "./browser-connect.js";
 import { openConnect, pendingFor, closeConnect, finish, statusFor } from "./handoff.js";
+import { expiryOf } from "./jwt.js";
 import type { ControlDeps } from "./types.js";
 
 /**
@@ -72,6 +79,89 @@ function approvalView(row: Record<string, unknown>, now: number) {
     account_handle: String(row["account_handle"]),
     expires_in_ms: Math.max(0, Number(row["expires_at"]) - now),
   };
+}
+
+/** Bearer prefix + Tesco's two names for the same customer id. */
+function sealSessionHeaders(raw: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (typeof value === "string" && value) headers[name.toLowerCase()] = value;
+  }
+  const uuid = headers["customer-uuid"] ?? headers["x-customer-uuid"];
+  if (uuid) {
+    headers["customer-uuid"] = uuid;
+    headers["x-customer-uuid"] = uuid;
+  }
+  const auth = headers["authorization"];
+  if (auth && !/^bearer\s/i.test(auth)) headers["authorization"] = `Bearer ${auth}`;
+  return headers;
+}
+
+/**
+ * Turn a capture into the credential a store's adapter can actually use (S21).
+ *
+ * The rule that matters is the refusal: a store that named a header set and
+ * did not get all of it is a 409, never a silent downgrade to the cookie jar.
+ * Half a session looks like success here and fails at the first basket call,
+ * somewhere with far less context than this route has.
+ */
+function sealableCredential(
+  storeName: string,
+  storeId: string,
+  want: { match: string; headers: string[] } | undefined,
+  got: { cookieHeader: string; headers: Record<string, string> },
+): { ok: true; kind: CredentialKind; secret: string } | { ok: false; error: string } {
+  try {
+    if (want) {
+      const headers: Record<string, string> = {};
+      for (const name of want.headers) {
+        const key = name.toLowerCase();
+        let value = "";
+        for (const a of sessionHeaderAliases(key)) {
+          value = String(got.headers[a] ?? got.headers[a.toLowerCase()] ?? "").trim();
+          if (value) break;
+        }
+        if (value) headers[key] = value;
+      }
+      const missing = want.headers.filter((h) => !headers[h.toLowerCase()]);
+      if (missing.length) {
+        return {
+          ok: false,
+          error:
+            `Signed in, but ${storeName} has not sent ${missing.join(" and ")} yet. ` +
+            `Open your basket in that tab and this finishes by itself.`,
+        };
+      }
+      if (got.cookieHeader) headers["cookie"] = got.cookieHeader;
+      const sealed = sealSessionHeaders(headers);
+      const auth = sealed["authorization"];
+      const expiresAt = auth ? expiryOf(auth) : null;
+      return {
+        ok: true,
+        kind: "session",
+        secret: encodeSession({
+          headers: sealed,
+          ...(expiresAt === null ? {} : { expiresAt }),
+          refresh: { via: "browser", storeId },
+        }),
+      };
+    }
+    if (!got.cookieHeader) return { ok: false, error: `Not signed in at ${storeName} yet.` };
+    return { ok: true, kind: "cookie", secret: got.cookieHeader };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message || "Could not seal that session." };
+  }
+}
+
+/**
+ * Push what the vault now holds into the registry, after any change to it.
+ *
+ * This was `syncTescoStatus`, which did nothing at all unless the store id
+ * read exactly "tsc:tesco". A second account store would have sat at "ready"
+ * forever no matter what the vault said, and nothing here would have noticed.
+ */
+function syncStatus(deps: ControlDeps, storeId: string): void {
+  syncAccountStatus(deps.registry, deps.vault, storeId);
 }
 
 export async function handleApi(
@@ -148,7 +238,10 @@ export async function handleApi(
     return {
       status: 200,
       body: {
-        connections: deps.registry.list().map((s) => {
+        connections: deps.registry
+          .list()
+          .filter((s) => s.mode !== "simulated")
+          .map((s) => {
           const policy = authPolicyFor(s);
           const held_ = held.get(s.id) ?? null;
           return {
@@ -160,12 +253,29 @@ export async function handleApi(
             methods: policy.methods,
             oauth: policy.oauth,
             reach: policy.reach,
-            connected: held_ !== null && !held_.broken,
+            // An expired session is not a connection. Reporting it as one
+            // moves the discovery to the checkout, where the retailer says it
+            // instead of the panel -- see the vault's Connection.expired.
+            connected: held_ !== null && !held_.broken && !held_.expired,
             broken: held_?.broken ?? false,
+            expired: held_?.expired ?? false,
+            expires_at: held_?.expiresAt ?? null,
             method: held_?.kind ?? null,
             username: held_?.username ?? null,
             connected_at: held_?.createdAt ?? null,
             last_used_at: held_?.lastUsedAt ?? null,
+            /*
+             * The lane split (S21). `connected` alone could not tell the
+             * panel apart from a store that HAS an account and is signed out
+             * from one that has no account at all -- both were simply "not
+             * connected", so a scrape store sat forever on a shelf implying
+             * there was a sign-in still to do.
+             */
+            needs_account: needsAccount(s.account),
+            lane: laneFor(s.account, held_),
+            state: sessionState(held_),
+            refresh: s.account.kind === "session" ? s.account.refresh : null,
+            hint: needsAccount(s.account) && sessionState(held_) !== "live" ? connectHint(s, held_) : null,
             chrome_login: policy.chromeLogin !== null,
             chrome_login_waiting: stateOf(s.id) !== "idle",
             chrome_login_logged_in: stateOf(s.id) === "logged_in",
@@ -231,27 +341,12 @@ export async function handleApi(
       log(`connect ${storeId} capture failed: ${captured.error}`);
       return { status: 409, body: { error: captured.error } };
     }
-    /*
-     * Seal what the store's adapter can actually use (S19). A bearer store's
-     * cookie jar is the WRONG credential -- sealing it would look like success
-     * here and fail at the first basket call -- so a store that asked for a
-     * bearer and did not get one is a 409, not a silent downgrade.
-     */
-    const wantsBearer = policy.chromeLogin.bearer !== undefined;
-    if (wantsBearer && !captured.bearer) {
-      return {
-        status: 409,
-        body: {
-          error:
-            `Signed in, but ${store.name} has not issued a session token yet. ` +
-            `Browse to your basket in the open tab, then press Connect again.`,
-        },
-      };
-    }
-    const kind: CredentialKind = wantsBearer ? "token" : "cookie";
-    const secret = wantsBearer ? captured.bearer! : captured.cookieHeader;
+    const sealable = sealableCredential(store.name, storeId, policy.chromeLogin.capture, captured);
+    if (!sealable.ok) return { status: 409, body: { error: sealable.error } };
+    const { kind, secret } = sealable;
     try {
       const saved = deps.vault.connect({ storeId, kind, username: null, secret });
+      syncStatus(deps, storeId);
       log(`connect ${storeId}: session captured and sealed as ${kind}`);
       return {
         status: 200,
@@ -302,7 +397,7 @@ export async function handleApi(
         url: policy.chromeLogin.url,
         domains: policy.chromeLogin.domains,
         authCookies: policy.chromeLogin.authCookies,
-        bearerMatch: policy.chromeLogin.bearer ?? null,
+        capture: policy.chromeLogin.capture ?? null,
       });
       log(`connect ${storeId}: waiting on a sign-in at ${note.url}`);
       return { status: 200, body: { ok: true, url: note.url, waiting: true } };
@@ -319,7 +414,14 @@ export async function handleApi(
    * and the extension checks it HERE before it reads a single cookie. Same
    * gate as everything else in this file; answering at all is the answer.
    */
-  if (method === "GET" && path === "/api/extension/verify") {
+  const verify = /^\/api\/extension\/verify(?:\/([\w.-]{1,32}))?$/.exec(path);
+  if (method === "GET" && verify) {
+    /*
+     * The version rides on the path because this route takes no body and the
+     * panel handler passes only method and pathname down here. It is optional,
+     * so an older extension asking for the bare path is still answered.
+     */
+    noteExtensionSeen({ version: verify[1] ?? "" });
     return { status: 200, body: { ok: true, panel: "basketed" } };
   }
 
@@ -345,30 +447,37 @@ export async function handleApi(
     if (!note) {
       return { status: 409, body: { error: "No sign-in is in flight for this store. Press Connect first." } };
     }
+    if (note.finishedBy) {
+      /*
+       * The note now outlives the capture that finished it, so "a note exists"
+       * is no longer proof that a capture is wanted. Without this, a retried
+       * or duplicated POST would re-seal the vault from whatever the second
+       * request happened to carry -- which is how a good session gets replaced
+       * by a worse one.
+       */
+      return {
+        status: 409,
+        body: { error: `${store.name} was already connected from this sign-in. Press Connect again to start a new one.` },
+      };
+    }
 
     const payload = await body();
     const cookieHeader = String(payload["cookie_header"] ?? "").trim();
-    const bearer = String(payload["bearer"] ?? "").trim();
-    const wantsBearer = policy.chromeLogin.bearer !== undefined;
-    if (wantsBearer && !bearer) {
-      return {
-        status: 409,
-        body: {
-          error:
-            `Signed in, but ${store.name} has not issued a session token yet. ` +
-            `Open your basket in that tab and it will finish by itself.`,
-        },
-      };
-    }
-    if (!wantsBearer && !cookieHeader) {
-      return { status: 409, body: { error: `Not signed in at ${store.name} yet.` } };
-    }
+    const sent = (payload["headers"] ?? {}) as Record<string, string>;
 
-    const kind: CredentialKind = wantsBearer ? "token" : "cookie";
+    const sealable = sealableCredential(store.name, storeId, policy.chromeLogin.capture, {
+      cookieHeader,
+      headers: sent,
+    });
+    if (!sealable.ok) return { status: 409, body: { error: sealable.error } };
+    const { kind, secret } = sealable;
     try {
-      const saved = deps.vault.connect({ storeId, kind, username: null, secret: wantsBearer ? bearer : cookieHeader });
+      const saved = deps.vault.connect({ storeId, kind, username: null, secret });
+      // finish, NOT closeConnect. The note has to outlive the capture so the
+      // panel can say the extension did it; listPending already stops handing
+      // a finished note back to the extension as work.
       finish(storeId, "extension");
-      closeConnect(storeId);
+      syncStatus(deps, storeId);
       log(`connect ${storeId}: sealed as ${kind}, captured from the user's own browser`);
       return {
         status: 200,
@@ -389,49 +498,34 @@ export async function handleApi(
 
     if (method === "DELETE") {
       const forgotten = deps.vault.forget(storeId);
+      syncStatus(deps, storeId);
       return { status: forgotten ? 200 : 404, body: { ok: forgotten, store_id: storeId } };
     }
 
-    const policy = authPolicyFor(store);
-    if (policy.methods.length === 0) {
-      return { status: 400, body: { error: `${store.name} needs no account: its endpoint is anonymous.` } };
-    }
-
-    const payload = await body();
-    const kind = String(payload["method"] ?? "") as CredentialKind;
-    if (!policy.methods.includes(kind)) {
-      return { status: 400, body: { error: `${store.name} accepts: ${policy.methods.join(", ")}.` } };
-    }
-
-    const secret = String(payload["secret"] ?? "");
-    const username = payload["username"] === undefined ? null : String(payload["username"]);
-    if (!secret.trim()) return { status: 400, body: { error: "Nothing was entered." } };
-    if (kind === "password" && !username?.trim()) {
-      return { status: 400, body: { error: "A password connection needs the account it belongs to." } };
-    }
-
-    try {
-      const saved = deps.vault.connect({ storeId, kind, username, secret });
-      log(`connected ${storeId} via ${kind}`);
-      // Metadata back, never an echo of what was just sent.
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          store_id: saved.storeId,
-          method: saved.kind,
-          username: saved.username,
-          connected_at: saved.createdAt,
-        },
-      };
-    } catch (err) {
-      // Covers both a bad master key (degradedVault always throws here) and
-      // any crypto failure -- either way the human gets a reason, not a blank
-      // 500, and it lands on stderr for whoever is debugging this machine.
-      const reason = (err as Error).message;
-      log(`connect ${storeId} failed: ${reason}`);
-      return { status: 503, body: { error: reason } };
-    }
+    /*
+     * The last route that took a raw credential in a request body, closed.
+     *
+     * It predates the browser flow and was left in as a fallback: POST a
+     * cookie header or a token and the vault sealed it. Every path that
+     * reaches it now goes through the store's own site instead, so the only
+     * thing this could still serve is a caller who obtained a session some
+     * other way -- which is the shape this panel spent S19 removing. A
+     * pasted credential also skips every check the capture route makes: no
+     * expiry is read, no required header is verified, and a half-session
+     * seals as if it were whole.
+     *
+     * 405 with the alternative named, rather than 404: pretending the route
+     * was never here would send whoever calls it looking for a typo.
+     */
+    return {
+      status: 405,
+      body: {
+        error:
+          `Credentials are not accepted in a request body. Connect ${store.name} from the panel: ` +
+          `a tab opens on the store's own site, you sign in there, and the session is sealed ` +
+          `from that tab. DELETE on this path still disconnects.`,
+      },
+    };
   }
 
   if (method === "GET" && path === "/api/orders") {

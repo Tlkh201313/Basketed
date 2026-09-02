@@ -2,8 +2,28 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { estimateTokens, PROVENANCE_NOTE, type Include } from "@basketed/core";
 import { parseProductId } from "@basketed/adapters";
-import { searchAll } from "@basketed/commerce";
+import {
+  ctxFactory,
+  hasAccount,
+  improvesPhrase,
+  laneFor,
+  needsAccount,
+  searchAll,
+  sessionFetchFor,
+  sessionIsOptional,
+  sessionState,
+  usesPhrase,
+  withRetry,
+  withTimeout,
+} from "@basketed/commerce";
 import type { Runtime } from "./runtime.js";
+
+/**
+ * One detail lookup's ceiling. Shorter than the cart's -- detail is a read a
+ * human is waiting on, and a store that has not answered in fifteen seconds
+ * is better reported than waited for.
+ */
+const DETAIL_TIMEOUT_MS = 15_000;
 
 /**
  * The read-only tool surface (§3.4).
@@ -223,6 +243,15 @@ export function registerReadOnlyTools(server: McpServer, runtime: Runtime): void
           budgetTokens: args.budget_tokens,
           format: args.response_format,
           fields: args.fields,
+          // Each store is searched with its own session, where the shopper has
+          // connected one and the adapter says it makes the answer better.
+          // Everything else in the same fan-out stays anonymous.
+          ctxFor: ctxFactory(
+            runtime.registry,
+            { ...runtime.ctx, country: args.country, currency: args.currency },
+            runtime.vault,
+            "discovery",
+          ),
         },
       );
 
@@ -294,24 +323,17 @@ export function registerReadOnlyTools(server: McpServer, runtime: Runtime): void
       }
 
       const include: Include[] = (args.include as Include[] | undefined) ?? ["description", "stock"];
-      const isTransient = (e: unknown) => /429|503|5\d\d|timeout|ECONN|ENET|ETIMEDOUT|fetch failed|blocked|captcha/i.test(String((e as Error)?.message ?? e));
-      const withRetry = async <T>(fn: () => Promise<T>, attempts = 3): Promise<T> => {
-        let last: unknown;
-        for (let i = 0; i < attempts; i++) {
-          try {
-            return await fn();
-          } catch (e) {
-            last = e;
-            const msg = String((e as Error)?.message ?? e);
-            // Do not retry on unknown product / capability errors (not transient)
-            if (/No such product|does not support|Unknown product/i.test(msg) || !isTransient(e) || i === attempts - 1) throw e;
-            await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i) + Math.random() * 150));
-          }
-        }
-        throw last;
+      // Same session the search used, for the same reason: a product page read
+      // signed in is the shopper's own price, stock and delivery estimate.
+      const detailCtx = {
+        ...runtime.ctx,
+        http: sessionFetchFor(adapter.manifest, "detail", runtime.vault, runtime.ctx.http, runtime.ctx.log),
       };
       try {
-        const detail = await withRetry(() => adapter.detail(args.id, include, runtime.ctx), 3);
+        const detail = await withRetry(
+          () => withTimeout(adapter.detail(args.id, include, detailCtx), DETAIL_TIMEOUT_MS, parsed.store),
+          { attempts: 3, baseDelayMs: 300 },
+        );
         runtime.ledger.record(
           "basket_get_product_detail",
           estimateTokens(detail),
@@ -351,18 +373,133 @@ export function registerReadOnlyTools(server: McpServer, runtime: Runtime): void
     async () =>
       ok(runtime, {
         ...runtime.ledger.report(),
-        // A non-zero count here means a secret reached the boundary and was
-        // caught by the net rather than by the design. It is surfaced, not hidden.
         redaction_alarms: runtime.redactor.alarms(),
         provenance: PROVENANCE_NOTE,
       }),
   );
 }
 
-/** Names in wire order. Used by the install writers and the conformance test. */
-export const TOOL_NAMES = [
+export function registerAuthTools(server: McpServer, runtime: Runtime): void {
+  server.registerTool(
+    "basket_auth_status",
+    {
+      title: "Auth status",
+      description:
+        "Which stores are signed in, which need Connect, and which work without an account. " +
+        "Check this before cart or delivery-slot calls instead of waiting on a 401. " +
+        "Credentials are never returned — only metadata.",
+      inputSchema: z.object({
+        store_id: z.string().optional().describe("One store id from list_stores; omit for every live store"),
+      }),
+      outputSchema: z.object({
+        stores: z.array(
+          z
+            .object({
+              id: z.string(),
+              name: z.string(),
+              connected: z.boolean(),
+              expired: z.boolean(),
+              broken: z.boolean(),
+              cart: z.boolean(),
+              /** True when a tier of this store is BLOCKED without a sign-in. */
+              needs_account: z.boolean(),
+              /**
+               * True when there is an account to connect at all, gated or not.
+               * `has_account && !needs_account` is a store that works signed
+               * out and answers better signed in -- never a reason to refuse.
+               */
+              has_account: z.boolean(),
+              /** "fetch" | "connected" | "unconnected" -- the panel's shelves. */
+              lane: z.string(),
+              /** "none" | "live" | "expired" | "broken". */
+              state: z.string(),
+              status: z.string(),
+              action: z.string(),
+            })
+            .loose(),
+        ),
+        count: z.number(),
+      }),
+      annotations: { ...READ_ONLY, openWorldHint: false },
+    },
+    async (args) => {
+      const held = new Map(runtime.vault.list().map((c) => [c.storeId, c]));
+      const rows = runtime.registry
+        .list()
+        .filter((s) => s.mode !== "simulated")
+        .filter((s) => !args.store_id || s.id === args.store_id)
+        .map((s) => {
+          const c = held.get(s.id);
+          const connected = Boolean(c && !c.broken && !c.expired);
+          const expired = Boolean(c?.expired);
+          const broken = Boolean(c?.broken);
+          const cart = s.capabilities.includes("cart");
+          // Which stores have an account, and what a session unlocks, is the
+          // adapter's own declaration. This used to be `s.id === "tsc:tesco"`
+          // with Tesco's name hard-coded into all four sentences below.
+          const needs = needsAccount(s.account);
+          const state = sessionState(c);
+          const lane = laneFor(s.account, c);
+          const unlocks = usesPhrase(s.account);
+          const sharpens = improvesPhrase(s.account);
+          /*
+           * Two different sentences, because they lead to two different
+           * decisions by whoever is reading them.
+           *
+           * A gated store that is unconnected means STOP -- do not offer the
+           * trolley, tell the human to connect. An improved store that is
+           * unconnected means CARRY ON, and mention the upgrade if it is
+           * relevant. Wording both as "connect this store" taught agents to
+           * treat a working shop as a blocked one and refuse searches nobody
+           * needed to refuse.
+           */
+          let action = "No account needed for search.";
+          if (needs && state === "live") action = `${s.name} ${unlocks} ready.`;
+          else if (needs && state === "expired")
+            action = `${s.name} session expired. Reconnect ${s.name} in the Basketed panel.`;
+          else if (needs && state === "broken")
+            action = `${s.name} credential cannot be read. Reconnect ${s.name} in the Basketed panel.`;
+          else if (needs) action = `Connect ${s.name} in the Basketed panel to use the ${unlocks}.`;
+          else if (sessionIsOptional(s.account) && state === "live")
+            action = `${s.name} ${sharpens} are answering with your own account.`;
+          else if (sessionIsOptional(s.account))
+            action =
+              `${s.name} works signed out. Connecting it in the Basketed panel makes ${sharpens} ` +
+              `show the prices, stock and delivery your account sees. Nothing is blocked without it.`;
+          return {
+            id: s.id,
+            name: s.name,
+            connected,
+            expired,
+            broken,
+            cart,
+            needs_account: needs,
+            has_account: hasAccount(s.account),
+            lane,
+            state,
+            status: s.status,
+            action,
+          };
+        });
+      return ok(runtime, { stores: rows, count: rows.length });
+    },
+  );
+}
+
+/**
+ * Fetch lane — no account needed. Wire order for install / Kiro autoApprove.
+ *
+ * Delivery slots live on the purchase lane: they refuse without a vault session.
+ * `TOOL_NAMES` is an alias so older callers and the install-conformance test
+ * keep matching the fetch surface only.
+ */
+export const FETCH_TOOL_NAMES = [
   "basket_list_stores",
   "basket_search_products",
   "basket_get_product_detail",
   "basket_get_token_report",
+  "basket_auth_status",
 ] as const;
+
+/** @deprecated Prefer FETCH_TOOL_NAMES — same list, fetch lane only. */
+export const TOOL_NAMES = FETCH_TOOL_NAMES;

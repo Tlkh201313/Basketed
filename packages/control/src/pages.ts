@@ -2,6 +2,8 @@ import { CLIENTS, PRIMARY_CLIENTS, pathFor, snippetFor, type SnippetInput } from
 import { STYLE } from "./style.js";
 import { SCRIPT } from "./script.js";
 import { authPolicyFor, methodLabel, type ConnectMethod, type StoreAuthPolicy } from "./connections.js";
+import { laneFor, type AccountLane, type SessionState } from "@basketed/commerce";
+import type { StoreAccount } from "@basketed/core";
 
 /**
  * The panel's pages: Install, Connect stores, Approvals — originally just the
@@ -27,7 +29,7 @@ function esc(s: unknown): string {
  * proved it holds the token. `renderLocked()` is what an unauthenticated GET
  * gets, and it deliberately goes through neither this function nor SCRIPT.
  */
-type Page = "home" | "connections" | "approvals";
+type Page = "home" | "connections" | "approvals" | "settings";
 
 /**
  * The mark: a `--pri` square holding a serif lowercase b.
@@ -49,6 +51,7 @@ const ICON: Record<string, string> = {
   home: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>`,
   plug: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
   check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12.5 5 5L20 6.5"/></svg>`,
+  gear: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`,
 };
 
 function navItem(href: string, label: string, icon: string, on: boolean): string {
@@ -70,7 +73,7 @@ function shell(
   main: string,
   token: string,
   bar = "",
-  sheet = active === "home" ? "install" : active === "approvals" ? "appr" : "stores",
+  sheet = active === "home" ? "install" : active === "approvals" ? "appr" : active === "settings" ? "settings" : "stores",
 ): string {
   return `<!doctype html>
 <html lang="en">
@@ -95,6 +98,7 @@ function shell(
       ${navItem("/", "Install", "home", active === "home")}
       ${navItem("/connections", "Connect stores", "plug", active === "connections")}
       ${navItem("/approvals", "Approvals", "check", active === "approvals")}
+      ${navItem("/settings", "Settings", "gear", active === "settings")}
     </nav>
     <div class="foot">
       <div class="themeseg" role="group" aria-label="Theme">
@@ -211,11 +215,14 @@ const TOOL_SURFACE: { safe: [string, string][]; money: [string, string][] } = {
     ["basket_list_stores", "which stores are loaded, and in what mode"],
     ["basket_search_products", "search across every loaded store at once"],
     ["basket_get_product_detail", "one product, normalised"],
-    ["basket_list_orders", "orders this machine has recorded"],
-    ["basket_get_order_status", "where one order got to"],
     ["basket_get_token_report", "what the last call cost, in tokens"],
+    ["basket_auth_status", "which stores are signed in, and which need Connect"],
   ],
   money: [
+    ["basket_list_delivery_slots", "delivery windows — needs a connected session"],
+    ["basket_list_accounts", "opaque handles for cart_prepare"],
+    ["basket_list_orders", "orders this machine has recorded"],
+    ["basket_get_order_status", "where one order got to"],
     ["basket_cart_prepare", "builds a cart and stops — this is what opens an approval"],
     ["basket_purchase_confirm", "spends money, and only after you approved this exact cart"],
   ],
@@ -331,19 +338,19 @@ ${h2("Install", `${primary.length} verified`)}
 ${h2("Everything else", `${rest.length} more`)}
 <div class="clients">${rest.map((c, i) => row(c, primary.length + i + 1)).join("")}</div>
 
-${h2("Tool surface", `${TOOL_SURFACE.safe.length + TOOL_SURFACE.money.length} tools`)}
+${h2("Tool surface", `${TOOL_SURFACE.safe.length + TOOL_SURFACE.money.length} tools · two lanes`)}
 <div class="tools">
   <div class="toolcard">
     <div class="cap">
-      <span class="pill ok">read only</span>
-      <span class="what">Answer questions. Never move money.</span>
+      <span class="pill ok">fetch lane</span>
+      <span class="what">No account needed. Search and status only.</span>
     </div>
     ${toolRows(TOOL_SURFACE.safe)}
   </div>
   <div class="toolcard money">
     <div class="cap">
-      <span class="pill wait">money adjacent</span>
-      <span class="what">Declared <code>destructiveHint: true</code>, and gated.</span>
+      <span class="pill wait">purchase lane</span>
+      <span class="what">Needs Connect and/or a human. Caps in Settings.</span>
     </div>
     ${toolRows(TOOL_SURFACE.money)}
   </div>
@@ -398,6 +405,18 @@ export interface StoreRow {
   mode: string;
   country?: string;
   currency?: string;
+  /** The adapter's own account declaration. Everything the card says comes from it. */
+  account: StoreAccount;
+  /**
+   * Which shelf this store starts on, computed server-side from what the
+   * vault holds right now.
+   *
+   * Rendered into the markup rather than fetched, so the tabs work on a page
+   * whose first status poll has not landed yet -- and so a reader with
+   * JavaScript off still sees which stores are signed in.
+   */
+  lane?: AccountLane;
+  state?: SessionState;
 }
 
 export interface ConnectionsInput {
@@ -442,40 +461,7 @@ function firstSentence(text: string): string {
  * says which of the two you are looking at, in the terms a shopper would use.
  */
 function modeLabel(mode: string): string {
-  return mode === "native" ? "live data" : "sample data";
-}
-
-/**
- * Brands carried by more than one source (S18).
- *
- * Amazon, Tesco and IKEA each appear twice in the registry, and the reason is
- * real: one row is the retailer's own live data, the other is a fixture set
- * the offline drill depends on. They are genuinely different stores with
- * different capabilities, so they cannot be collapsed into one row without
- * claiming a union of capabilities neither one has — the exact overclaim
- * `StoreRegistry.register` throws on.
- *
- * What they CAN stop doing is appearing twice with no explanation. This pairs
- * them up so each card can name its twin, and so the sort can seat them next
- * to each other. Keyed on the display name, which is what a reader matches
- * on; the ids differ by design.
- */
-function twinsByBrand(stores: StoreRow[]): Map<string, StoreRow> {
-  const byBrand = new Map<string, StoreRow[]>();
-  for (const s of stores) {
-    const key = s.name.trim().toLowerCase();
-    byBrand.set(key, [...(byBrand.get(key) ?? []), s]);
-  }
-  const twin = new Map<string, StoreRow>();
-  for (const group of byBrand.values()) {
-    if (group.length !== 2) continue;
-    const live = group.find((s) => s.mode === "native");
-    const sample = group.find((s) => s.mode !== "native");
-    if (!live || !sample) continue;
-    twin.set(live.id, sample);
-    twin.set(sample.id, live);
-  }
-  return twin;
+  return mode === "native" ? "live" : mode === "simulated" ? "demo" : mode;
 }
 
 /**
@@ -493,17 +479,25 @@ function twinsByBrand(stores: StoreRow[]): Map<string, StoreRow> {
 /**
  * The control that starts a connection (S20).
  *
- * A real anchor with `target="_blank"`, not a button that calls
- * `window.open` — because the click is then the browser's own navigation, in
- * the browser the panel is already running in. That is what makes the tab
- * appear in the user's actual window, with their actual logins, instead of a
- * second Chrome: no automation is involved in opening it at all. It also
- * means no popup blocker ever eats it, which a scripted open after an
- * `await` reliably would.
+ * A real anchor with `target="_blank"`, never a button — the tab has to be a
+ * navigation in the browser the panel is already running in, so it lands in
+ * the user's actual window with their actual logins rather than in a second
+ * Chrome. Middle-click, ctrl-click and "open in new tab" all keep working,
+ * and a page with JavaScript off still reaches the retailer.
+ *
+ * A plain left click is intercepted by script.ts and re-issued as
+ * `window.open`, synchronously inside the handler (S24). Synchronously is the
+ * whole trick: no popup blocker touches an open that happens inside a click,
+ * and only a window this page opened itself may later be closed by it. Before
+ * that, the tab was opened by the anchor's own navigation and nothing on this
+ * page could close it — "it connected but the tab is still sitting there" was
+ * not an intermittent bug, it was the only possible outcome. If the open is
+ * refused for any reason the click is left alone and the anchor does its own
+ * job.
  *
  * The `data-` attributes are what the extension needs to read that session
  * back: which domains to look in, which cookie names mean "signed in", and
- * (Tesco only) which API's `Authorization` header is the real credential.
+ * (Tesco only) which API's request headers ARE the credential.
  * All of it is public policy from connections.ts — none of it is a secret.
  */
 function connectAnchor(store: StoreRow, policy: StoreAuthPolicy, label: string, cls: string): string {
@@ -513,58 +507,47 @@ function connectAnchor(store: StoreRow, policy: StoreAuthPolicy, label: string, 
      data-connect-open data-store="${esc(store.id)}" data-name="${esc(store.name)}"
      data-domains="${esc(JSON.stringify(login.domains))}"
      data-auth-cookies="${esc(JSON.stringify(login.authCookies))}"
-     data-bearer="${esc(login.bearer ?? "")}"
+     data-capture="${esc(JSON.stringify(login.capture ?? null))}"
      data-login-url="${esc(login.loginUrl)}">${esc(label)}</a>`;
 }
 
 export function renderConnections(input: ConnectionsInput): string {
-  const twin = twinsByBrand(input.stores);
+  const stores = input.stores.filter((s) => s.mode !== "simulated");
 
   const card = (s: StoreRow) => {
     const policy = authPolicyFor(s);
     const connectable = policy.methods.length > 0;
-    const other = twin.get(s.id);
     const live = s.mode === "native";
-    return `<article class="appcard" data-store="${esc(s.id)}" data-name="${esc(s.name.toLowerCase())}" data-connectable="${connectable}">
+    const lane = s.lane ?? laneFor(s.account, null);
+    const state = s.state ?? "none";
+    // "Reconnect", not "Connect", once something is already held: a shopper
+    // who connected an hour ago and is shown "Connect" reads it as their
+    // first attempt having failed silently.
+    const label = state === "expired" || state === "broken" ? "Reconnect" : "Connect";
+    return `<article class="appcard" data-store="${esc(s.id)}" data-name="${esc(s.name.toLowerCase())}" data-connectable="${connectable}" data-lane="${esc(lane)}" data-state="${esc(state)}">
   <div class="head">
     <span class="tile" aria-hidden="true">${esc(monogram(s.name))}</span>
     <div style="min-width:0">
       <div class="name"><a href="/connections/${encodeURIComponent(s.id)}">${esc(s.name)}</a></div>
-      <div class="where">${esc(s.id)}${s.country ? ` · ${esc(s.country)}` : ""}</div>
+      <div class="where">${esc(s.country)}${s.currency ? ` · ${esc(s.currency)}` : ""}</div>
     </div>
     <span class="pill ${live ? "ok" : "sim"}" style="margin-left:auto">${esc(modeLabel(s.mode))}</span>
   </div>
   <p class="reach">${esc(firstSentence(policy.reach))}</p>
-  ${
-    other
-      ? `<p class="twin">${
-          live
-            ? `Also listed as <a href="/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>, the demo copy the offline drill runs on. This is the live one.`
-            : `The real ${esc(s.name)} is <a href="/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>. This row is demo data, kept so the demo works with the wifi off.`
-        }</p>`
-      : ""
-  }
   <div class="foot">
     <span data-status><span class="pill off">checking</span></span>
     <span class="right">${
       connectable
         ? `<button class="btn sm danger" type="button" data-disconnect hidden>Disconnect</button>
-           ${connectAnchor(s, policy, "Connect", "btn sm pri")}`
+           ${connectAnchor(s, policy, label, "btn sm pri")}`
         : `<span class="none">no account needed</span>`
     }</span>
   </div>
 </article>`;
   };
 
-  // Twins adjacent, real source first, so the pair reads as a pair.
-  const ordered = [...input.stores].sort((a, b) => {
-    const byName = a.name.localeCompare(b.name);
-    if (byName !== 0) return byName;
-    if (a.mode === b.mode) return a.id.localeCompare(b.id);
-    return a.mode === "native" ? -1 : 1;
-  });
-
-  const n = input.stores.length;
+  const ordered = [...stores].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  const n = stores.length;
 
   return shell(
     "Connect stores",
@@ -572,24 +555,27 @@ export function renderConnections(input: ConnectionsInput): string {
     `
 <h1>Connect stores</h1>
 <p class="lede">
-  Connect opens the store's own site in a browser tab and you sign in there. <strong>Basketed never
-  asks you for a password</strong> &mdash; there is no field on this page that takes one. What comes
-  back is sealed with AES-256-GCM under a key on this machine and handed to nothing but the request
-  interceptor, and <strong>no agent can read it back</strong>.
+  Connect opens the store's own site in a tab of this browser. You sign in there.
+  <strong>Basketed never asks for a password</strong> &mdash; there is no field that takes one.
+  The session is sealed on this machine. No agent can read it back.
 </p>
 
 <div class="sage" style="margin-top:22px">
   <span class="eyebrow">how connecting works</span>
   <p>
-    None of these retailers publish a consumer OAuth flow, so nobody can offer a real
-    <strong>Sign in with</strong> button for them. The next best thing is the real thing: a tab opens
-    on the retailer's own page, at their own URL. Already signed in there? It finishes on its own.
-    Not signed in? Sign in on their page and it finishes the moment you are through. Stores marked
-    <em>no account needed</em> work signed-out and have nothing to connect.
+    Search works signed-out everywhere. Connect is only for the stores that keep a
+    basket or a delivery slot behind your own account: a tab opens on the store's own
+    site, you sign in there, and Basketed seals the session that site already uses.
+    Stores under <em>Fetch</em> have no account to connect &mdash; searching them signed
+    out is the whole product, not a limitation.
+  </p>
+  <p>
+    A session that has run out shows <em>Reconnect</em>. If you are still signed in at the
+    store, pressing it finishes by itself.
   </p>
 </div>
 
-${h2("Stores", twin.size ? `${twin.size / 2} carried by two sources` : "")}
+${h2("Stores", "")}
 <div class="appgrid" id="stores">${ordered.map(card).join("")}</div>
 <div class="empty" id="nostores" hidden>Nothing matches that.</div>
 `,
@@ -599,6 +585,8 @@ ${h2("Stores", twin.size ? `${twin.size / 2} carried by two sources` : "")}
       <div class="seg" role="group" aria-label="Filter stores">
         <button data-tab="all" class="on" type="button">All</button>
         <button data-tab="connected" type="button">Connected</button>
+        <button data-tab="unconnected" type="button">Unconnected</button>
+        <button data-tab="fetch" type="button">Fetch</button>
       </div>
       <div class="finder">
         <span class="slash" aria-hidden="true">/</span>
@@ -612,11 +600,23 @@ export interface ConnectInput {
   store: StoreRow;
   token: string;
   /** Set when a credential is already held, so the page can say so. */
-  connected: { method: string; username: string | null; broken: boolean } | null;
+  connected: {
+    method: string;
+    username: string | null;
+    broken: boolean;
+    /** A session past its own expiry. Held, but no longer worth anything (S23). */
+    expired: boolean;
+  } | null;
   /** True if a Chrome login window is already open for this store (S15). */
   chromeWaiting: boolean;
   /** Which browser the login will open in, so the card can say so up front (S18). */
   chrome: { attached: boolean; where: string };
+  /**
+   * Absolute path to the unpacked extension, so the page can print the exact
+   * string to paste rather than a relative one whose meaning depends on where
+   * the reader's shell happens to be standing (S24).
+   */
+  extensionDir: string;
 }
 
 /**
@@ -648,35 +648,48 @@ export function renderConnect(input: ConnectInput): string {
 
   const connectBlock = login
     ? `
-<div class="two" data-connect-page data-store="${esc(input.store.id)}">
+<div class="two" data-connect-page data-store="${esc(input.store.id)}" data-state="${esc(
+    held?.broken ? "broken" : held?.expired ? "expired" : held ? "live" : "none",
+  )}">
   <div class="card">
     <span class="eyebrow">sign in at ${store}</span>
     <p class="small" style="margin:8px 0 0">
       Connect opens ${store} in <strong>a new tab of this browser</strong> &mdash; the one you are
       reading this in, with the accounts you are already signed into. Nothing is launched and nothing
-      is automated: it is a link. If you are already signed in at ${store}, the connection finishes on
-      its own; if you are not, sign in on their page and it finishes the moment you are through.
+      is automated: it is a link. A <strong>Heartbeat</strong> then watches that tab: if you are already
+      signed in at ${store}, the connection finishes on its own; if you are not, that tab is pointed at
+      their login page and Heartbeat finishes the moment you are through.
       Basketed never asks you for a password and has no field to type one into.
     </p>
+    <div class="row" style="margin-top:18px" data-ext-badge hidden>
+      <span class="pill neutral" data-ext-pill>checking for the extension&hellip;</span>
+      <span class="small" data-ext-pill-note></span>
+    </div>
     <div class="row" style="margin-top:20px" data-connect-idle>
       ${connectAnchor(input.store, policy, held ? `Reconnect ${input.store.name}` : `Connect ${input.store.name}`, "btn pri")}
       <span class="small" data-connect-msg></span>
     </div>
     <div class="row" style="margin-top:20px" data-connect-waiting hidden>
-      <span class="small" data-connect-status>Waiting for ${store} in the other tab&hellip;</span>
+      <span class="small" data-connect-status>Heartbeat: watching ${store} in the other tab&hellip;</span>
       <a class="btn sm" href="${esc(login.loginUrl)}" target="_blank" rel="noopener noreferrer" data-connect-signin hidden>Sign in at ${store}</a>
       <button class="btn sm danger" type="button" data-connect-cancel>Stop waiting</button>
     </div>
 
     <div class="claim" style="margin-top:18px" data-ext-missing hidden>
-      <span class="eyebrow">to finish it automatically</span>
+      <span class="eyebrow">load this once, or Connect cannot finish</span>
       <p>
         Chrome does not let an outside program read this browser's session &mdash;
         <a href="https://developer.chrome.com/blog/remote-debugging-port" target="_blank" rel="noopener noreferrer">since
         Chrome 136</a> that is blocked on purpose, and it is a good rule. The way in is from the
-        inside: load <span class="num">packages/extension</span> once at
-        <span class="num">chrome://extensions</span> &rarr; Developer mode &rarr; Load unpacked, and
-        the connection completes by itself in this browser. Without it, use the window below instead.
+        inside, and it is a one-time thing: open <span class="num">chrome://extensions</span>
+        (or <span class="num">edge://extensions</span>), turn on <strong>Developer mode</strong>,
+        press <strong>Load unpacked</strong>, and pick this folder &mdash;
+      </p>
+      <p style="margin:10px 0 0"><span class="num">${esc(input.extensionDir)}</span></p>
+      <p style="margin:10px 0 0">
+        Then come back and press Connect; it finishes by itself. The same three lines are printed by
+        <span class="num">basketed extension</span> if you would rather read them in a terminal.
+        Without the extension, use the window below instead.
       </p>
       <div class="row" style="margin-top:12px">
         <button class="btn sm" type="button" data-chrome-start>Sign in in a Basketed window</button>
@@ -731,7 +744,9 @@ export function renderConnect(input: ConnectInput): string {
   <span class="pill ${input.store.mode === "native" ? "ok" : "sim"}">${esc(modeLabel(input.store.mode))}</span>
   ${
     held
-      ? `<span class="pill ${held.broken ? "bad" : "on"}">${held.broken ? "reconnect needed" : "connected"}</span>`
+      ? `<span class="pill ${held.broken || held.expired ? "bad" : "on"}">${
+          held.broken ? "reconnect needed" : held.expired ? "session expired" : "connected"
+        }</span>`
       : login
         ? `<span class="pill off">not connected</span>`
         : `<span class="pill ok">ready</span>`
@@ -743,13 +758,15 @@ export function renderConnect(input: ConnectInput): string {
 ${
   held
     ? `<div class="sage" style="margin-top:20px">
-  <span class="eyebrow">already connected</span>
+  <span class="eyebrow">${held.expired ? "held, but expired" : "already connected"}</span>
   <p>
     Held${held.username ? ` as <strong>${esc(held.username)}</strong>` : ""}
     as a <span class="num">${esc(methodLabel(held.method as ConnectMethod))}</span>.${
       held.broken
         ? " <strong>The stored bytes no longer decrypt with the current key</strong> &mdash; connect again to replace them."
-        : " Connecting again replaces it."
+        : held.expired
+          ? " <strong>This session has expired</strong> &mdash; the store will refuse it, so connect again to replace it."
+          : " Connecting again replaces it."
     }
   </p>
   <div class="row" style="margin-top:14px">
@@ -782,13 +799,71 @@ export function renderApprovals(token: string): string {
 </p>
 
 ${h2("Waiting for you", "refreshes every 5s")}
+<p id="refresh-status" class="meta" role="status" aria-live="polite"></p>
 <div id="approvals"><div class="empty">Loading…</div></div>
 
 ${h2("Orders")}
 <div id="orders"><div class="empty">Loading…</div></div>
 
-${h2("Guardrails", "checked at confirm, never at prepare")}
+${h2("Guardrails", "checked at confirm · edit in Settings")}
+<p class="small" style="margin:0 0 10px"><a href="/settings">Open Settings to change caps &amp; store allowlist &rarr;</a></p>
 <div id="guardrails" class="hair rails"></div>
+`,
+    token,
+  );
+}
+
+/* --------------------------------------------------------------- settings */
+
+export function renderSettings(token: string): string {
+  return shell(
+    "Settings",
+    "settings",
+    `
+<h1>Spend caps and store allowlist.</h1>
+<p class="lede">
+  These are your standing rules for every purchase. Caps are checked at
+  <strong>confirm</strong>, never at prepare. Human approval cannot be turned off —
+  caps only refuse carts that would break your budget.
+</p>
+
+<form id="settings-form" data-settings-form>
+  <div class="two" style="margin-top:8px">
+    <div class="card">
+      <span class="eyebrow">home currency</span>
+      <label class="small" for="home_currency" style="display:block;margin:10px 0 6px">ISO code (e.g. GBP, USD)</label>
+      <input class="field" id="home_currency" name="home_currency" maxlength="3" pattern="[A-Za-z]{3}" required autocomplete="off" />
+      <label class="small" for="per_order_cap" style="display:block;margin:16px 0 6px">Per-order cap</label>
+      <input class="field" id="per_order_cap" name="per_order_cap" type="number" min="0" max="1000000" step="0.01" required />
+      <label class="small" for="daily_cap" style="display:block;margin:16px 0 6px">Rolling 24h cap</label>
+      <input class="field" id="daily_cap" name="daily_cap" type="number" min="0" max="1000000" step="0.01" required />
+      <div class="row" style="margin-top:18px">
+        <button class="btn pri" type="submit">Save caps</button>
+        <span class="small" data-settings-msg></span>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="sage">
+        <span class="eyebrow">spent in the last 24h</span>
+        <p style="margin:8px 0 0"><strong data-settings-spent>—</strong></p>
+        <p class="small" style="margin:6px 0 0">Remaining under the daily cap: <strong data-settings-remaining>—</strong></p>
+      </div>
+      <div class="risk">
+        <span class="eyebrow">human approval stays on</span>
+        <p>
+          Every cart still needs you to type the total in Approvals or read the
+          6-digit console code. There is no toggle that lets an agent skip that.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  ${h2("Store allowlist", "empty = any cart-capable store")}
+  <p class="small" style="margin:0 0 12px">
+    Tick stores the agent may prepare a cart for. Leave all unchecked to allow every cart-capable store.
+  </p>
+  <div id="settings-stores" class="stack" style="gap:8px"><div class="empty">Loading…</div></div>
+</form>
 `,
     token,
   );

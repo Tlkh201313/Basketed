@@ -1,4 +1,27 @@
 import * as cheerio from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * What a rendered Amazon results page has and a block page does not.
+ *
+ * `s-main-slot` is the results container: a genuine zero-result search still
+ * has it, which is exactly the line being drawn -- absent means we are not
+ * looking at a results page at all.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "Amazon",
+  page: "search",
+  expect: [/s-main-slot/, /data-component-type="s-search-result"/, /id="search"/],
+  empty: [/No results for/i, /did not match any products/i],
+  blocked: [/Enter the characters you see below/i, /api-services-support@amazon\.com/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "Amazon",
+  page: "product page",
+  expect: [/id="productTitle"/, /id="dp"/, /id="ppd"/],
+  blocked: [/Enter the characters you see below/i],
+};
 import {
   inferCategory,
   sanitiseProductName,
@@ -14,6 +37,7 @@ import {
 import { mintProductId } from "../ids.js";
 import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 /**
  * Real Amazon — plain HTTP, no browser.
@@ -96,7 +120,15 @@ export interface AmazonAdapterOptions {
 
 export class AmazonAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
-  readonly #cache = new Map<string, Cached>();
+  #idCache: IdCache<Cached> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<Cached> {
+    return (this.#idCache ??= new IdCache<Cached>(this.manifest.id));
+  }
   readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
@@ -110,7 +142,36 @@ export class AmazonAdapter implements StoreAdapter {
       language: "en",
       categories: ["general"],
       mode: "native",
-      auth: "none",
+      /*
+       * Search is public. It is just a much worse search signed out.
+       *
+       * Amazon signed out guesses a delivery address from the exit IP and
+       * quotes the national price for it; signed in it quotes the shopper's
+       * own address, their Prime delivery date, and what their warehouse
+       * actually has. The same request is also far less likely to come back
+       * as a bot wall -- see blocked.ts, which exists because that wall is
+       * the single most common way this adapter fails.
+       *
+       * So: `improves`, never `uses`. Amazon has no cart tier here at all,
+       * and refusing a search that works perfectly well anonymously in order
+       * to advertise a nicer one would be the worst trade in the project.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail"],
+        refresh: "browser",
+        login: {
+          url: "https://www.amazon.com/",
+          loginUrl: "https://www.amazon.com/gp/sign-in.html",
+          domains: ["amazon.com"],
+          // Signature cookies, not a contract -- see AccountLoginSchema. These
+          // are the ones only a signed-in session carries; `session-id` and
+          // `ubid-main` are set for anonymous visitors too and would report
+          // everybody as logged in.
+          authCookies: ["at-main", "sess-at-main", "x-main", "sst-main"],
+        },
+      },
       capabilities: ["discovery", "detail"],
       domain: "amazon.com",
     };
@@ -137,8 +198,11 @@ export class AmazonAdapter implements StoreAdapter {
       html = await res.text();
       this.lastRawBytes = html.length;
       if (!res.ok) throw new Error(`Amazon search returned HTTP ${res.status}.`);
-      if (/captcha|robot or human|are you a human/i.test(html)) throw new Error("Amazon search appears blocked (captcha).");
     }
+
+    // Blocked and "we changed our markup" both used to arrive here as an
+    // empty product list. See blocked.ts.
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
 
     const $ = cheerio.load(html);
     const cards = $('div[data-component-type="s-search-result"]');
@@ -209,6 +273,7 @@ export class AmazonAdapter implements StoreAdapter {
       this.lastRawBytes = html.length;
       if (!res.ok) throw new Error(`Amazon product page returned HTTP ${res.status} for ${cached.asin}.`);
     }
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = cheerio.load(html);
 
     const titleRaw = $("#productTitle").text().trim();

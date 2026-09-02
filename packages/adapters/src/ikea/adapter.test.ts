@@ -101,7 +101,14 @@ describe("real IKEA adapter (S17)", () => {
     const adapter = new IkeaAdapter();
     expect(adapter.manifest.mode).toBe("native");
     expect(adapter.manifest.capabilities).toEqual(["discovery", "detail"]);
-    expect(adapter.manifest.auth).toBe("none");
+    // IKEA offers a session and gates nothing behind it (S22): a signed-in
+    // request quotes the shopper's own store's stock, and a signed-out one
+    // still has to answer, because it always did.
+    const account = adapter.manifest.account;
+    expect(account.kind).toBe("session");
+    if (account.kind !== "session") return;
+    expect(account.uses).toEqual([]);
+    expect(account.improves).toEqual(["discovery", "detail"]);
   });
 
   it("search parses real-shaped product cards with decimal (not minor-unit) prices", async () => {

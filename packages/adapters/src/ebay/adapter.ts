@@ -1,4 +1,23 @@
 import * as cheerio from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * `srp-river-results` is the results river. eBay renders it even for a search
+ * that matched nothing, and says so inside it -- which is why the empty case
+ * is a phrase and the ok case is a container.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "eBay",
+  page: "search",
+  expect: [/srp-river-results/, /class="[^"]*s-item/, /srp-results/],
+  empty: [/No exact matches found/i, /0 results for/i, /no results found/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "eBay",
+  page: "product page",
+  expect: [/x-item-title/, /itemId/i, /application\/ld\+json/],
+};
 import {
   inferCategory,
   sanitiseProductName,
@@ -13,6 +32,7 @@ import {
 import { mintProductId } from "../ids.js";
 import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 /**
  * Real eBay — plain HTTP, no browser.
@@ -74,7 +94,15 @@ export interface EbayAdapterOptions {
 
 export class EbayAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
-  readonly #cache = new Map<string, Cached>();
+  #idCache: IdCache<Cached> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<Cached> {
+    return (this.#idCache ??= new IdCache<Cached>(this.manifest.id));
+  }
   readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
@@ -88,7 +116,28 @@ export class EbayAdapter implements StoreAdapter {
       language: "en",
       categories: ["general", "electronics", "apparel"],
       mode: "native",
-      auth: "none",
+      /*
+       * eBay signed in is eBay with the shopper's site, currency, postage
+       * destination and saved searches applied. Signed out it is the US
+       * site with a guessed location, and it rate-limits an unrecognised
+       * client much sooner.
+       *
+       * `cart` improves for the same reason as Best Buy: the anonymous cart
+       * works and is handed off, and the signed-in one is the cart they will
+       * actually find when they get there.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail", "cart"],
+        refresh: "browser",
+        login: {
+          url: "https://www.ebay.com/",
+          loginUrl: "https://signin.ebay.com/ws/eBayISAPI.dll?SignIn",
+          domains: ["ebay.com"],
+          authCookies: ["ds1", "ds2", "ebaysid"],
+        },
+      },
       capabilities: ["discovery", "detail", "cart", "handoff"],
       domain: "ebay.com",
     };
@@ -119,6 +168,8 @@ export class EbayAdapter implements StoreAdapter {
       if (!res.ok) throw new Error(`eBay search returned HTTP ${res.status}.`);
       status = res.status;
     }
+
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
 
     const $ = cheerio.load(html);
     const products: Product[] = [];
@@ -206,6 +257,7 @@ export class EbayAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = cheerio.load(html);
 
     const titleRaw =

@@ -1,7 +1,5 @@
-import { readFile } from "node:fs/promises";
 import { userInfo } from "node:os";
-import { resolve } from "node:path";
-import { createRedactor, type FxTable, type Redactor } from "@basketed/core";
+import { createRedactor, type Redactor } from "@basketed/core";
 import {
   StoreRegistry,
   SimulatedAdapter,
@@ -15,8 +13,9 @@ import {
   loadPinnedShopifyStores,
   type AdapterCtx,
 } from "@basketed/adapters";
-import { openDb, type PurchaseDeps } from "@basketed/commerce";
+import { openDb, syncAccountStatus, type PurchaseDeps } from "@basketed/commerce";
 import { openVault, degradedVault, type Vault } from "@basketed/vault";
+import { loadFx } from "./fx-load.js";
 import { createPolicy, type Policy } from "./policy.js";
 
 /**
@@ -119,6 +118,12 @@ export interface RuntimeOptions {
   root?: string;
   /** Replay from fixtures/snapshots instead of the network. */
   snapshots?: boolean;
+  /**
+   * Load the fixture catalogues (`sim:tesco` and friends). Off by default —
+   * this is a shopping service, not a demo of two Tescos. Tests and
+   * `basketed serve --simulated` still opt in.
+   */
+  simulated?: boolean;
   /** Where adapter diagnostics go. NEVER stdout on the stdio transport. */
   log?: (msg: string) => void;
   /** SQLite path. ":memory:" in tests. */
@@ -151,18 +156,19 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
       loaded.push(adapter.manifest.id);
     }
   } catch (err) {
-    // A missing pin file must not take the server down -- the simulated stores
-    // still answer, and list_stores tells the truth about what is present.
     log(`no pinned Shopify stores: ${(err as Error).message}`);
   }
 
-  try {
-    for (const adapter of await SimulatedAdapter.loadAll(root)) {
-      registry.register(adapter);
-      loaded.push(adapter.manifest.id);
+  const simulated = opts.simulated ?? process.env["BASKETED_SIMULATED"] === "1";
+  if (simulated) {
+    try {
+      for (const adapter of await SimulatedAdapter.loadAll(root)) {
+        registry.register(adapter);
+        loaded.push(adapter.manifest.id);
+      }
+    } catch (err) {
+      log(`no simulated catalog: ${(err as Error).message}`);
     }
-  } catch (err) {
-    log(`no simulated catalog: ${(err as Error).message}`);
   }
 
   // Real Tesco (S16). Registered even under --snapshots -- unlike Shopify UCP
@@ -205,7 +211,9 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
 
   const ctx: AdapterCtx = { http: fetch, log, snapshots };
 
-  const fx = JSON.parse(await readFile(resolve(root, "fixtures/fx.json"), "utf8")) as FxTable;
+  // Never fatal: a currency table that will not read must not cost the
+  // shopper search, cart and orders. See fx-load.ts.
+  const fx = await loadFx(root, log);
   const db = openDb(opts.dbPath);
 
   // Every stored credential is handed to the redaction net as it is loaded, so
@@ -229,6 +237,11 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
 
   const byMode = new Map<string, number>();
   for (const row of registry.list()) byMode.set(row.mode, (byMode.get(row.mode) ?? 0) + 1);
+
+  // Every store that declares an account starts at whatever the vault can
+  // actually back up -- "ready" only where a live session is held. Stores with
+  // no account are left where the adapter loader put them.
+  syncAccountStatus(registry, vault);
 
   return {
     registry,

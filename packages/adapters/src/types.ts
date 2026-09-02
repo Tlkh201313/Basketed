@@ -1,5 +1,7 @@
 import type {
+  BookedSlot,
   CapabilityTier,
+  DeliverySlot,
   Money,
   Product,
   ProductDetail,
@@ -18,9 +20,10 @@ import type {
  * When a vault entry exists, `authorizedFetch` in `packages/vault` applies
  * auth as a request interceptor on `http` before the adapter is handed it, so
  * an adapter -- including a future third-party one -- still cannot read a
- * credential even by accident. Real Tesco (`tsc:tesco`) seals a bearer for
- * `xapi.tesco.com` this way; Shopify UCP and the simulated stores remain
- * anonymous and ignore it.
+ * credential even by accident. Real Tesco (`tsc:tesco`) seals a SET of
+ * headers this way -- `authorization` and `customer-uuid`, which its basket
+ * API wants together -- and the interceptor replays them verbatim; Shopify
+ * UCP and the simulated stores remain anonymous and ignore it.
  */
 export interface AdapterCtx {
   /** Pre-authenticated fetch. Auth is already applied; the adapter just calls it. */
@@ -90,6 +93,17 @@ export interface StoreAdapter {
   search(q: SearchQuery, ctx: AdapterCtx): Promise<Product[]>;
   detail(id: string, include: Include[], ctx: AdapterCtx): Promise<ProductDetail>;
   buildCart?(items: Array<{ id: string; quantity: number }>, ctx: AdapterCtx): Promise<RawCart>;
+  /**
+   * Delivery windows, for the stores that have them.
+   *
+   * Both halves or neither -- the registry refuses a store that can list a
+   * slot it cannot then book, because listing one an agent cannot take is a
+   * tour of a shop with no till. Every retailer studied requires a connected
+   * account for either call.
+   */
+  slots?(range: { start: string; end: string }, ctx: AdapterCtx): Promise<DeliverySlot[]>;
+  /** Reserve one. A commitment against a real account, so never under fast-mode. */
+  bookSlot?(slotId: string, ctx: AdapterCtx): Promise<BookedSlot>;
   handoff?(cartId: string, ctx: AdapterCtx): Promise<{ handoffUrl: string }>;
   orderStatus?(orderId: string, ctx: AdapterCtx): Promise<RawOrder>;
 }
@@ -100,6 +114,7 @@ export function implementedTiers(adapter: StoreAdapter): CapabilityTier[] {
   if (typeof adapter.search === "function") tiers.push("discovery");
   if (typeof adapter.detail === "function") tiers.push("detail");
   if (typeof adapter.buildCart === "function") tiers.push("cart");
+  if (typeof adapter.slots === "function" && typeof adapter.bookSlot === "function") tiers.push("slots");
   if (typeof adapter.handoff === "function") tiers.push("handoff");
   return tiers;
 }

@@ -96,7 +96,11 @@ describe("real Tesco adapter (S16)", () => {
   it("is mode native with only the tiers it actually implements", () => {
     const adapter = new TescoAdapter();
     expect(adapter.manifest.mode).toBe("native");
-    expect(adapter.manifest.capabilities).toEqual(["discovery", "detail", "cart"]);
+    expect(adapter.manifest.capabilities).toEqual(["discovery", "detail", "cart", "slots"]);
+    // The tier is only claimable with both halves present -- the registry
+    // refuses it otherwise, so this is what makes the claim above honest.
+    expect(typeof adapter.slots).toBe("function");
+    expect(typeof adapter.bookSlot).toBe("function");
   });
 
   it("search returns real-shaped products, correctly priced", async () => {
@@ -142,10 +146,31 @@ describe("real Tesco adapter (S16)", () => {
     await expect(adapter.buildCart([{ id: product!.id, quantity: 1 }], ctxWith(http))).rejects.toThrow(/401|refused/i);
   });
 
-  it("detail() refuses an id it never minted", async () => {
+  it("GraphQL calls send Tesco's own Origin and Referer", async () => {
     const adapter = new TescoAdapter();
-    await expect(adapter.detail("bk_tsc-tesco_nope_00000000", ["stock"], ctxWith(fakeTescoHttp()))).rejects.toThrow(
-      /server-minted/,
-    );
+    let seen: Headers | undefined;
+    const http: typeof fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      seen = new Headers(init?.headers);
+      if (url.includes("search.api.tesco.com")) {
+        return jsonResponse({
+          uk: { ghs: { products: { results: [{ tpnb: 50580405 }], totals: { all: 1 } } } },
+        });
+      }
+      return jsonResponse([
+        {
+          data: {
+            product: {
+              id: "900000001",
+              title: "Yorkshire 80 Teabags 250G",
+              price: { actual: 3.75 },
+            },
+          },
+        },
+      ]);
+    };
+    await adapter.search({ query: "tea" }, ctxWith(http));
+    expect(seen?.get("origin")).toBe("https://www.tesco.com");
+    expect(seen?.get("referer")).toBe("https://www.tesco.com/groceries/");
   });
 });

@@ -136,7 +136,9 @@ describe("2 — purchase is blocked in fast mode", () => {
   it("never auto-confirms a money-adjacent tool, whatever the flag says", () => {
     const fast = createPolicy(true);
     for (const name of NEVER_ALLOW) expect(mayAutoConfirm(fast, name)).toBe(false);
-    for (const name of PURCHASE_TOOL_NAMES.slice(0, 2)) expect(mayAutoConfirm(fast, name)).toBe(false);
+    for (const name of ["basket_cart_prepare", "basket_purchase_confirm"]) {
+      expect(mayAutoConfirm(fast, name)).toBe(false);
+    }
     // Read-only tools are exactly what the flag is for.
     expect(mayAutoConfirm(fast, "basket_search_products")).toBe(true);
     expect(mayAutoConfirm(createPolicy(false), "basket_search_products")).toBe(false);
@@ -237,7 +239,7 @@ describe("4 — cart-hash drift blocks the purchase", () => {
 
     const result = await confirmPurchase(deps, approvalId, PRINCIPAL);
     expect(result.ok).toBe(false);
-    expect(result.reason).toMatch(/changed after it was approved/i);
+    expect(result.reason).toMatch(/does not match what was approved/i);
     expect(result.orderId).toBeUndefined();
   });
 
@@ -260,7 +262,7 @@ describe("4 — cart-hash drift blocks the purchase", () => {
     expect(cartHash(repriced)).not.toBe(original);
   });
 
-  it("a failed execution does not hand the approval back", async () => {
+  it("a drifted approval is void, not merely spent — and cannot be confirmed again", async () => {
     const { approvalId } = await prepare();
     approveApproval(deps, approvalId, PRINCIPAL, { channel: "console", code: codeFromBanner() });
 
@@ -273,8 +275,19 @@ describe("4 — cart-hash drift blocks the purchase", () => {
 
     expect((await confirmPurchase(deps, approvalId, PRINCIPAL)).ok).toBe(false);
 
+    /*
+     * REJECTED, not CONSUMED. Nothing was bought, so the state a human reads
+     * should say the purchase was called off rather than that it went
+     * through -- and it is terminal either way, which is what actually
+     * matters: a cart that no longer matches what was approved must never be
+     * confirmable a second time at the new price.
+     */
     const state = deps.db.prepare("SELECT state FROM approvals WHERE id = ?").get(approvalId) as { state: string };
-    expect(state.state).toBe("CONSUMED");
+    expect(state.state).toBe("REJECTED");
+
+    const again = await confirmPurchase(deps, approvalId, PRINCIPAL);
+    expect(again.ok).toBe(false);
+    expect(again.orderId).toBeUndefined();
   });
 });
 
@@ -291,6 +304,54 @@ describe("5 — the surface itself cannot approve", () => {
     for (const name of ["basket_cart_prepare", "basket_purchase_confirm"]) {
       expect(NEVER_ALLOW).toContain(name);
     }
+  });
+
+  it("lists accounts and slots on the purchase lane", () => {
+    expect(PURCHASE_TOOL_NAMES).toContain("basket_list_accounts");
+    expect(PURCHASE_TOOL_NAMES).toContain("basket_list_delivery_slots");
+    expect(TOOL_NAMES).not.toContain("basket_list_delivery_slots");
+  });
+});
+
+describe("session stores refuse prepare without Connect", () => {
+  it("fails before hitting Tesco when the vault has no live session", async () => {
+    const thin = {
+      manifest: {
+        id: "tsc:tesco",
+        name: "Tesco",
+        domain: "tesco.com",
+        country: "GB",
+        currency: "GBP",
+        mode: "native" as const,
+        categories: ["grocery" as const],
+        capabilities: ["discovery", "detail", "cart"] as const,
+        account: { kind: "none" } as const,
+      },
+      search: async () => [],
+      detail: async () => {
+        throw new Error("unused");
+      },
+      buildCart: async () => {
+        throw new Error("buildCart must not run without a session");
+      },
+    };
+    const reg = new StoreRegistry();
+    reg.register(thin as never);
+    const id = "bk_tsc-tesco_gate";
+
+    const local: PurchaseDeps = {
+      ...deps,
+      registry: reg,
+      vault: { list: () => [], get: () => null } as never,
+    };
+
+    await expect(
+      prepareCart(local, {
+        items: [{ id, quantity: 1 }],
+        accountHandle: "acct_session_tsc_tesco",
+        principal: PRINCIPAL,
+      }),
+    ).rejects.toThrow(/connected session|Connect stores|Tesco/i);
   });
 });
 

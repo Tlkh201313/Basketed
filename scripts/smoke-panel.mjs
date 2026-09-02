@@ -27,12 +27,21 @@ function check(label, condition, detail = "") {
 
 const child = spawn(
   process.execPath,
-  [resolve(ROOT, "packages/cli/bin.js"), "serve", "--http", "--port", String(PORT), "--snapshots"],
+  [resolve(ROOT, "packages/cli/bin.js"), "serve", "--http", "--port", String(PORT), "--snapshots", "--simulated"],
   // NO_OPEN: see smoke-purchase -- this one reaches an approval too.
   {
     cwd: ROOT,
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, BASKETED_DB: join(DB_DIR, "panel.db"), BASKETED_NO_OPEN: "1" },
+    env: {
+      ...process.env,
+      BASKETED_DB: join(DB_DIR, "panel.db"),
+      BASKETED_NO_OPEN: "1",
+      // Its own handoff record. A panel this process starts must not defer
+      // to whatever panel the developer running the smoke has open, or the
+      // approve_url below would point at that one and this would fail for a
+      // reason that has nothing to do with the code.
+      BASKETED_STATE_DIR: DB_DIR,
+    },
   },
 );
 

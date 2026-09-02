@@ -1,4 +1,23 @@
 import * as cheerio from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * Etsy's search results carry data-listing-id on every card, and the search
+ * wrapper is present even when nothing matched. The `empty` phrases are Etsy's
+ * own; without one of them, "no cards" means our selectors, not their stock.
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "Etsy",
+  page: "search",
+  expect: [/data-listing-id/, /search-results/, /wt-grid/, /listing-card/],
+  empty: [/no results/i, /found no results/i, /couldn(?:'|&#39;|’)t find any/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "Etsy",
+  page: "listing page",
+  expect: [/data-buy-box-listing-title/, /data-listing-id/, /application\/ld\+json/, /listing-page/],
+};
 import {
   inferCategory,
   sanitiseProductName,
@@ -13,6 +32,7 @@ import {
 import { mintProductId } from "../ids.js";
 import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 /**
  * Real Etsy — plain HTTP, no browser.
@@ -65,7 +85,15 @@ export interface EtsyAdapterOptions {
 
 export class EtsyAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
-  readonly #cache = new Map<string, Cached>();
+  #idCache: IdCache<Cached> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<Cached> {
+    return (this.#idCache ??= new IdCache<Cached>(this.manifest.id));
+  }
   readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
@@ -79,7 +107,28 @@ export class EtsyAdapter implements StoreAdapter {
       language: "en",
       categories: ["general", "apparel", "furniture"],
       mode: "native",
-      auth: "none",
+      /*
+       * Etsy is the store where being recognised matters most for getting an
+       * answer at all: an unrecognised client is the one this adapter's 403
+       * fallback exists for, and it is why Etsy is the only store still
+       * allowed to reach for Chromium. A signed-in session is the cheap fix
+       * -- it is also what makes shipping costs and delivery dates the
+       * shopper's own rather than a default to the United States.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail"],
+        refresh: "browser",
+        login: {
+          url: "https://www.etsy.com/",
+          loginUrl: "https://www.etsy.com/signin",
+          domains: ["etsy.com"],
+          // `etala` is the signed-in account marker; `etanon` is its
+          // anonymous twin and is deliberately not listed.
+          authCookies: ["etala"],
+        },
+      },
       capabilities: ["discovery", "detail"],
       domain: "etsy.com",
     };
@@ -127,6 +176,10 @@ export class EtsyAdapter implements StoreAdapter {
         status = res.status;
       }
     }
+
+    // Etsy 403s aggressively. A refusal must reach failed[], not read as
+    // "Etsy has nothing like that". See blocked.ts.
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
 
     const $ = cheerio.load(html);
     const products: Product[] = [];
@@ -233,6 +286,7 @@ export class EtsyAdapter implements StoreAdapter {
       }
     }
 
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = cheerio.load(html);
 
     const titleRaw =

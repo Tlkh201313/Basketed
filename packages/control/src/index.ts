@@ -2,14 +2,17 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { PANEL_BODY_LIMIT, readJsonBody } from "@basketed/core";
+import { laneFor, sessionState } from "@basketed/commerce";
 import { handleApi } from "./api.js";
-import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, type StoreRow } from "./pages.js";
+import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, renderSettings, type StoreRow } from "./pages.js";
 import { stateOf as chromeLoginStateOf, chromeMode } from "./browser-connect.js";
 import type { ControlDeps } from "./types.js";
 
 export * from "./clients.js";
 export type { ControlDeps } from "./types.js";
-export { closeAll as closeAllChromeLogins } from "./browser-connect.js";
+export { closeAll as closeAllChromeLogins, installedBrowser, browserNameFor, candidateChromePaths } from "./browser-connect.js";
+export { readExtensionSeen, noteExtensionSeen, type ExtensionSeen } from "./extension-file.js";
 
 /**
  * The control panel (§7), served by the same process and the same port as the
@@ -189,6 +192,20 @@ function originMatches(origin: string | undefined, panelOrigin: string): boolean
   }
 }
 
+/**
+ * The GET rule, which is NOT the mutating one.
+ *
+ * A browser omits Origin on a same-origin GET, so demanding a match here would
+ * refuse the panel's own polling. But a PRESENT and foreign Origin can only be
+ * another page's fetch, and reading /api/* is not harmless: approvals carry
+ * itemised carts and totals. The panel token is the real gate, and this is the
+ * layer under it -- a token that leaks through a pasted URL or a Referer
+ * should not also hand a foreign page the shopper's basket.
+ */
+function originAllowedForRead(origin: string | undefined, panelOrigin: string): boolean {
+  return origin === undefined || originMatches(origin, panelOrigin);
+}
+
 export function createPanelHandler(
   deps: ControlDeps,
   opts: PanelOptions,
@@ -206,7 +223,7 @@ export function createPanelHandler(
     // meant to answer "why was I refused" from the server's own console
     // without ever putting a secret in that answer.
     const authed = tokenMatches(suppliedToken(req, url), opts.token);
-    if (!authed && (path.startsWith("/api/") || path === "/" || path === "/approvals" || path.startsWith("/approvals/") || path === "/connections" || path.startsWith("/connections/"))) {
+    if (!authed && (path.startsWith("/api/") || path === "/" || path === "/approvals" || path.startsWith("/approvals/") || path === "/connections" || path.startsWith("/connections/") || path === "/settings")) {
       log(`401 ${method} ${path} (${suppliedToken(req, url) ? "token did not match" : "no token supplied"})`);
     }
 
@@ -245,7 +262,11 @@ export function createPanelHandler(
        * guessed. The token is checked second because it is the real one: it is
        * the only part of this a local process cannot satisfy.
        */
-      if (method !== "GET" && !originMatches(req.headers.origin, panelOrigin)) {
+      const originOk =
+        method === "GET"
+          ? originAllowedForRead(req.headers.origin, panelOrigin)
+          : originMatches(req.headers.origin, panelOrigin);
+      if (!originOk) {
         log(`403 ${method} ${path} (Origin was ${req.headers.origin ? JSON.stringify(req.headers.origin) : "absent"})`);
         send(res, 403, "application/json", JSON.stringify({ error: "Cross-origin request refused." }));
         return true;
@@ -265,16 +286,20 @@ export function createPanelHandler(
         return true;
       }
 
-      const body = async (): Promise<Record<string, unknown>> => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of req) chunks.push(chunk as Buffer);
-        if (!chunks.length) return {};
-        try {
-          return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
-        } catch {
-          return {};
-        }
-      };
+      /*
+       * Read once, bounded, and answer the client instead of the route.
+       *
+       * This used to buffer the whole body unmeasured and turn a parse failure
+       * into `{}` -- so a typo in a request arrived at the handler as "you
+       * sent no fields", which reads as a bug in the route rather than in the
+       * request. 413 and 400 say which one it is.
+       */
+      const read = await readJsonBody(req, PANEL_BODY_LIMIT);
+      if (!read.ok) {
+        send(res, read.status, "application/json", JSON.stringify({ error: read.error }));
+        return true;
+      }
+      const body = async (): Promise<Record<string, unknown>> => read.value;
       let result;
       try {
         result = await handleApi(deps, method, path, body);
@@ -302,13 +327,19 @@ export function createPanelHandler(
         path === "/approvals" ||
         path.startsWith("/approvals/") ||
         path === "/connections" ||
-        path.startsWith("/connections/"));
+        path.startsWith("/connections/") ||
+        path === "/settings");
 
     if (isPanelPage) {
       // The locked page carries no token, so an agent that GETs the panel
       // learns nothing it could replay against /api.
       if (!authed) {
         send(res, 401, "text/html; charset=utf-8", renderLocked());
+        return true;
+      }
+
+      if (path === "/settings") {
+        send(res, 200, "text/html; charset=utf-8", renderSettings(opts.token), { "set-cookie": setCookie });
         return true;
       }
 
@@ -320,13 +351,22 @@ export function createPanelHandler(
       }
 
       if (path === "/connections") {
-        const stores: StoreRow[] = deps.registry.list().map((s) => ({
-          id: s.id,
-          name: s.name,
-          mode: s.mode,
-          country: s.country,
-          currency: s.currency,
-        }));
+        // Lane and state are computed here, not in the browser, so the four
+        // tabs are correct on first paint rather than after the status poll
+        // lands -- and so a reader with JavaScript off still sees the truth.
+        const stores: StoreRow[] = deps.registry.list().map((s) => {
+          const held = deps.vault.get(s.id);
+          return {
+            id: s.id,
+            name: s.name,
+            mode: s.mode,
+            country: s.country,
+            currency: s.currency,
+            account: s.account,
+            lane: laneFor(s.account, held),
+            state: sessionState(held),
+          };
+        });
         send(res, 200, "text/html; charset=utf-8", renderConnections({ stores, token: opts.token }), {
           "set-cookie": setCookie,
         });
@@ -336,7 +376,7 @@ export function createPanelHandler(
       if (path.startsWith("/connections/")) {
         const storeId = decodeURIComponent(path.slice("/connections/".length));
         const store = deps.registry.list().find((s) => s.id === storeId);
-        if (!store) {
+        if (!store || store.mode === "simulated") {
           send(
             res,
             404,
@@ -351,13 +391,27 @@ export function createPanelHandler(
           200,
           "text/html; charset=utf-8",
           renderConnect({
-            store: { id: store.id, name: store.name, mode: store.mode, country: store.country, currency: store.currency },
+            store: {
+              id: store.id,
+              name: store.name,
+              mode: store.mode,
+              country: store.country,
+              currency: store.currency,
+              account: store.account,
+              lane: laneFor(store.account, held),
+              state: sessionState(held),
+            },
             token: opts.token,
-            connected: held ? { method: held.kind, username: held.username, broken: held.broken } : null,
+            connected: held
+              ? { method: held.kind, username: held.username, broken: held.broken, expired: held.expired }
+              : null,
             // "logged_in" is still a window waiting to be captured, so both
             // non-idle states render the waiting card.
             chromeWaiting: chromeLoginStateOf(storeId) !== "idle",
             chrome: await chromeMode(),
+            // Absolute, from this process's own root, so the page prints a
+            // path that can be pasted straight into Load unpacked.
+            extensionDir: resolve(opts.root, "packages/extension"),
           }),
           { "set-cookie": setCookie },
         );

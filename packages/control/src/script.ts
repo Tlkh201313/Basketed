@@ -41,6 +41,27 @@ function api(path, init) {
 }
 
 /*
+ * Every repeating timer on the page, in one list.
+ *
+ * Four sections start intervals and none of them stopped. On a page left open
+ * for a working day that is four callbacks still firing against a document
+ * nobody is looking at -- polling, re-rendering, and holding the whole closure
+ * alive. "pagehide" rather than "unload", because "unload" is the one event
+ * that is not guaranteed to fire and is what disqualifies a page from the
+ * back/forward cache in the first place.
+ */
+const timers = [];
+function every(fn, ms) {
+  const id = setInterval(fn, ms);
+  timers.push(id);
+  return id;
+}
+window.addEventListener("pagehide", () => {
+  for (const id of timers) clearInterval(id);
+  timers.length = 0;
+});
+
+/*
  * theme: explicit choice beats OS, and persists per browser (S14).
  *
  * Three buttons rather than one cycling button, because "System theme" as the
@@ -163,7 +184,11 @@ if (approvalsEl) {
         '<span class="store">' + esc(a.store_id) + '</span>' +
         '<span class="ref">account <span class="num">' + esc(a.account_handle) + '</span></span>' +
         stamp +
-        countdown(a.expires_in_ms) +
+        // Wrapped and stamped with an absolute deadline so tickClocks can keep
+        // it moving WITHOUT re-rendering the card -- see refresh().
+        '<span data-clock data-deadline="' + (Date.now() + a.expires_in_ms) + '">' +
+          countdown(a.expires_in_ms) +
+        '</span>' +
       '</div>' +
       '<table class="lines">' + lines + adj +
         '<tr class="sum"><td>Total</td><td>' + money(a.total) + '</td></tr>' +
@@ -181,30 +206,134 @@ if (approvalsEl) {
     '</div>';
   }
 
+  /* The last payload rendered into each region, so an unchanged one is a no-op. */
+  const rendered = { approvals: "", orders: "", state: "" };
+  let consecutiveFailures = 0;
+
+  /**
+   * True when this region's data actually changed.
+   *
+   * The reason this matters is not performance. The approvals list re-rendered
+   * every 5 seconds unconditionally, which replaced the input a person was
+   * typing their total into -- so authorising a purchase was a race against a
+   * timer, and the workaround people found was to type faster.
+   */
+  function changed(region, payload) {
+    const next = JSON.stringify(payload);
+    if (rendered[region] === next) return false;
+    rendered[region] = next;
+    return true;
+  }
+
+  /**
+   * The payload with the ticking field taken out.
+   *
+   * expires_in_ms differs on every poll, so diffing the raw payload would
+   * always say "changed" and we would be back where we started. The countdown
+   * is driven from an absolute deadline stamped into the DOM at render time
+   * instead, and the diff is taken on everything else.
+   */
+  function withoutClocks(data) {
+    return {
+      approvals: (data.approvals || []).map((a) => {
+        const copy = Object.assign({}, a);
+        delete copy.expires_in_ms;
+        return copy;
+      }),
+    };
+  }
+
+  function tickClocks() {
+    for (const el of $$("#approvals [data-clock]")) {
+      el.innerHTML = countdown(Number(el.dataset.deadline) - Date.now());
+    }
+  }
+
+  /** What a person has typed, and whether they were still in the box. */
+  function snapshotTyped() {
+    const typed = {};
+    for (const el of $$("#approvals [data-id] [data-total]")) {
+      const card = el.closest("[data-id]");
+      if (card && el.value) typed[card.dataset.id] = { value: el.value, focused: el === document.activeElement };
+    }
+    return typed;
+  }
+
+  function restoreTyped(typed) {
+    for (const el of $$("#approvals [data-id] [data-total]")) {
+      const card = el.closest("[data-id]");
+      const saved = card && typed[card.dataset.id];
+      if (!saved) continue;
+      el.value = saved.value;
+      // Re-run the match check, or the Approve button stays disabled against a
+      // total that is now correctly typed.
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      if (saved.focused) {
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    }
+  }
+
+  /**
+   * Says out loud when the page has stopped being live.
+   *
+   * A poll that threw used to leave the last render sitting there looking
+   * current. On a page whose whole purpose is authorising money, silently
+   * stale is the worst of the three states -- worse than an error, and much
+   * worse than a blank.
+   */
+  function note(text, tone) {
+    const el = $("#refresh-status");
+    if (!el) return;
+    el.textContent = text;
+    el.className = tone ? "meta " + tone : "meta";
+  }
+
   async function refresh() {
-    const res = await api("/api/approvals");
-    const data = await res.json();
-    approvalsEl.innerHTML = data.approvals.length
-      ? data.approvals.map(card).join("")
-      : '<div class="empty">Nothing waiting. Ask your agent to prepare a cart.</div>';
+    try {
+      const data = await (await api("/api/approvals")).json();
+      if (changed("approvals", withoutClocks(data))) {
+        const typed = snapshotTyped();
+        approvalsEl.innerHTML = data.approvals.length
+          ? data.approvals.map(card).join("")
+          : '<div class="empty">Nothing waiting. Ask your agent to prepare a cart.</div>';
+        restoreTyped(typed);
+      }
+      tickClocks();
 
-    const orders = await (await api("/api/orders")).json();
-    $("#orders").innerHTML = orders.orders.length
-      ? '<div class="orders">' + orders.orders.map(order).join("") + '</div>'
-      : '<div class="empty">No orders yet.</div>';
+      const orders = await (await api("/api/orders")).json();
+      if (changed("orders", orders)) {
+        $("#orders").innerHTML = orders.orders.length
+          ? '<div class="orders">' + orders.orders.map(order).join("") + '</div>'
+          : '<div class="empty">No orders yet.</div>';
+      }
 
-    const state = await (await api("/api/state")).json();
-    const g = state.guardrails;
-    const alarms = state.redaction_alarms;
-    $("#guardrails").innerHTML =
-      tile("per order", g.perOrderCap.toFixed(2) + " " + g.homeCurrency) +
-      tile("per 24h", g.dailyCap.toFixed(2) + " " + g.homeCurrency) +
-      tile("used in 24h", g.spent_24h.toFixed(2) + " " + g.homeCurrency) +
-      tile("allowed stores", g.allowedStores.length ? String(g.allowedStores.length) : "any") +
-      // Zero is the only good number here, so zero is the only one shown in
-      // green -- an alarm count styled like every other figure is a count
-      // nobody reads.
-      tile("redaction alarms", String(alarms), alarms > 0 ? "risk" : "good");
+      const state = await (await api("/api/state")).json();
+      if (changed("state", state)) {
+        const g = state.guardrails;
+        const alarms = state.redaction_alarms;
+        $("#guardrails").innerHTML =
+          tile("per order", g.perOrderCap.toFixed(2) + " " + g.homeCurrency) +
+          tile("per 24h", g.dailyCap.toFixed(2) + " " + g.homeCurrency) +
+          tile("used in 24h", g.spent_24h.toFixed(2) + " " + g.homeCurrency) +
+          tile("allowed stores", g.allowedStores.length ? String(g.allowedStores.length) : "any") +
+          // Zero is the only good number here, so zero is the only one shown in
+          // green -- an alarm count styled like every other figure is a count
+          // nobody reads.
+          tile("redaction alarms", String(alarms), alarms > 0 ? "risk" : "good");
+      }
+
+      if (consecutiveFailures) note("", "");
+      consecutiveFailures = 0;
+    } catch (err) {
+      consecutiveFailures += 1;
+      note(
+        "Not live -- the panel could not reach the server (" + consecutiveFailures +
+          (consecutiveFailures === 1 ? " try" : " tries") + "). Showing the last state it saw.",
+        "bad",
+      );
+    }
   }
 
   function tile(label, value, tone) {
@@ -298,20 +427,35 @@ if (approvalsEl) {
   });
 
   refresh();
-  // A five-minute TTL needs a visible clock, so the page re-reads rather than
-  // letting a card sit there looking live after it has expired.
-  setInterval(refresh, 5000);
+  every(refresh, 5000);
+  // The clock is its own second-by-second timer now. Re-reading the whole list
+  // just to move a countdown is what made the list re-render on top of a
+  // half-typed total.
+  every(tickClocks, 1000);
 }
 
 /* ----------------------------------------------------------- connections */
 
 const storesEl = $("#stores");
 if (storesEl) {
+  /* "3h left" / "40m left". Rounded DOWN: an optimistic clock on a session
+     about to die is worse than no clock at all. */
+  function timeLeft(at) {
+    const mins = Math.floor((at - Date.now()) / 60000);
+    if (mins <= 0) return "expiring now";
+    return mins >= 60 ? Math.floor(mins / 60) + "h left" : mins + "m left";
+  }
+
   function pill(c) {
     if (c.chrome_login_logged_in) return '<span class="pill wait">signed in — finishing…</span>';
     if (c.chrome_login_waiting) return '<span class="pill off">signing in…</span>';
     if (c.broken) return '<span class="pill bad">reconnect needed</span>';
-    if (c.connected) return '<span class="pill on">connected' + (c.username ? " as " + esc(c.username) : "") + '</span>';
+    if (c.expired) return '<span class="pill bad">session expired</span>';
+    if (c.connected) {
+      const who = c.username ? " as " + esc(c.username) : "";
+      const left = c.expires_at ? " · " + timeLeft(c.expires_at) : "";
+      return '<span class="pill on">connected' + who + left + '</span>';
+    }
     // A store with no account to sign in to is not "not connected" -- it is
     // finished. Saying otherwise reads as a step the reader still has to take.
     if (!c.methods || !c.methods.length) return '<span class="pill ok">ready</span>';
@@ -337,8 +481,16 @@ if (storesEl) {
       if (!c) return;
       const status = card.querySelector("[data-status]");
       if (status) status.innerHTML = pill(c);
+      // The server computes the lane; the poll keeps it current so a session
+      // that expires while the page is open moves shelf without a reload.
+      if (c.lane) card.dataset.lane = c.lane;
+      if (c.state) card.dataset.state = c.state;
+      const open = card.querySelector("[data-connect-open]");
+      if (open) open.textContent = c.state === "expired" || c.state === "broken" ? "Reconnect" : "Connect";
       const disc = card.querySelector("[data-disconnect]");
-      if (disc) disc.hidden = !c.connected && !c.broken;
+      // An expired session is still HELD -- disconnect has to stay reachable,
+      // or the only way out of one is to connect again over the top of it.
+      if (disc) disc.hidden = !c.connected && !c.broken && !c.expired;
     });
   }
 
@@ -361,11 +513,31 @@ if (storesEl) {
   /* tabs and search are pure client-side filters over server-rendered cards */
   let activeTab = "all";
   const countEl = $("[data-count]");
+
+  /*
+   * Which tab a card belongs on -- a pure function of the lane the server
+   * stamped, and nothing else.
+   *
+   * The old test read the rendered badge with a CSS selector: it asked
+   * whether a pill carried the "on" class, so the Connected tab was a query
+   * over styling, and a store with no account at all was simply "not
+   * connected" -- shelved beside one waiting on a sign-in that never happened.
+   * Those are different situations and the shopper has something to do about
+   * exactly one of them.
+   */
+  function laneMatches(tab, lane) {
+    if (tab === "all") return true;
+    if (tab === "fetch") return lane === "fetch";
+    if (tab === "connected") return lane === "connected";
+    if (tab === "unconnected") return lane === "unconnected";
+    return true;
+  }
+
   function applyFilter() {
     const q = ($("[data-find]").value || "").trim().toLowerCase();
     let shown = 0;
     storesEl.querySelectorAll("[data-store]").forEach((card) => {
-      const matchesTab = activeTab === "all" || card.querySelector("[data-status] .pill.on, [data-status] .pill.bad");
+      const matchesTab = laneMatches(activeTab, card.dataset.lane);
       const matchesText = !q || card.dataset.name.indexOf(q) !== -1 || card.dataset.store.toLowerCase().indexOf(q) !== -1;
       const show = Boolean(matchesTab) && matchesText;
       card.hidden = !show;
@@ -391,7 +563,7 @@ if (storesEl) {
   });
 
   refreshStatus().then(applyFilter);
-  setInterval(() => refreshStatus().then(applyFilter), 8000);
+  every(() => refreshStatus().then(applyFilter), 8000);
 }
 
 /*
@@ -427,7 +599,7 @@ function extensionPresent() {
  * the panel -- localhost is shared ground, and "a page on 127.0.0.1" is not
  * an identity.
  */
-function askExtension(cfg) {
+function askExtension(kind, cfg) {
   return new Promise((resolve) => {
     if (!extensionPresent()) { resolve(null); return; }
     const id = "bk" + Math.random().toString(36).slice(2);
@@ -443,40 +615,46 @@ function askExtension(cfg) {
     timer = setTimeout(() => { window.removeEventListener("message", onReply); resolve(null); }, 4000);
     window.postMessage({
       source: "basketed-panel",
-      type: "capture",
+      type: kind,
       id: id,
       token: TOKEN,
       domains: cfg.domains,
       authCookies: cfg.authCookies,
-      bearerMatch: cfg.bearerMatch,
+      capture: cfg.capture,
     }, window.location.origin);
   });
 }
 
 function connectConfig(el) {
   function parse(raw) { try { return JSON.parse(raw || "[]"); } catch (err) { return []; } }
+  function parseCapture(raw) { try { return JSON.parse(raw || "null"); } catch (err) { return null; } }
   return {
     storeId: el.dataset.store,
     name: el.dataset.name || el.dataset.store,
+    url: el.getAttribute("href") || "",
     domains: parse(el.dataset.domains),
     authCookies: parse(el.dataset.authCookies),
-    bearerMatch: el.dataset.bearer || "",
+    capture: parseCapture(el.dataset.capture),
     loginUrl: el.dataset.loginUrl || "",
   };
 }
 
 /* One attempt: ask the extension, and seal whatever it found. */
 async function tryCapture(cfg) {
-  const reply = await askExtension(cfg);
+  const reply = await askExtension("capture", cfg);
   if (!reply) return { state: "no-extension" };
   if (!reply.ok) return { state: "no-extension", error: reply.error };
   if (!reply.signedIn) return { state: "signed-out" };
+  // Signed in, but the store wants headers and none have flown yet. Reported
+  // separately from "waiting" so the pump knows it is worth provoking the
+  // tab rather than sitting through another 2.5 seconds of nothing.
+  if (cfg.capture && !reply.complete) return { state: "no-headers" };
   let res;
   try {
     res = await api("/api/connections/" + encodeURIComponent(cfg.storeId) + "/extension-capture", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cookie_header: reply.cookieHeader, bearer: reply.bearer }),
+      body: JSON.stringify({ cookie_header: reply.cookieHeader, headers: reply.headers }),
     });
   } catch (err) {
     return { state: "waiting", error: "Could not reach the server." };
@@ -488,6 +666,41 @@ async function tryCapture(cfg) {
 }
 
 const pumps = new Map();
+
+/*
+ * The retailer tab this page opened, per store.
+ *
+ * We hold the handle because window.open gives one and a plain target=_blank
+ * anchor does not, and two things depend on having it (S24):
+ *
+ *   - **Closing.** A page may only close a window it opened itself. Until
+ *     S24 the tab was opened by the anchor's own navigation, so nothing on
+ *     this page could ever close it -- "it connected but the tab is still
+ *     sitting there" was not a bug that sometimes happened, it was the only
+ *     possible outcome.
+ *   - **Provoking.** Tesco's credential is a header pair on a call its own
+ *     frontend makes, not a cookie. A shopper who is already signed in and
+ *     whose tab has finished loading makes no further calls, so there was
+ *     nothing to overhear and the connect waited forever. Re-pointing the
+ *     window at the store's own URL makes Tesco's own page issue its own
+ *     authenticated request. Cross-origin location assignment on a window
+ *     you opened is allowed; reading anything back from it is not, and we do
+ *     not try.
+ */
+const openedTabs = new Map();
+
+function tabFor(storeId) {
+  const w = openedTabs.get(storeId);
+  if (!w || w.closed) { openedTabs.delete(storeId); return null; }
+  return w;
+}
+
+function closeTab(storeId) {
+  const w = tabFor(storeId);
+  if (!w) return false;
+  openedTabs.delete(storeId);
+  try { w.close(); return true; } catch (err) { return false; }
+}
 
 function stopPump(storeId) {
   const t = pumps.get(storeId);
@@ -514,16 +727,99 @@ function showIdle() {
   if (signinLink) signinLink.hidden = true;
 }
 
+/*
+ * Arm the header watch as soon as the connect page is on screen, before any
+ * click. The listener has to be running BEFORE the retailer's tab loads, or
+ * the one authenticated call it makes on load is the one we miss -- which is
+ * exactly what happened to anyone already signed in.
+ */
+if (connectPage) {
+  const opener = $("[data-connect-open]");
+  if (opener) {
+    const cfg = connectConfig(opener);
+    if (cfg.capture) void askExtension("arm", cfg);
+  }
+
+  /*
+   * Say whether the extension is here BEFORE the click, not after the failure.
+   *
+   * The old page kept its only mention of the extension in a hidden block that
+   * appeared once a connect had already gone nowhere, so the single most
+   * common reason Connect does nothing was invisible right up until the moment
+   * it had already wasted the user's time. The content script sets the
+   * attribute this reads the instant the page loads, so the answer is known
+   * before anything is pressed.
+   */
+  const badge = $("[data-ext-badge]");
+  const pill = $("[data-ext-pill]");
+  const pillNote = $("[data-ext-pill-note]");
+  const here = extensionPresent();
+
+  /*
+   * A session that has run out, re-armed without a click.
+   *
+   * An expiry is not a sign-out. The shopper is very often still signed in at
+   * the store, and the only thing that lapsed is the copy Basketed holds. The
+   * page still made them press Connect, wait for a tab to open on a site they
+   * were already logged into, and close it again -- a full manual round trip
+   * to re-read something the extension can see from here.
+   *
+   * So on arrival, if a credential is held and dead and the extension is
+   * loaded, ask it once. If the cookies and headers are there, this finishes
+   * silently and the page reloads connected. If they are not, nothing is lost
+   * and the Connect button is exactly where it was.
+   *
+   * Deliberately no window.open: a popup outside a click handler is blocked,
+   * and one that was not would be a page opening retailer tabs on its own.
+   */
+  const state = connectPage.dataset.state;
+  if (here && opener && (state === "expired" || state === "broken")) {
+    const cfg = connectConfig(opener);
+    say("Session expired. Checking whether you are still signed in at " + cfg.name + "...");
+    void (async () => {
+      const out = await tryCapture(cfg);
+      if (out.state === "connected") {
+        say("Still signed in. Reconnected.");
+        setTimeout(() => location.reload(), 700);
+        return;
+      }
+      // Not a failure worth a red line: pressing Connect is the normal path
+      // and it is right there. Say what happened and get out of the way.
+      say("Press Reconnect to sign in at " + cfg.name + " again.");
+    })();
+  }
+  if (badge) badge.hidden = false;
+  if (pill) {
+    pill.className = here ? "pill ok" : "pill wait";
+    pill.textContent = here ? "extension loaded" : "extension not loaded";
+  }
+  if (pillNote) {
+    pillNote.textContent = here
+      ? "Connect finishes by itself in this browser."
+      : "Connect will open the tab, but cannot read the session back. Load it once - below.";
+  }
+  if (!here && extMissing) extMissing.hidden = false;
+}
+
 function watchConnect(cfg) {
   stopPump(cfg.storeId);
   showWaiting();
-  say("Waiting for " + cfg.name + " in the other tab...");
+  say("Heartbeat: watching " + cfg.name + " in the other tab...");
+
+  // How many ticks we have let pass without the headers we need before
+  // nudging the tab. One tick of patience first: if the page is still
+  // loading, its own request is already on the way and a reload would only
+  // interrupt it.
+  let dry = 0;
+  // Point the opened tab at the retailer's login page once when signed out.
+  let sentToLogin = false;
 
   async function tick() {
     const out = await tryCapture(cfg);
     if (out.state === "connected") {
       stopPump(cfg.storeId);
-      say("Connected. Reading this page again...");
+      const closed = closeTab(cfg.storeId);
+      say(closed ? "Connected. Closing that tab..." : "Connected. Reading this page again...");
       setTimeout(() => location.reload(), 900);
       return;
     }
@@ -534,8 +830,33 @@ function watchConnect(cfg) {
       return;
     }
     if (out.state === "signed-out") {
-      say("Not signed in at " + cfg.name + " yet - sign in in that tab and this finishes itself.");
+      dry = 0;
       if (signinLink) signinLink.hidden = false;
+      const tab = tabFor(cfg.storeId);
+      if (!sentToLogin && tab && cfg.loginUrl) {
+        sentToLogin = true;
+        say("Heartbeat: not signed in — opening " + cfg.name + " login in that tab...");
+        try { tab.location = cfg.loginUrl; } catch (err) { /* tab gone; next tick notices */ }
+        return;
+      }
+      say("Heartbeat: waiting for you to sign in at " + cfg.name + " — finishes itself when you are through.");
+      return;
+    }
+    if (out.state === "no-headers") {
+      dry += 1;
+      const tab = tabFor(cfg.storeId);
+      if (dry >= 2 && tab) {
+        dry = 0;
+        say("Heartbeat: signed in at " + cfg.name + ". Asking that tab for the session...");
+        // Their own page, their own request, their own credential on it.
+        try { tab.location = cfg.url; } catch (err) { /* tab gone; next tick notices */ }
+        return;
+      }
+      say(
+        tab
+          ? "Heartbeat: signed in at " + cfg.name + ". Waiting for the session..."
+          : "Heartbeat: signed in at " + cfg.name + ", but that tab is closed. Press Connect again.",
+      );
       return;
     }
     if (out.state === "failed") {
@@ -547,18 +868,40 @@ function watchConnect(cfg) {
   }
 
   void tick();
-  pumps.set(cfg.storeId, setInterval(tick, 2500));
+  pumps.set(cfg.storeId, every(tick, 2500));
 }
 
 /*
  * Delegated, so one handler serves the store page and every card on the list.
- * The click's own navigation opens the tab; this only registers that a
- * sign-in is in flight and starts watching for it to finish.
+ *
+ * The anchor stays a real anchor -- middle-click, ctrl-click and "open in new
+ * tab" all still do the ordinary thing, and a browser with JavaScript off
+ * still gets to the retailer. A plain left click is handled here instead so
+ * the window is opened by window.open, synchronously inside the click, which
+ * is both un-blockable by popup blockers and the only way this page ends up
+ * holding a handle it can later close.
  */
 document.addEventListener("click", (e) => {
   const el = e.target.closest ? e.target.closest("[data-connect-open]") : null;
   if (!el) return;
+  // Leave every modified click to the browser.
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   const cfg = connectConfig(el);
+
+  let tab = null;
+  try {
+    tab = window.open(cfg.url, "basketed-connect-" + cfg.storeId);
+  } catch (err) {
+    tab = null;
+  }
+  // A blocked or failed open leaves the anchor to do its own job; only steal
+  // the navigation once we actually have the window.
+  if (tab) {
+    e.preventDefault();
+    openedTabs.set(cfg.storeId, tab);
+    try { tab.focus(); } catch (err) { /* focus is a courtesy */ }
+  }
+
   api("/api/connections/" + encodeURIComponent(cfg.storeId) + "/browser-connect", { method: "POST" })
     .catch((err) => console.error("[basketed] connect could not be registered: " + err.message));
   watchConnect(cfg);
@@ -600,7 +943,7 @@ if (connectPage) {
 
   function watchForLogin() {
     stopWatch();
-    watch = setInterval(async () => {
+    watch = every(async () => {
       if (capturing) return;
       try {
         const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login");
@@ -705,6 +1048,81 @@ if (forgetBtn) {
       console.error("[basketed] disconnect failed: " + err.message);
       forgetBtn.disabled = false;
     }
+  });
+}
+
+/* --------------------------------------------------------------- settings */
+
+const settingsForm = $("[data-settings-form]");
+if (settingsForm) {
+  const msg = $("[data-settings-msg]");
+  const spentEl = $("[data-settings-spent]");
+  const remainEl = $("[data-settings-remaining]");
+  const storesEl = $("#settings-stores");
+
+  function saySettings(text, bad) {
+    if (!msg) return;
+    msg.textContent = text;
+    msg.style.color = bad ? "var(--bad)" : "";
+  }
+
+  async function loadSettings() {
+    const state = await (await api("/api/state")).json();
+    const g = state.guardrails;
+    settingsForm.home_currency.value = g.homeCurrency || "USD";
+    settingsForm.per_order_cap.value = g.perOrderCap;
+    settingsForm.daily_cap.value = g.dailyCap;
+    const spent = Number(g.spent_24h || 0);
+    const remain = Math.max(0, Number(g.dailyCap) - spent);
+    if (spentEl) spentEl.textContent = spent.toFixed(2) + " " + g.homeCurrency;
+    if (remainEl) remainEl.textContent = remain.toFixed(2) + " " + g.homeCurrency;
+
+    const allowed = new Set(g.allowedStores || []);
+    const cartStores = (state.stores || []).filter(function (s) {
+      return s.mode !== "simulated" && Array.isArray(s.capabilities) && s.capabilities.indexOf("cart") !== -1;
+    });
+    if (!storesEl) return;
+    if (!cartStores.length) {
+      storesEl.innerHTML = '<div class="empty">No cart-capable stores loaded.</div>';
+      return;
+    }
+    storesEl.innerHTML = cartStores.map(function (s) {
+      const on = allowed.size === 0 ? false : allowed.has(s.id);
+      return '<label class="row" style="gap:10px;align-items:center">' +
+        '<input type="checkbox" name="allowed_store" value="' + esc(s.id) + '"' + (on ? " checked" : "") + " />" +
+        "<span>" + esc(s.name) + ' <span class="num">' + esc(s.id) + "</span></span>" +
+        "</label>";
+    }).join("") +
+      '<p class="small" style="margin:8px 0 0">Leave every box unchecked to allow any cart-capable store (default).</p>';
+  }
+
+  settingsForm.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const boxes = Array.prototype.slice.call(settingsForm.querySelectorAll('input[name="allowed_store"]'));
+    const checked = boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+    // Empty list = any store (backend default). If the user checked some, send those.
+    const body = {
+      home_currency: String(settingsForm.home_currency.value || "").trim().toUpperCase(),
+      per_order_cap: Number(settingsForm.per_order_cap.value),
+      daily_cap: Number(settingsForm.daily_cap.value),
+      allowed_stores: checked,
+    };
+    try {
+      const res = await api("/api/guardrails", { method: "POST", body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) {
+        saySettings(data.error || ("Save failed (" + res.status + ")"), true);
+        return;
+      }
+      saySettings("Saved.");
+      await loadSettings();
+    } catch (err) {
+      saySettings(err.message || "Save failed", true);
+    }
+  });
+
+  void loadSettings().catch(function (err) {
+    saySettings(err.message || "Could not load settings", true);
   });
 }
 `;

@@ -16,15 +16,28 @@
 
 document.documentElement.setAttribute("data-basketed-extension", "1");
 
+/**
+ * The two things the panel may ask for.
+ *
+ * `arm` starts the header watch and returns nothing about the browser's
+ * state; the connect page sends it on load, so the listener is already
+ * running before the user opens the retailer's tab. `capture` is the one that
+ * reads a session back. Keeping them separate means arming early costs the
+ * user no cookie read at all.
+ */
+const RELAYED = { arm: "basketed-arm", capture: "basketed-capture" };
+
 window.addEventListener("message", (event) => {
   // Only this page, and only our own shape.
   if (event.source !== window) return;
   const msg = event.data;
-  if (!msg || msg.source !== "basketed-panel" || msg.type !== "capture") return;
+  if (!msg || msg.source !== "basketed-panel") return;
+  const type = RELAYED[msg.type];
+  if (!type) return;
 
   chrome.runtime.sendMessage(
     {
-      type: "basketed-capture",
+      type: type,
       // location.origin, not anything the page handed us: the service worker
       // verifies the token against THIS origin, so the page cannot point it
       // at some other server.
@@ -32,7 +45,7 @@ window.addEventListener("message", (event) => {
       token: msg.token,
       domains: msg.domains,
       authCookies: msg.authCookies,
-      bearerMatch: msg.bearerMatch,
+      capture: msg.capture,
     },
     (reply) => {
       window.postMessage(

@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve, join } from "node:path";
-import { CLIENTS, CLIENT_ALIASES, pathFor, snippetFor, type ClientSpec } from "@basketed/control";
+import { CLIENTS, CLIENT_ALIASES, PRIMARY_CLIENTS, pathFor, snippetFor, type ClientSpec } from "@basketed/control";
 
 /**
  * `basketed install` (§7b).
@@ -206,4 +206,59 @@ export function installClient(spec: ClientSpec, opts: InstallOptions): InstallRe
 export function findClient(id: string): ClientSpec | undefined {
   const canonical = CLIENT_ALIASES[id.toLowerCase()] ?? id;
   return CLIENTS.find((c) => c.id === canonical || c.name.toLowerCase() === canonical.toLowerCase());
+}
+
+/**
+ * Which clients a `basketed install` invocation is about.
+ *
+ * Split out of the command so it can be tested without writing to anyone's
+ * home directory, and because the bug it fixes was invisible from the outside:
+ * `basketed install opencode` used to read only `--client`, ignore the
+ * positional, and install the four PRIMARY_CLIENTS instead -- printing success
+ * the whole way. The user then went looking for a broken MCP server rather
+ * than for a config file that was never written.
+ *
+ * Two rules follow from that:
+ *   - a bare word IS a client name, because that is what everyone types;
+ *   - an unknown name fails the WHOLE run. Installing the ones we recognised
+ *     and staying quiet about the rest is how the original bug felt.
+ */
+export type TargetResolution =
+  | { ok: true; targets: ClientSpec[] }
+  | { ok: false; unknown: string[] };
+
+export function resolveTargets(argv: string[]): TargetResolution {
+  if (argv.includes("--all")) return { ok: true, targets: CLIENTS };
+
+  const named: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg.startsWith("--")) {
+      // `--client x` and `--path x` both take a value, which is not a client.
+      if (!arg.includes("=") && /^--(client|path|port)$/.test(arg)) {
+        const next = argv[i + 1];
+        if (next && !next.startsWith("--")) {
+          if (arg === "--client") named.push(next);
+          i++;
+        }
+      } else if (arg.startsWith("--client=")) {
+        named.push(arg.slice("--client=".length));
+      }
+      continue;
+    }
+    named.push(arg);
+  }
+
+  if (!named.length) {
+    return { ok: true, targets: CLIENTS.filter((c) => (PRIMARY_CLIENTS as readonly string[]).includes(c.id)) };
+  }
+
+  const targets: ClientSpec[] = [];
+  const unknown: string[] = [];
+  for (const name of named) {
+    const spec = findClient(name);
+    if (spec) targets.push(spec);
+    else unknown.push(name);
+  }
+  return unknown.length ? { ok: false, unknown } : { ok: true, targets };
 }

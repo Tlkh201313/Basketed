@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 
@@ -33,7 +34,124 @@ import { homedir } from "node:os";
  * "reconnect this store" rather than thrown.
  */
 
-export type CredentialKind = "password" | "token" | "cookie";
+/**
+ * `password` is deliberately absent (S19): there is no field anywhere in
+ * Basketed that accepts a retailer password, so a kind that could only have
+ * come from one is a kind nothing can create.
+ */
+export type CredentialKind = "token" | "cookie" | "session";
+
+/**
+ * What a `session` credential seals: the exact headers a signed-in browser
+ * sent, lifted from the store's own API call (S21).
+ *
+ * One string was enough while every store's credential was one header. Tesco's
+ * is not -- its basket API authenticates on `authorization` AND
+ * `customer-uuid` together, and a bearer alone returns a basket that is not
+ * yours. Rather than teach the vault about retailers, the capture side names
+ * the headers and the vault carries whatever it was handed.
+ */
+export interface SessionSecret {
+  /** Header name (lower-case) -> value. Sent verbatim, in this order. */
+  headers: Record<string, string>;
+  /** Unix ms this stops working, when the store said so (a JWT `exp`). */
+  expiresAt?: number;
+  /**
+   * How to get a fresh one without asking the human again.
+   *
+   * Every session Basketed holds today is a snapshot that dies in hours, and
+   * that is the single biggest reason a connected store stops working. Two
+   * shapes, because the retailers studied split cleanly in two:
+   *
+   *   - `"endpoint"` replays an OAuth refresh against the store's own token
+   *     endpoint. This is what thehesiod/costco-mcp (MIT) does with Azure AD
+   *     B2C, and it works with no browser open at all.
+   *   - `"browser"` asks the Basketed extension to read the session again out
+   *     of the browser the human is still signed into. It needs no endpoint,
+   *     no client id and no guessing -- which is why it is the default for
+   *     retailers that publish no refresh contract. The reference MCPs cannot
+   *     do this: they have no live browser. We do.
+   */
+  refresh?: SessionRefresh;
+}
+
+export type SessionRefresh =
+  | {
+      via: "endpoint";
+      url: string;
+      /** Form fields posted verbatim. The refresh token lives here. */
+      body: Record<string, string>;
+      /** Which JSON field of the response carries the new access token. */
+      tokenField: string;
+      /** Which header that token becomes, and how it is formatted. */
+      header: string;
+      prefix?: string;
+    }
+  | {
+      via: "browser";
+      /** Which store's connect flow can re-read this. Always the store's own id. */
+      storeId: string;
+    };
+
+export function encodeSession(session: SessionSecret): string {
+  return JSON.stringify(session);
+}
+
+/**
+ * Parse a sealed session envelope.
+ *
+ * Returns null rather than throwing on anything malformed: a credential that
+ * will not parse must degrade to "no credential attached" and let the retailer
+ * answer 401, not take a request down with an exception from inside the
+ * interceptor's closure.
+ */
+export function decodeSession(raw: string): SessionSecret | null {
+  try {
+    const parsed = JSON.parse(raw) as SessionSecret;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed.headers || typeof parsed.headers !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Headers a sealed session should actually send.
+ *
+ * Tesco (GavinAttard/tesco-grocery-mcp + PR #1) accepts the shopper id as
+ * either `customer-uuid` or `x-customer-uuid`; sending both is what their
+ * live frontend does, and a capture that only saw one still authenticates.
+ * A bearer without the "Bearer " prefix is normalised the same way.
+ */
+export function applySessionHeaders(target: Headers, session: SessionSecret): void {
+  const normalised = normaliseSessionHeaders(session.headers);
+  for (const [name, value] of Object.entries(normalised)) {
+    if (!value) continue;
+    try {
+      target.set(name, value);
+    } catch {
+      // Fetch forbids some names on Headers (e.g. Cookie in some runtimes).
+      // The outbound fetch still receives them via the plain-object merge below.
+    }
+  }
+}
+
+/** Same aliases, for the capture path that seals the envelope. */
+export function normaliseSessionHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (typeof value === "string" && value) out[name.toLowerCase()] = value;
+  }
+  const uuid = out["customer-uuid"] ?? out["x-customer-uuid"];
+  if (uuid) {
+    out["customer-uuid"] = uuid;
+    out["x-customer-uuid"] = uuid;
+  }
+  const auth = out["authorization"];
+  if (auth && !/^bearer\s/i.test(auth)) out["authorization"] = `Bearer ${auth}`;
+  return out;
+}
 
 /** What the panel is allowed to see: everything except the secret itself. */
 export interface Connection {
@@ -50,6 +168,18 @@ export interface Connection {
    * is exactly the failure a shopping agent must never paper over.
    */
   broken: boolean;
+  /**
+   * Unix ms this session stops working, when the store said so. Null for a
+   * credential that carries no expiry -- which is not the same as "never
+   * expires", only "did not say".
+   */
+  expiresAt: number | null;
+  /**
+   * True once that moment has passed. Held separately from `broken` because
+   * the fixes differ: a broken credential lost its key, an expired one just
+   * needs the browser to look again.
+   */
+  expired: boolean;
 }
 
 export interface RevealedCredential {
@@ -116,11 +246,38 @@ function masterKey(keyPath: string): Buffer {
   } catch {
     /* advisory on Windows; not a reason to refuse to run */
   }
+  restrictToOwner(keyPath);
   const key = Buffer.from(readFileSync(keyPath, "utf8").trim(), "base64");
   if (key.length !== 32) {
     throw new Error(`Master key at ${keyPath} is not 32 bytes. Delete it to mint a new one (connections are lost).`);
   }
   return key;
+}
+
+/**
+ * Windows has no 0600. chmodSync there only flips the read-only attribute,
+ * so the key file inherits the profile directory's ACL -- which grants
+ * Administrators and SYSTEM, and on a machine-joined profile can grant more.
+ * This strips inheritance and leaves exactly the current user.
+ *
+ * Best-effort by design: a locked-down key is worth having and a failure to
+ * lock it down is not worth refusing to shop over. The file is already under
+ * the user's own profile either way, and a message on stderr the shopper
+ * never reads would be the only alternative.
+ */
+function restrictToOwner(keyPath: string): void {
+  if (process.platform !== "win32") return;
+  const user = process.env["USERNAME"];
+  if (!user) return;
+  try {
+    execFileSync("icacls", [keyPath, "/inheritance:r", "/grant:r", `${user}:F`], {
+      stdio: "ignore",
+      windowsHide: true,
+      timeout: 5_000,
+    });
+  } catch {
+    /* no icacls, no permission, or a filesystem without ACLs. Not fatal. */
+  }
 }
 
 function seal(key: Buffer, plaintext: string): string {
@@ -185,22 +342,37 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
   }
 
   function view(r: Record<string, unknown>): Connection {
+    // One unseal for both answers: whether the bytes still decrypt, and what
+    // the session said about its own lifetime. Doing it twice would double
+    // the crypto on every list() for no gain.
+    const plain = unseal(key, String(r["sealed"]));
+    const kind = String(r["kind"]) as CredentialKind;
+    const session = plain !== null && kind === "session" ? decodeSession(plain) : null;
+    const expiresAt = session?.expiresAt ?? null;
     return {
       storeId: String(r["store_id"]),
-      kind: String(r["kind"]) as CredentialKind,
+      kind,
       username: r["username"] === null || r["username"] === undefined ? null : String(r["username"]),
       createdAt: Number(r["created_at"]),
       lastUsedAt: r["last_used_at"] === null || r["last_used_at"] === undefined ? null : Number(r["last_used_at"]),
-      broken: unseal(key, String(r["sealed"])) === null,
+      broken: plain === null,
+      expiresAt,
+      expired: expiresAt !== null && expiresAt <= Date.now(),
     };
   }
 
   // Watch what is already stored, so a process that never touches a connection
   // still has the net up for it.
   if (opts.watch) {
-    for (const r of db.prepare(`SELECT sealed FROM credentials`).all() as Array<Record<string, unknown>>) {
+    for (const r of db.prepare(`SELECT kind, sealed FROM credentials`).all() as Array<Record<string, unknown>>) {
       const plain = unseal(key, String(r["sealed"]));
-      if (plain) opts.watch(plain);
+      if (!plain) continue;
+      if (String(r["kind"]) === "session") {
+        const session = decodeSession(plain);
+        for (const value of Object.values(session?.headers ?? {})) opts.watch(value);
+        continue;
+      }
+      opts.watch(plain);
     }
   }
 
@@ -230,7 +402,13 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
            created_at = excluded.created_at,
            last_used_at = NULL`,
       ).run(storeId, kind, username, seal(key, secret), now);
-      opts.watch?.(secret);
+      // Same rule as secrets(): watch the header values, not the envelope.
+      if (kind === "session") {
+        const session = decodeSession(secret);
+        for (const value of Object.values(session?.headers ?? {})) opts.watch?.(value);
+      } else {
+        opts.watch?.(secret);
+      }
       return view(row(storeId)!);
     },
 
@@ -252,8 +430,23 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
     },
 
     secrets() {
-      const rows = db.prepare(`SELECT sealed FROM credentials`).all() as Array<Record<string, unknown>>;
-      return rows.map((r) => unseal(key, String(r["sealed"]))).filter((s): s is string => s !== null);
+      const rows = db.prepare(`SELECT kind, sealed FROM credentials`).all() as Array<Record<string, unknown>>;
+      const out: string[] = [];
+      for (const r of rows) {
+        const plain = unseal(key, String(r["sealed"]));
+        if (plain === null) continue;
+        // A session seals several secrets in one envelope. The redaction net
+        // watches for the VALUES: the envelope is a shape no response body
+        // will ever contain, so registering it would be a rule that cannot
+        // fire -- and would leave the real secrets unwatched.
+        if (String(r["kind"]) === "session") {
+          const session = decodeSession(plain);
+          if (session) out.push(...Object.values(session.headers));
+          continue;
+        }
+        out.push(plain);
+      }
+      return out;
     },
   };
 }
@@ -266,21 +459,64 @@ export function openVault(db: DatabaseSync, opts: VaultOptions = {}): Vault {
  * attached inside this closure, on the way out, after the adapter has finished
  * describing the request it wants.
  *
- * `password` connections attach nothing: a username and password are not a
- * bearer credential, and pretending otherwise by inventing an Authorization
- * header would send the user's retailer password to whatever host the adapter
- * happened to name. They are held for a login step that must be written per
- * retailer, and until one exists this returns plain fetch.
+ * A `session` attaches the whole header set it was sealed with, because one
+ * header is not always the credential: Tesco's basket wants `authorization`
+ * and `customer-uuid` together. The vault never interprets them -- the capture
+ * side named them, and this closure only sets them.
  */
+export class SessionUnusableError extends Error {
+  constructor(
+    readonly storeId: string,
+    readonly state: "expired" | "broken",
+    message: string,
+  ) {
+    super(message);
+    this.name = "SessionUnusableError";
+  }
+}
+
+function unusable(storeId: string, state: "expired" | "broken"): SessionUnusableError {
+  return new SessionUnusableError(
+    storeId,
+    state,
+    state === "expired"
+      ? `The ${storeId} session has expired. Reconnect the store in the Basketed panel, ` +
+          `then try again -- nothing was sent to the retailer.`
+      : `The ${storeId} connection is broken and cannot be read. Reconnect the store in the ` +
+          `Basketed panel, then try again -- nothing was sent to the retailer.`,
+  );
+}
+
 export function authorizedFetch(vault: Vault, storeId: string, base: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
+    /*
+     * Refuse BEFORE the request, not after the retailer does.
+     *
+     * Sending an expired session got a 401 back if we were lucky and a
+     * signed-out page if we were not, and a signed-out page is the dangerous
+     * one: it has the right shape, so an empty basket or an empty slot list
+     * reads as fact. Failing here means the answer is always "reconnect",
+     * never a plausible wrong one -- and a dead credential never reaches the
+     * wire at all.
+     */
+    const held = vault.get(storeId);
+    if (held?.broken) throw unusable(storeId, "broken");
+    if (held?.expired) throw unusable(storeId, "expired");
+
     const cred = vault.reveal(storeId);
     if (!cred) return base(input, init);
 
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     if (cred.kind === "token") headers.set("authorization", `Bearer ${cred.secret}`);
     else if (cred.kind === "cookie") headers.set("cookie", cred.secret);
-    else return base(input, init);
+    else if (cred.kind === "session") {
+      const session = decodeSession(cred.secret);
+      // Decrypted, but the envelope inside is not one we wrote. Same class of
+      // failure as a broken seal: we cannot attach the credential, so the
+      // request would go out signed-out and come back plausibly wrong.
+      if (!session) throw unusable(storeId, "broken");
+      applySessionHeaders(headers, session);
+    } else return base(input, init);
 
     return base(input, { ...init, headers });
   };

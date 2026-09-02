@@ -80,10 +80,15 @@ const child = spawn(
       ...process.env,
       NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import "${GUARD}"`.trim(),
       BASKETED_SNAPSHOTS: "1",
+      BASKETED_SIMULATED: "1",
       BASKETED_DB: join(DB_DIR, "drill.db"),
       // The drill reaches an approval, and opening a browser mid-drill would be
       // both a surprise and a second thing to explain on stage.
       BASKETED_NO_OPEN: "1",
+      // No Chromium either. With the wire cut a stealth render can only end in
+      // a launch or a navigation failure, and spending thirty seconds arriving
+      // at one is not a test of anything.
+      BASKETED_NO_BROWSER: "1",
     },
   },
 );
@@ -168,8 +173,15 @@ try {
   check("the panel serves with no wire", home.status === 200);
   const locked = await fetch(`${BASE}/approvals`);
   check("and refuses a caller without it", locked.status === 401, "no token, no approval surface");
+  const { ALL_TOOL_NAMES } = await import(pathToFileURL(resolve(ROOT, "packages/mcp/dist/server.js")).href);
   const tools = await rpc("tools/list", {});
-  check("MCP answers with no wire", (tools.result?.tools ?? []).length === 8, `${tools.result?.tools?.length} tools`);
+  const served = (tools.result?.tools ?? []).map((t) => t.name).sort();
+  const expected = [...ALL_TOOL_NAMES].sort();
+  check(
+    "MCP answers with no wire — every declared tool, and nothing else",
+    served.length === expected.length && served.every((n, i) => n === expected[i]),
+    `${served.length} tools`,
+  );
 
   step(3, "search — real and simulated side by side");
   const search = await call("basket_search_products", { query: "coffee", max_results: 8 });

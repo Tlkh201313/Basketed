@@ -1,4 +1,5 @@
 import { chromium } from "patchright";
+import { browserDisabled, createLimiter, withDeadline } from "./limiter.js";
 
 /**
  * Shared stealth-browser render for the three scrape-based adapters (Amazon,
@@ -112,7 +113,16 @@ export interface RenderOptions {
   /** Extra settle time after `domcontentloaded`, for pages that hydrate client-side. */
   settleMs?: number;
   timeoutMs?: number;
+  /** Whole-render budget, cleanup included. Defaults to navigation + settle + 15s. */
+  deadlineMs?: number;
 }
+
+/**
+ * Process-wide, deliberately. A multi-store search fans out across every
+ * adapter at once, so without this a lane that reaches for a browser reaches
+ * for one per store, in parallel. See limiter.ts.
+ */
+const lane = createLimiter(2);
 
 export interface RenderResult {
   status: number | null;
@@ -135,6 +145,22 @@ export interface RenderResult {
  * wait is what the store adapters actually verified against.
  */
 export async function renderPage(url: string, opts: RenderOptions = {}): Promise<RenderResult> {
+  if (browserDisabled()) {
+    // Said plainly, and immediately. A container with no Chromium otherwise
+    // spends thirty seconds arriving at a launch error nobody can read.
+    throw new Error(
+      `Cannot render ${url}: BASKETED_NO_BROWSER=1, so this process will not launch a browser. ` +
+        `The stores that need one are unavailable; the rest are unaffected.`,
+    );
+  }
+  return lane(() => renderOnce(url, opts));
+}
+
+async function renderOnce(url: string, opts: RenderOptions): Promise<RenderResult> {
+  const navigationMs = opts.timeoutMs ?? 30000;
+  const settleMs = opts.settleMs ?? 4000;
+  const deadlineMs = opts.deadlineMs ?? navigationMs + settleMs + 15_000;
+
   const browser = await chromium.launch({
     headless: true,
     channel: "chromium", // NOT "chrome" -- that silently swaps in a stock installed
@@ -142,30 +168,32 @@ export async function renderPage(url: string, opts: RenderOptions = {}): Promise
     args: [...DEFAULT_ARGS, ...STEALTH_ARGS],
     ignoreDefaultArgs: HARMFUL_ARGS,
   });
-  try {
-    const context = await browser.newContext({
-      colorScheme: "dark", // bypasses creepjs's prefersLightColor check
-      deviceScaleFactor: 2,
-      isMobile: false,
-      hasTouch: false,
-      serviceWorkers: "allow",
-      ignoreHTTPSErrors: true,
-      screen: { width: 1920, height: 1080 },
-      viewport: { width: 1920, height: 1080 },
-      permissions: ["geolocation", "notifications"],
-      locale: "en-US",
-      extraHTTPHeaders: { referer: "https://www.google.com/" },
-      userAgent: USER_AGENT,
-    });
-    const page = await context.newPage();
-    const resp = await page.goto(url, {
-      waitUntil: "domcontentloaded",
-      timeout: opts.timeoutMs ?? 30000,
-    });
-    await page.waitForTimeout(opts.settleMs ?? 4000);
-    const html = await page.content();
-    return { status: resp?.status() ?? null, html, finalUrl: page.url() };
-  } finally {
-    await browser.close();
-  }
+  // Every exit runs the close: finished, threw, or out of time. A Chromium
+  // that outlives its render is a process this one waits on at exit.
+  return withDeadline(
+    async () => {
+      const context = await browser.newContext({
+        colorScheme: "dark", // bypasses creepjs's prefersLightColor check
+        deviceScaleFactor: 2,
+        isMobile: false,
+        hasTouch: false,
+        serviceWorkers: "allow",
+        ignoreHTTPSErrors: true,
+        screen: { width: 1920, height: 1080 },
+        viewport: { width: 1920, height: 1080 },
+        permissions: ["geolocation", "notifications"],
+        locale: "en-US",
+        extraHTTPHeaders: { referer: "https://www.google.com/" },
+        userAgent: USER_AGENT,
+      });
+      const page = await context.newPage();
+      const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: navigationMs });
+      await page.waitForTimeout(settleMs);
+      const html = await page.content();
+      return { status: resp?.status() ?? null, html, finalUrl: page.url() };
+    },
+    deadlineMs,
+    () => browser.close(),
+    `Rendering ${url}`,
+  );
 }

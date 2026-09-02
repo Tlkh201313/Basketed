@@ -1,25 +1,36 @@
 {
   "manifest_version": 3,
   "name": "Basketed Connect",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "Finishes a Basketed store connection in the browser you already use. Local-only: talks to 127.0.0.1 and nothing else.",
-  "permissions": ["cookies", "webRequest"],
+  "permissions": [
+    "cookies",
+    "webRequest",
+    "storage"
+  ],
   "host_permissions": [
     "http://127.0.0.1/*",
     "http://localhost/*",
-    "https://*.tesco.com/*",
     "https://*.amazon.com/*",
-    "https://*.costco.com/*",
-    "https://*.walmart.com/*",
-    "https://*.shopee.sg/*",
-    "https://*.taobao.com/*",
-    "https://*.ikea.com/*"
+    "https://*.bestbuy.com/*",
+    "https://*.ebay.com/*",
+    "https://*.etsy.com/*",
+    "https://*.ikea.com/*",
+    "https://*.target.com/*",
+    "https://*.tesco.com/*"
   ],
-  "background": { "service_worker": "background.js" },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["http://127.0.0.1/*", "http://localhost/*"],
-      "js": ["content.js"],
+      "matches": [
+        "http://127.0.0.1/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ]

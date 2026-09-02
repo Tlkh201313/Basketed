@@ -1,5 +1,7 @@
 export * from "./types.js";
 export * from "./ids.js";
+export * from "./id-cache.js";
+export * from "./state-dir.js";
 export * from "./registry.js";
 export * from "./permalinks.js";
 export * from "./shopify-ucp/index.js";
@@ -12,3 +14,5 @@ export * from "./target/index.js";
 export * from "./etsy/index.js";
 export * from "./ebay/index.js";
 export * from "./bestbuy/index.js";
+export * from "./blocked.js";
+export * from "./stealth/limiter.js";

@@ -1,4 +1,35 @@
 import { load } from "cheerio";
+import { assertPageUsable, pageHasResults, type PageSpec } from "../blocked.js";
+
+/**
+ * Best Buy has changed its card markup several times, which is why the adapter
+ * tries four selectors. That is also why the page-level check matters more
+ * here than anywhere else: when all four miss, the honest answer is "this
+ * adapter needs updating", not "Best Buy stocks none of these".
+ */
+const SEARCH_PAGE: PageSpec = {
+  store: "Best Buy",
+  page: "search",
+  expect: [/sku-item/, /skuId=/, /data-testid="product-card"/, /shop-sku-list/],
+  empty: [/did not match any products/i, /no results found/i, /0 items?[^<]{0,20}found/i],
+  blocked: [/bestbuy\.com\/\?intl=nosplash/i],
+};
+
+const DETAIL_PAGE: PageSpec = {
+  store: "Best Buy",
+  page: "product page",
+  // Every marker the detail selectors below actually read, so the check can
+  // never refuse a page this adapter would have parsed fine.
+  expect: [
+    /sku-title/,
+    /skuId/,
+    /shop-product-title/,
+    /customer-price/,
+    /pricing-price__value/,
+    /data-testid="product-title"/,
+    /application\/ld\+json/,
+  ],
+};
 import {
   inferCategory,
   sanitiseProductName,
@@ -13,6 +44,7 @@ import {
 import { mintProductId } from "../ids.js";
 import type { RenderResult } from "../stealth/browser.js";
 import type { AdapterCtx, StoreAdapter } from "../types.js";
+import { IdCache } from "../id-cache.js";
 
 /**
  * Real Best Buy — plain HTTP, no browser.
@@ -68,7 +100,15 @@ export interface BestBuyAdapterOptions {
 
 export class BestBuyAdapter implements StoreAdapter {
   readonly manifest: StoreManifest;
-  readonly #cache = new Map<string, Cached>();
+  #idCache: IdCache<Cached> | undefined;
+  /**
+   * Native ids for the handles this adapter has minted, persisted between
+   * runs -- see id-cache.ts. Lazy because it is keyed on `this.manifest.id`,
+   * which the constructor has not set when field initialisers run.
+   */
+  get #cache(): IdCache<Cached> {
+    return (this.#idCache ??= new IdCache<Cached>(this.manifest.id));
+  }
   readonly #render?: (url: string) => Promise<RenderResult>;
   lastRawBytes = 0;
 
@@ -82,7 +122,31 @@ export class BestBuyAdapter implements StoreAdapter {
       language: "en",
       categories: ["electronics", "general"],
       mode: "native",
-      auth: "none",
+      /*
+       * Same store-local story as Target, plus a cart worth owning.
+       *
+       * Best Buy stock is per-store and its cart is per-account. Built
+       * anonymously it is a cart that exists until the cookie does; built on
+       * the shopper's session it is the cart they will find waiting when
+       * they open bestbuy.com themselves, which is the whole point of a
+       * hand-off.
+       *
+       * `cart` is in `improves`, NOT `uses`: the anonymous cart still works
+       * and is still handed off, so a session that expires must degrade to
+       * it rather than refuse. See sessionFetchFor.
+       */
+      account: {
+        kind: "session",
+        uses: [],
+        improves: ["discovery", "detail", "cart"],
+        refresh: "browser",
+        login: {
+          url: "https://www.bestbuy.com/",
+          loginUrl: "https://www.bestbuy.com/identity/signin",
+          domains: ["bestbuy.com"],
+          authCookies: ["CTT", "SID"],
+        },
+      },
       capabilities: ["discovery", "detail", "cart", "handoff"],
       domain: "bestbuy.com",
     };
@@ -113,6 +177,8 @@ export class BestBuyAdapter implements StoreAdapter {
       if (!res.ok) throw new Error(`Best Buy search returned HTTP ${res.status}.`);
       status = res.status;
     }
+
+    if (!pageHasResults(html, SEARCH_PAGE)) return [];
 
     const $ = load(html);
     const products: Product[] = [];
@@ -224,6 +290,7 @@ export class BestBuyAdapter implements StoreAdapter {
       status = res.status;
     }
 
+    assertPageUsable(html, DETAIL_PAGE);
     const $ = load(html);
 
     const titleRaw =

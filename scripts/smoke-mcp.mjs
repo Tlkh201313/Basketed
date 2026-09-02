@@ -12,8 +12,16 @@
  */
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const ROOT = resolve(import.meta.dirname, "..");
+/**
+ * The wire order the server itself declares. Asserted rather than restated as
+ * a count, so adding a tool cannot make this smoke silently stale.
+ */
+const { ALL_TOOL_NAMES: EXPECTED } = await import(
+  pathToFileURL(resolve(ROOT, "packages/mcp/dist/server.js")).href
+);
 const MODERN = "2026-07-28";
 const META = {
   "io.modelcontextprotocol/protocolVersion": MODERN,
@@ -29,7 +37,7 @@ function check(label, condition, detail = "") {
 }
 
 function openServer() {
-  const child = spawn(process.execPath, [resolve(ROOT, "packages/cli/bin.js"), "serve", "--stdio"], {
+  const child = spawn(process.execPath, [resolve(ROOT, "packages/cli/bin.js"), "serve", "--stdio", "--simulated"], {
     cwd: ROOT,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -104,18 +112,22 @@ legacy.notify("notifications/initialized");
 const list = await legacy.send("tools/list", {});
 const tools = list.result?.tools ?? [];
 const names = tools.map((t) => t.name);
-check("tools/list returns 8 tools", tools.length === 8, names.join(", "));
+check(
+  "tools/list returns every declared tool",
+  names.length === EXPECTED.length && names.every((n, i) => n === EXPECTED[i]),
+  names.join(", "),
+);
 check(
   "tool order is deterministic",
   JSON.stringify(names) ===
     JSON.stringify([
-      // Read-only first, money-adjacent last, and stable. Churning this list
-      // invalidates the provider prompt cache, and the miss can cost more than
-      // the definitions ever saved.
       "basket_list_stores",
       "basket_search_products",
       "basket_get_product_detail",
       "basket_get_token_report",
+      "basket_auth_status",
+      "basket_list_delivery_slots",
+      "basket_list_accounts",
       "basket_cart_prepare",
       "basket_purchase_confirm",
       "basket_list_orders",
@@ -223,10 +235,11 @@ check(
 );
 
 const modernList = await modern.send("tools/list", {}, { modern: true });
+const modernNames = (modernList.result?.tools ?? []).map((t) => t.name);
 check(
-  "tools/list works with no initialize at all",
-  (modernList.result?.tools?.length ?? 0) === 8,
-  `${modernList.result?.tools?.length} tools`,
+  "tools/list works with no initialize at all — same surface as the legacy era",
+  modernNames.length === EXPECTED.length && modernNames.every((n, i) => n === EXPECTED[i]),
+  `${modernNames.length} tools`,
 );
 
 const modernCall = await modern.send(
