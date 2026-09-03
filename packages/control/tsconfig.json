@@ -18,6 +18,9 @@
       "path": "../commerce"
     },
     {
+      "path": "../session"
+    },
+    {
       "path": "../vault"
     }
   ]

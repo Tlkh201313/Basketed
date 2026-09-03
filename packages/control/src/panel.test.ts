@@ -4,16 +4,19 @@ import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { StoreRegistry, SimulatedAdapter, TargetAdapter, type AdapterCtx } from "@basketed/adapters";
+import { StoreRegistry, SimulatedAdapter, ShopifyUcpAdapter, TescoAdapter, AmazonAdapter, type AdapterCtx } from "@basketed/adapters";
 import {
+  addToBasket,
   loadGuardrails,
+  loadShoppingMode,
   openDb,
   prepareCart,
   saveGuardrails,
   type PurchaseDeps,
 } from "@basketed/commerce";
 import type { FxTable } from "@basketed/core";
-import { openVault, degradedVault, type Vault } from "@basketed/vault";
+import { openVault, degradedVault, loginKey, type Vault } from "@basketed/vault";
+import type { SessionManager, SessionHealth } from "@basketed/session";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,21 +27,31 @@ import { resetHandoff } from "./handoff.js";
 import type { ControlDeps } from "./types.js";
 
 /**
- * Chrome-login (S15) is real automation of a real browser -- not something a
- * unit test should actually launch. The route-level contract (auth gating,
- * 400/404/409/503 paths, and that a captured secret never echoes back) is
- * what's under test here; `browser-connect.ts` itself is out of scope.
+ * The sign-in engine (S23) is real automation of a real browser -- not
+ * something a unit test should launch. The route-level contract (auth
+ * gating, 400/404/409/503 paths, and that nothing captured ever echoes back)
+ * is what is under test here; `@basketed/session` has its own tests.
  */
-vi.mock("./browser-connect.js", () => ({
-  startLogin: vi.fn(async () => ({ ok: true as const, logged_in: false, attached: false })),
-  captureLogin: vi.fn(async () => ({ ok: false as const, error: "not configured for this test" })),
-  cancelLogin: vi.fn(async () => false),
-  stateOf: vi.fn(() => "idle" as const),
-  statusOf: vi.fn(() => ({ state: "idle" as const, logged_in: false, waited_ms: 0 })),
-  chromeMode: vi.fn(async () => ({ attached: false, where: "/tmp/basketed-chrome-profile" })),
-  closeAll: vi.fn(async () => {}),
-}));
-import { startLogin, captureLogin, cancelLogin } from "./browser-connect.js";
+const UNKNOWN: SessionHealth = { session_state: "unknown", last_verified_at: null, reason: null, profile: false };
+function fakeSessions(vault: () => Vault): SessionManager {
+  return {
+    loginFor: (id) => (id.startsWith("sim:") || id === "tsc:tesco" || id === "amz:amazon" ? ({} as never) : null),
+    hasProfile: vi.fn(() => false),
+    hasJar: vi.fn(() => false),
+    hasCredentials: vi.fn((id: string) => vault().get(loginKey(id)) !== null),
+    openLogin: vi.fn(async () => ({ ok: true as const, state: "waiting" as const })),
+    pollStatus: vi.fn(() => ({ state: "idle" as const, human: null, waited_ms: 0, error: null })),
+    finishLogin: vi.fn(async () => ({ ok: false as const, error: "No sign-in window is open for this store." })),
+    cancelLogin: vi.fn(async () => false),
+    health: vi.fn(() => UNKNOWN),
+    checkSession: vi.fn(async () => UNKNOWN),
+    reloginWithCredentials: vi.fn(async () => UNKNOWN),
+    refresh: vi.fn(async () => ({ ok: false as const, state: "expired" as const })),
+    forgetProfile: vi.fn(async () => false),
+    closeAll: vi.fn(async () => {}),
+  };
+}
+let sessions: SessionManager;
 
 /**
  * The test that would have caught it.
@@ -92,16 +105,19 @@ beforeEach(async () => {
   resetHandoff();
   const registry = new StoreRegistry();
   for (const a of await SimulatedAdapter.loadAll(ROOT)) registry.register(a);
-  // Every store with an account now offers the browser sign-in (S19), so the
-  // "nothing to connect" routes need a store that genuinely has no account:
-  // Target is reached signed-out, through its own public pages.
-  registry.register(new TargetAdapter());
+  // Every store with an account now offers the browser sign-in (S19, S23),
+  // so the "nothing to connect" routes need a store that genuinely has no
+  // account: a Shopify UCP merchant, whose endpoint is anonymous.
+  registry.register(new ShopifyUcpAdapter({ endpoint: "https://example.test/ucp", domain: "example.test", name: "Example UCP" }));
   const tesco = registry.get("sim:tesco")!;
   const productIds = (await tesco.search({ query: "coffee", maxResults: 2 }, ctx)).map((p) => p.id);
 
   const fx = JSON.parse(await readFile(resolve(ROOT, "fixtures/fx.json"), "utf8")) as FxTable;
   purchase = { db: openDb(":memory:"), registry, ctx, fx, announce: () => {} };
   saveGuardrails(purchase.db, { homeCurrency: "GBP", perOrderCap: 1000, dailyCap: 5000 });
+  // The approval routes under test belong to purchase mode, which this build
+  // locks (S24). The row is written directly; the save path refuses it.
+  purchase.db.prepare("INSERT INTO settings (k, v) VALUES ('shopping_mode', 'purchase')").run();
 
   deps = {
     purchase,
@@ -115,8 +131,10 @@ beforeEach(async () => {
     // A real vault on a throwaway key, so the connection tests exercise the
     // actual crypto rather than a stub that cannot fail the way it can.
     vault: openVault(purchase.db, { keyPath: join(mkdtempSync(join(tmpdir(), "bk-key-")), "master.key") }),
+    sessions: fakeSessions(() => vault),
   };
   vault = deps.vault;
+  sessions = deps.sessions;
 
   handler = createPanelHandler(deps, {
     root: ROOT,
@@ -216,6 +234,14 @@ describe("6 — an unauthenticated local caller cannot approve", () => {
     });
     expect(caps.status).toBe(401);
     expect(loadGuardrails(purchase.db)).toEqual(before);
+
+    const mode = await raw("/api/settings/mode", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: base },
+      body: JSON.stringify({ mode: "basket" }),
+    });
+    expect(mode.status).toBe(401);
+    expect(loadShoppingMode(purchase.db)).toBe("purchase");
   });
 
   it("tells it nothing it could read a total or an id out of", async () => {
@@ -510,8 +536,8 @@ describe("connections (S14)", () => {
   });
 
   it("refuses a method the store's policy does not allow", async () => {
-    // Target is reached signed-out: it has no account, so nothing connects.
-    const res = await panel("/api/connections/tgt%3Atarget", {
+    // A UCP merchant is anonymous: it has no account, so nothing connects.
+    const res = await panel("/api/connections/shp%3Aexample.test", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ method: "cookie", secret: "whatever-value-here" }),
@@ -639,7 +665,7 @@ describe("connecting in the user's own browser (S20)", () => {
 
   it("404s an unknown store and 400s one with no account to sign in to", async () => {
     expect((await panel("/api/connections/sim%3Anope/browser-connect", { method: "POST" })).status).toBe(404);
-    expect((await panel("/api/connections/tgt%3Atarget/browser-connect", { method: "POST" })).status).toBe(400);
+    expect((await panel("/api/connections/shp%3Aexample.test/browser-connect", { method: "POST" })).status).toBe(400);
   });
 
   it("a capture with no sign-in in flight is refused -- the vault is not writable on demand", async () => {
@@ -727,134 +753,252 @@ describe("connecting in the user's own browser (S20)", () => {
     expect(link).toMatch(/href="https:\/\/www\.amazon\.com/);
     expect(link).toMatch(/target="_blank"/);
     expect(link).toMatch(/rel="noopener noreferrer"/);
-    // Nothing on this page collects a credential, in any form.
-    expect(html).not.toMatch(/type="password"/);
+    // No form anywhere -- the CSP forbids form-action, every write is a fetch.
     expect(html).not.toMatch(/<form/);
+    // The one password field is the optional "keep me signed in" block, and
+    // it says where those bytes go before it takes them.
+    expect(html).toMatch(/one place only/);
   });
 });
 
-/* -------------------------------------------------------- chrome-login (S15) */
+/* ------------------------------------------------------- sign-in window (S23) */
 
-describe("chrome-login (S15)", () => {
-  beforeEach(() => {
-    vi.mocked(startLogin).mockReset().mockResolvedValue({ ok: true, logged_in: false, attached: false });
-    vi.mocked(captureLogin).mockReset();
-    vi.mocked(cancelLogin).mockReset().mockResolvedValue(false);
-  });
-
-  it("unauthenticated start is refused, and never reaches the launcher", async () => {
-    // Same-origin header, no token -- isolates the token check from the Origin check.
-    const res = await raw("/api/connections/sim%3Atesco/chrome-login", {
-      method: "POST",
-      headers: { origin: base },
-    });
+describe("the sign-in window (S23)", () => {
+  it("unauthenticated start is refused, and never reaches the engine", async () => {
+    const res = await raw("/api/connections/sim%3Atesco/login", { method: "POST", headers: { origin: base } });
     expect(res.status).toBe(401);
-    expect(startLogin).not.toHaveBeenCalled();
+    expect(sessions.openLogin).not.toHaveBeenCalled();
   });
 
   it("404s for an unknown store", async () => {
-    const res = await panel("/api/connections/sim%3Anosuchstore/chrome-login", { method: "POST" });
-    expect(res.status).toBe(404);
+    expect((await panel("/api/connections/sim%3Anosuchstore/login", { method: "POST" })).status).toBe(404);
   });
 
   it("400s for a store with no account to sign in to", async () => {
-    const res = await panel("/api/connections/tgt%3Atarget/chrome-login", { method: "POST" });
+    const res = await panel("/api/connections/shp%3Aexample.test/login", { method: "POST" });
     expect(res.status).toBe(400);
-    expect(startLogin).not.toHaveBeenCalled();
+    expect(sessions.openLogin).not.toHaveBeenCalled();
   });
 
-  it("starts a login window and reports waiting", async () => {
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "POST" });
+  it("opens the window and reports its state", async () => {
+    const res = await panel("/api/connections/sim%3Atesco/login", { method: "POST" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, waiting: true, logged_in: false, attached: false });
-    // The launcher is handed the whole target: where to land, where to send a
-    // signed-out shopper, and the signatures that say the sign-in finished.
-    expect(startLogin).toHaveBeenCalledWith(
-      "sim:tesco",
-      expect.objectContaining({
-        url: expect.stringContaining("tesco.com"),
-        loginUrl: expect.stringContaining("login"),
-        domains: ["tesco.com"],
-        authCookies: expect.arrayContaining(["_ttoken"]),
-      }),
-    );
+    expect(await res.json()).toEqual({ ok: true, state: "waiting" });
+    expect(sessions.openLogin).toHaveBeenCalledWith("sim:tesco");
   });
 
-  it("reports login status for the open window, and leaks no cookie", async () => {
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login");
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({ state: "idle", logged_in: false, waited_ms: 0 });
-    // The status poll is reachable by anything holding the token, so it must
-    // never become a way to read the session it is reporting on.
-    expect(JSON.stringify(body)).not.toMatch(/cookie|token|=/i);
+  it("the status poll is behind the token, and leaks nothing but a state word", async () => {
+    expect((await raw("/api/connections/sim%3Atesco/login", { headers: { origin: base } })).status).toBe(401);
+    vi.mocked(sessions.pollStatus).mockReturnValueOnce({ state: "needs_human", human: "otp", waited_ms: 4200, error: null });
+    const body = await (await panel("/api/connections/sim%3Atesco/login")).json();
+    expect(body).toEqual({ state: "needs_human", human: "otp", waited_ms: 4200, error: null });
+    expect(JSON.stringify(body)).not.toMatch(/cookie|bearer|=/i);
   });
 
-  it("the status poll is behind the token like every other route", async () => {
-    const res = await raw("/api/connections/sim%3Atesco/chrome-login", {
-      headers: { origin: base },
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it("a launch failure (no Chrome installed) surfaces as 503, not a crash", async () => {
-    vi.mocked(startLogin).mockResolvedValueOnce({ ok: false, error: "Google Chrome was not found on this machine." });
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "POST" });
+  it("a launch failure (no Chromium) surfaces as 503, not a crash", async () => {
+    vi.mocked(sessions.openLogin).mockResolvedValueOnce({ ok: false, error: "Could not open a browser window: chromium missing" });
+    const res = await panel("/api/connections/sim%3Atesco/login", { method: "POST" });
     expect(res.status).toBe(503);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toMatch(/Chrome was not found/);
+    expect(((await res.json()) as { error: string }).error).toMatch(/chromium missing/);
   });
 
-  it("capture seals a cookie credential and never echoes the raw session back", async () => {
-    vi.mocked(captureLogin).mockResolvedValueOnce({
-      ok: true,
-      cookieHeader: "session=super-secret-cookie-value",
-      bearer: null,
-    });
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
+  it("finish seals what the window holds and echoes only metadata", async () => {
+    vi.mocked(sessions.finishLogin).mockResolvedValueOnce({ ok: true, kind: "cookie" });
+    const res = await panel("/api/connections/sim%3Atesco/login/finish", { method: "POST" });
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(JSON.stringify(body)).not.toContain("super-secret-cookie-value");
-    expect(body).toMatchObject({ ok: true, store_id: "sim:tesco", method: "cookie" });
-    expect(vault.reveal("sim:tesco")?.secret).toBe("session=super-secret-cookie-value");
-    expect(captureLogin).toHaveBeenCalledWith("sim:tesco", ["tesco.com"]);
+    expect(await res.json()).toEqual({ ok: true, store_id: "sim:tesco", method: "cookie" });
   });
 
-  it("a capture with no window open, or no cookies yet, is a 409, not a 500", async () => {
-    vi.mocked(captureLogin).mockResolvedValueOnce({
-      ok: false,
-      error: "No sign-in tab is open for this store. Press Connect first.",
-    });
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
-    expect(res.status).toBe(409);
-  });
-
-  it("400s a capture for a store with no account to sign in to", async () => {
-    const res = await panel("/api/connections/tgt%3Atarget/chrome-login/capture", { method: "POST" });
-    expect(res.status).toBe(400);
-    expect(captureLogin).not.toHaveBeenCalled();
+  it("finish with no window open is a 409, not a 500", async () => {
+    expect((await panel("/api/connections/sim%3Atesco/login/finish", { method: "POST" })).status).toBe(409);
+    expect((await panel("/api/connections/shp%3Aexample.test/login/finish", { method: "POST" })).status).toBe(400);
   });
 
   it("cancel closes whatever window is open and says so honestly", async () => {
-    vi.mocked(cancelLogin).mockResolvedValueOnce(true);
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login", { method: "DELETE" });
-    expect(res.status).toBe(200);
+    vi.mocked(sessions.cancelLogin).mockResolvedValueOnce(true);
+    const res = await panel("/api/connections/sim%3Atesco/login", { method: "DELETE" });
     expect(await res.json()).toEqual({ ok: true, closed: true });
   });
 
-  it("a broken vault degrades capture to a clear 503, not a lost session", async () => {
-    vi.mocked(captureLogin).mockResolvedValueOnce({ ok: true, cookieHeader: "session=abc", bearer: null });
-    const broken = { ...deps, vault: degradedVault("disk is full") };
-    handler = createPanelHandler(broken, {
-      root: ROOT,
-      binPath: resolve(ROOT, "packages/cli/bin.js"),
-      origin: base,
-      endpoint: `${base}/mcp`,
-      version: "test",
-      token: TOKEN,
+  it("the health check is gated and reports a state, and POST asks the profile now", async () => {
+    expect((await raw("/api/connections/sim%3Atesco/health", { headers: { origin: base } })).status).toBe(401);
+    const live: SessionHealth = { session_state: "live", last_verified_at: 123, reason: "sealed", profile: true };
+    vi.mocked(sessions.checkSession).mockResolvedValueOnce(live);
+    const res = await panel("/api/connections/sim%3Atesco/health", { method: "POST" });
+    expect(await res.json()).toEqual(live);
+    expect(sessions.checkSession).toHaveBeenCalledWith("sim:tesco");
+    expect(sessions.reloginWithCredentials).not.toHaveBeenCalled();
+  });
+
+  it("an expired session with stored details re-signs-in, and may escalate because a human pressed it", async () => {
+    vault.connect({ storeId: loginKey("sim:tesco"), kind: "password", username: "me@example.com", secret: "pw" });
+    vi.mocked(sessions.checkSession).mockResolvedValueOnce({ ...UNKNOWN, session_state: "expired", profile: true });
+    await panel("/api/connections/sim%3Atesco/health", { method: "POST" });
+    expect(sessions.reloginWithCredentials).toHaveBeenCalledWith("sim:tesco", { interactive: true });
+  });
+});
+
+describe("the optional stored email and password (S23)", () => {
+  const post = (id: string, body: unknown) =>
+    panel(`/api/connections/${encodeURIComponent(id)}/credentials`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
-    const res = await panel("/api/connections/sim%3Atesco/chrome-login/capture", { method: "POST" });
-    expect(res.status).toBe(503);
+
+  it("is behind the token like everything else", async () => {
+    const res = await raw("/api/connections/sim%3Atesco/credentials", {
+      method: "POST",
+      headers: { origin: base, "content-type": "application/json" },
+      body: JSON.stringify({ email: "a@b.c", password: "x" }),
+    });
+    expect(res.status).toBe(401);
+    expect(vault.get(loginKey("sim:tesco"))).toBeNull();
+  });
+
+  it("refuses an empty pair, an unknown store, and a store with no account", async () => {
+    expect((await post("sim:tesco", { email: "", password: "" })).status).toBe(400);
+    expect((await post("sim:nope", { email: "a@b.c", password: "x" })).status).toBe(404);
+    expect((await post("shp:example.test", { email: "a@b.c", password: "x" })).status).toBe(400);
+  });
+
+  it("stores them under the login key, echoes the email and never the password", async () => {
+    const res = await post("sim:tesco", { email: "me@example.com", password: "hunter2-not-echoed" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(JSON.stringify(body)).not.toContain("hunter2");
+    expect(body).toMatchObject({ ok: true, store_id: "sim:tesco", email: "me@example.com" });
+    expect(vault.reveal(loginKey("sim:tesco"))?.secret).toBe("hunter2-not-echoed");
+    // Not a connection: the store is still "not connected", but the flag is up.
+    const list = (await (await panel("/api/connections")).json()) as {
+      connections: { store_id: string; connected: boolean; has_login_credentials: boolean }[];
+    };
+    const tesco = list.connections.find((c) => c.store_id === "sim:tesco")!;
+    expect(tesco.connected).toBe(false);
+    expect(tesco.has_login_credentials).toBe(true);
+    expect(list.connections.some((c) => c.store_id.endsWith("#login"))).toBe(false);
+    // And the plain connect route cannot reach the row by its key.
+    expect((await panel("/api/connections/sim%3Atesco%23login", { method: "DELETE" })).status).toBe(404);
+  });
+
+  it("can be removed", async () => {
+    await post("sim:tesco", { email: "me@example.com", password: "x" });
+    expect((await panel("/api/connections/sim%3Atesco/credentials", { method: "DELETE" })).status).toBe(200);
+    expect(vault.get(loginKey("sim:tesco"))).toBeNull();
+    expect((await panel("/api/connections/sim%3Atesco/credentials", { method: "DELETE" })).status).toBe(404);
+  });
+});
+
+/* ---------------------------------------------------- one card per brand (S23) */
+
+describe("one card per brand (S23)", () => {
+  let html: string;
+  beforeEach(async () => {
+    // Its own registry: the live Tesco and Amazon adapters beside their sample
+    // twins, which the shared registry above deliberately leaves out.
+    deps.registry.register(new TescoAdapter());
+    deps.registry.register(new AmazonAdapter());
+    html = await (await panel("/connections")).text();
+  });
+
+  it("renders Tesco once, with both mode chips and Connect on the live row", () => {
+    const cards = html.match(/<article class="appcard"[^>]*>/g) ?? [];
+    const tesco = cards.filter((c) => /data-name="tesco"/.test(c));
+    expect(tesco).toHaveLength(1);
+    expect(tesco[0]).toMatch(/data-store="tsc:tesco"/);
+    expect(tesco[0]).toMatch(/data-live-store="tsc:tesco"/);
+    expect(tesco[0]).toMatch(/data-sample-store="sim:tesco"/);
+    expect(tesco[0]).toMatch(/data-ids="sim:tesco tsc:tesco"/);
+    const card = html.slice(html.indexOf(tesco[0]!), html.indexOf("</article>", html.indexOf(tesco[0]!)));
+    expect(card).toMatch(/class="mode live"/);
+    expect(card).toMatch(/class="mode sample"/);
+    expect(card).toMatch(/data-connect-go/);
+    expect(card).not.toMatch(/class="twin"/);
+  });
+
+  it("a sample-only brand keeps its Connect, and a brand with no account says so", () => {
+    const costco = /<article class="appcard"[^>]*data-name="costco"[^>]*>[\s\S]*?<\/article>/.exec(html)?.[0] ?? "";
+    expect(costco).toMatch(/data-store="sim:costco"/);
+    expect(costco).toMatch(/data-connect-go/);
+    const ucp = /<article class="appcard"[^>]*data-name="example ucp"[^>]*>[\s\S]*?<\/article>/.exec(html)?.[0] ?? "";
+    expect(ucp).toMatch(/no account needed/);
+  });
+
+  it("the sample twin's page is the live one's page", async () => {
+    const res = await panel("/connections/sim%3Atesco", { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("/connections/tsc%3Atesco");
+    expect((await panel("/connections/sim%3Acostco", { redirect: "manual" })).status).toBe(200);
+  });
+});
+
+/* ------------------------------------------------- shopping mode (S24) */
+
+describe("the shopping-mode setting: basket is on, purchase is greyed out", () => {
+  it("state names both modes and marks purchase as locked", async () => {
+    const state = (await panel("/api/state").then((r) => r.json())) as {
+      shopping_mode: { mode: string; options: Array<{ id: string; available: boolean; locked_reason?: string }> };
+    };
+    const ids = state.shopping_mode.options.map((o) => o.id);
+    expect(ids).toEqual(["basket", "purchase"]);
+    const purchaseOpt = state.shopping_mode.options.find((o) => o.id === "purchase")!;
+    expect(purchaseOpt.available).toBe(false);
+    expect(purchaseOpt.locked_reason).toMatch(/locked/i);
+    expect(state.shopping_mode.options.find((o) => o.id === "basket")!.available).toBe(true);
+  });
+
+  it("refuses to switch to purchase mode as a lock, and leaves the mode alone", async () => {
+    purchase.db.prepare("DELETE FROM settings WHERE k = 'shopping_mode'").run();
+    const res = await panel("/api/settings/mode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "purchase" }),
+    });
+    expect(res.status).toBe(423);
+    const body = (await res.json()) as { locked: boolean; mode: string; error: string };
+    expect(body.locked).toBe(true);
+    expect(body.mode).toBe("basket");
+    expect(loadShoppingMode(purchase.db)).toBe("basket");
+  });
+
+  it("takes basket mode, and says an unknown mode is not a lock", async () => {
+    const ok = await panel("/api/settings/mode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "basket" }),
+    });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { mode: string }).mode).toBe("basket");
+    expect(loadShoppingMode(purchase.db)).toBe("basket");
+
+    const bad = await panel("/api/settings/mode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "checkout" }),
+    });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { locked: boolean }).locked).toBe(false);
+  });
+
+  it("lists what the agent put in the shopper's basket, without the account handle", async () => {
+    const tesco = deps.registry.get("sim:tesco")!;
+    const [id] = (await tesco.search({ query: "coffee", maxResults: 1 }, ctx)).map((p) => p.id);
+    await addToBasket(purchase, { items: [{ id: id!, quantity: 3 }], accountHandle: "acct_sim_tesco", principal: PRINCIPAL });
+
+    expect((await raw("/api/baskets")).status).toBe(401);
+    const body = (await panel("/api/baskets").then((r) => r.json())) as { baskets: Array<Record<string, unknown>> };
+    expect(body.baskets).toHaveLength(1);
+    expect(body.baskets[0]!["store_id"]).toBe("sim:tesco");
+    expect(body.baskets[0]!["summary"]).toHaveLength(1);
+    expect(body.baskets[0]!).not.toHaveProperty("account_handle");
+    expect(body.baskets[0]!).not.toHaveProperty("cart_json");
+  });
+
+  it("the approvals page draws the mode picker and the baskets list", async () => {
+    const html = await panel("/approvals").then((r) => r.text());
+    expect(html).toContain('id="mode"');
+    expect(html).toContain('id="baskets"');
+    expect(html).toMatch(/locked in this build/);
   });
 });
 
@@ -871,19 +1015,20 @@ describe("the README does not describe a connect build we do not have (S15, S19)
   it("names exactly the stores this build can sign in to", async () => {
     const withChromeLogin = deps.registry
       .list()
-      .filter((s) => authPolicyFor(s).chromeLogin)
+      .filter((s) => authPolicyFor(s).login)
       .map((s) => s.name)
       .sort();
     expect(withChromeLogin).toEqual(["Amazon", "Costco", "IKEA", "Shopee", "Taobao", "Tesco", "Walmart"]);
 
     const readme = await readFile(resolve(ROOT, "README.md"), "utf8");
-    const bullet = /Connect signs you in at the store[\s\S]{0,3000}?asked for by hand\./i.exec(readme)?.[0];
+    const bullet = /Connect signs you in at the store[\s\S]{0,4000}?never opens a window when nobody\s+is there\./i.exec(readme)?.[0];
     expect(bullet, "README's connect bullet was not found where expected").toBeTruthy();
-    for (const name of withChromeLogin) {
+    for (const name of [...withChromeLogin, "Target", "Etsy", "eBay", "Best Buy"]) {
       expect(bullet).toMatch(new RegExp(name));
     }
-    // The claim the panel's whole connect flow rests on, kept out of drift.
-    expect(bullet).toMatch(/no field anywhere that accepts a retailer password/i);
+    // The claims the panel's whole connect flow rests on, kept out of drift.
+    expect(bullet).toMatch(/one time/i);
+    expect(bullet).toMatch(/retailer's own sign-in form/i);
   });
 });
 

@@ -42,6 +42,12 @@ export interface PendingConnect {
   authCookies: string[];
   /** URL substring whose `Authorization` header is the credential (Tesco). */
   bearerMatch: string | null;
+  /**
+   * Regex source (first capture group) that lifts the same token out of the
+   * page at `url`. Tesco's trolley never sends `bearerMatch` a request the
+   * extension could watch; the token is in the page's inline state.
+   */
+  bearerPagePattern: string | null;
   startedAt: number;
   /** Set when a capture arrived, so the panel can report how it finished. */
   finishedBy: "extension" | null;

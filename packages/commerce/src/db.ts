@@ -78,6 +78,24 @@ CREATE TABLE IF NOT EXISTS spend (
 );
 CREATE INDEX IF NOT EXISTS spend_at ON spend (at);
 
+-- Basket mode (S24): what the agent put in the shopper's OWN basket at the
+-- store, so the panel can show it and link to it. No approval, no payment:
+-- the shopper finishes at the retailer. Never a credential, never a cart the
+-- agent could pay for.
+CREATE TABLE IF NOT EXISTS baskets (
+  id             TEXT PRIMARY KEY,
+  principal      TEXT NOT NULL,
+  store_id       TEXT NOT NULL,
+  account_handle TEXT NOT NULL,
+  cart_id        TEXT,
+  cart_json      TEXT NOT NULL,
+  total_value    REAL NOT NULL,
+  total_currency TEXT NOT NULL,
+  cart_url       TEXT,
+  mode           TEXT NOT NULL,
+  created_at     INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL

@@ -17,6 +17,7 @@ import {
 } from "@basketed/adapters";
 import { openDb, type PurchaseDeps } from "@basketed/commerce";
 import { openVault, degradedVault, type Vault } from "@basketed/vault";
+import { createSessionManager, type SessionManager } from "@basketed/session";
 import { createPolicy, type Policy } from "./policy.js";
 
 /**
@@ -41,6 +42,12 @@ export interface Runtime {
    * has no field it could travel in.
    */
   vault: Vault;
+  /**
+   * Persistent per-store browser profiles (S23): the engine behind one-time
+   * sign-in. The panel drives it; the purchase gate asks it to refresh a
+   * rejected session. No tool handler can reach it.
+   */
+  sessions: SessionManager;
   redactor: Redactor;
   ledger: TokenLedger;
   /**
@@ -224,6 +231,7 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
     log(`vault unavailable, connections disabled: ${reason}`);
     vault = degradedVault(reason);
   }
+  const sessions = createSessionManager({ vault, registry, log });
   const announce =
     opts.announce ?? ((lines: string[]) => process.stderr.write(`${lines.join("\n")}\n`));
 
@@ -234,11 +242,12 @@ export async function createRuntime(opts: RuntimeOptions = {}): Promise<Runtime>
     registry,
     ctx,
     vault,
+    sessions,
     redactor,
     ledger: new TokenLedger(),
     principal: `local:${userInfo().username}`,
     policy: createPolicy(opts.fastMode ?? false),
-    purchase: { db, registry, ctx, fx, announce, vault },
+    purchase: { db, registry, ctx, fx, announce, vault, sessions },
     summary:
       `${loaded.length} stores (` +
       [...byMode.entries()].map(([mode, n]) => `${n} ${mode}`).join(", ") +

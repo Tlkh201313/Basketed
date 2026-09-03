@@ -3,6 +3,7 @@ import type { AddressInfo, Socket } from "node:net";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import {
   createRuntime,
@@ -18,10 +19,10 @@ import {
   PRIMARY_CLIENTS,
   pathFor,
   snippetFor,
-  closeAllChromeLogins,
   type ControlDeps,
 } from "@basketed/control";
 import type { Runtime } from "@basketed/mcp";
+import { startHealthScheduler, healthDisabled } from "@basketed/session";
 import { findRoot } from "./root.js";
 import { installClient, findClient, expandPath } from "./install.js";
 
@@ -92,6 +93,7 @@ function controlDeps(runtime: Runtime): ControlDeps {
     version: SERVER_INFO.version,
     redactionAlarms: () => runtime.redactor.alarms(),
     vault: runtime.vault,
+    sessions: runtime.sessions,
   };
 }
 
@@ -223,21 +225,42 @@ export async function main(argv: string[]): Promise<void> {
   const root = findRoot();
   const http = flag(argv, "http");
 
+  const snapshots = flag(argv, "snapshots") || process.env["BASKETED_SNAPSHOTS"] === "1";
   const runtime = await createRuntime({
     root,
-    snapshots: flag(argv, "snapshots") || process.env["BASKETED_SNAPSHOTS"] === "1",
+    snapshots,
     fastMode: flag(argv, "fast-mode"),
   });
 
   const mayOpen = !flag(argv, "no-open") && process.env["BASKETED_NO_OPEN"] !== "1";
 
-  // A Chrome window opened for the login prototype (S15) is a real OS process,
-  // spawned by Puppeteer as a child of this one -- it does not exit just
-  // because this process does. Ctrl+C on either transport must not leave it
-  // running with a captured session sitting in it.
+  // The headless session check (S23): every few hours, each connected store's
+  // profile is asked whether it is still signed in, so a "connected" pill is
+  // never a stale claim. Never under snapshots -- nothing should touch the
+  // network there -- and never when the user has switched it off.
+  const health =
+    snapshots || healthDisabled()
+      ? null
+      : startHealthScheduler(runtime.sessions, { vault: runtime.vault, log: (line) => process.stderr.write(`${line}\n`) });
+
+  // The S15-S19 Chrome profile is orphaned by the per-store profiles (S23).
+  // Said once, never deleted: it may hold a session the user still wants.
+  const oldProfile = resolve(homedir(), ".basketed", "chrome-profile");
+  if (existsSync(oldProfile)) {
+    process.stderr.write(`note: ${oldProfile} is no longer used; sign-ins now live in ~/.basketed/profiles. Safe to delete.
+`);
+  }
+
+  // A sign-in window is a real Chromium process spawned as a child of this
+  // one -- it does not exit just because this process does. Ctrl+C on either
+  // transport must not leave it running with a signed-in session sitting in it.
+  const shutdown = (): Promise<void> => {
+    health?.stop();
+    return runtime.sessions.closeAll();
+  };
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.once(sig, () => {
-      void closeAllChromeLogins().finally(() => process.exit(0));
+      void shutdown().finally(() => process.exit(0));
     });
   }
 
@@ -282,7 +305,7 @@ export async function main(argv: string[]): Promise<void> {
      */
     process.stdin.once("end", () => {
       panel?.close();
-      void closeAllChromeLogins();
+      void shutdown();
       setTimeout(() => process.exit(0), 250).unref();
     });
     return;

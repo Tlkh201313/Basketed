@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
+  addToBasket,
   confirmPurchase,
   getOrder,
   listOrders,
@@ -27,7 +28,21 @@ import type { Runtime } from "./runtime.js";
  *     to change where things are delivered, and removing the tool removes the
  *     whole class of attack. Addresses are managed in the panel, against an
  *     allowlist.
+ *
+ * Shopping mode (S24) sits in front of the gate. In BASKET mode -- the only
+ * mode this build unlocks -- `basket_add_to_cart` puts the items in the
+ * shopper's own basket at the store and reports where it is; the shopper
+ * checks out themselves. `basket_cart_prepare` and `basket_purchase_confirm`
+ * refuse in that mode, in commerce, not here.
  */
+
+/** Writes to an account the person connected, but can never charge it. */
+const BASKET_ONLY = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+} as const;
 
 const MONEY_ADJACENT = {
   readOnlyHint: false,
@@ -68,13 +83,79 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
     return runtime.purchase;
   };
 
-  /* 5 --------------------------------------------------------- cart_prepare */
+  /* 5 ---------------------------------------------------------- add_to_cart */
+
+  server.registerTool(
+    "basket_add_to_cart",
+    {
+      title: "Add to the shopper's own basket",
+      description:
+        "BASKET MODE, the default. Put the product(s) you found into the shopper's OWN basket at one store, " +
+        "in the account they connected in the Basketed panel, and get back a report and the link to that " +
+        "basket. Nothing is bought: the shopper opens their basket and checks out themselves on the " +
+        "retailer's own page. Use this after search: pick the best match, add it, then tell the person " +
+        "what you added, the total, and the `basket_url`. All items must come from ONE store. Requires " +
+        "that store to be connected.",
+      inputSchema: z.object({
+        items: z
+          .array(z.object({ id: z.string(), quantity: z.number().int().positive().max(99) }))
+          .min(1)
+          .describe("Product ids from search_products, all from the same store"),
+        account_handle: z
+          .string()
+          .describe("An opaque handle for the connected account, e.g. acct_tsc_tesco. Never a credential."),
+      }),
+      outputSchema: z
+        .object({
+          basket_id: z.string(),
+          store_id: z.string(),
+          store_name: z.string(),
+          mode: z.string(),
+          total: z.object({ value: z.number(), currency: z.string() }),
+          line_items: z.array(z.unknown()),
+          summary: z.array(z.string()),
+          basket_url: z.string().nullable(),
+          charged: z.boolean(),
+          report: z.string(),
+        })
+        .loose(),
+      annotations: BASKET_ONLY,
+    },
+    async (args) => {
+      try {
+        const result = await addToBasket(deps(), {
+          items: args.items,
+          accountHandle: args.account_handle,
+          principal: runtime.principal,
+        });
+        return respond(runtime, {
+          basket_id: result.basketId,
+          store_id: result.storeId,
+          store_name: result.storeName,
+          mode: result.mode,
+          total: result.total,
+          line_items: result.lineItems,
+          summary: result.summary,
+          basket_url: result.basketUrl,
+          // A field, not only prose: no client can render this as an order.
+          charged: false,
+          report: result.report,
+        });
+      } catch (err) {
+        return respond(runtime, { error: (err as Error).message, charged: false }, true);
+      }
+    },
+  );
+
+  /* 6 --------------------------------------------------------- cart_prepare */
 
   server.registerTool(
     "basket_cart_prepare",
     {
       title: "Prepare a cart for human approval",
       description:
+        "PURCHASE MODE ONLY -- locked in this build; in basket mode this refuses and tells you to use " +
+        "basket_add_to_cart instead. " +
         "Build a REAL cart at one store and freeze it as a Cart Mandate awaiting human approval. " +
         "Nothing is charged and no checkout is created. Returns an `approval_id`, an `approve_url`, and " +
         "the exact itemised total a human must authorise. A 6-digit code is printed on the Basketed " +
@@ -135,13 +216,14 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
     },
   );
 
-  /* 6 ----------------------------------------------------- purchase_confirm */
+  /* 7 ----------------------------------------------------- purchase_confirm */
 
   server.registerTool(
     "basket_purchase_confirm",
     {
       title: "Confirm an approved purchase",
       description:
+        "PURCHASE MODE ONLY -- locked in this build; refuses in basket mode. " +
         "Execute a cart that a HUMAN has approved. Supply the 6-digit code the person read off the " +
         "Basketed server's console, or omit it if they already approved in the panel. Succeeds only " +
         "against an unexpired, unconsumed approval whose cart hash still matches and whose spend " +
@@ -218,7 +300,7 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
     },
   );
 
-  /* 7 ------------------------------------------------------------ list_orders */
+  /* 8 ------------------------------------------------------------ list_orders */
 
   server.registerTool(
     "basket_list_orders",
@@ -238,7 +320,7 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
     },
   );
 
-  /* 8 ------------------------------------------------------- get_order_status */
+  /* 9 ------------------------------------------------------- get_order_status */
 
   server.registerTool(
     "basket_get_order_status",
@@ -274,6 +356,7 @@ export function registerPurchaseTools(server: McpServer, runtime: Runtime): void
 }
 
 export const PURCHASE_TOOL_NAMES = [
+  "basket_add_to_cart",
   "basket_cart_prepare",
   "basket_purchase_confirm",
   "basket_list_orders",

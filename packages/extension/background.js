@@ -128,6 +128,55 @@ async function cookiesFor(domains) {
   return [...seen].map(([name, value]) => `${name}=${value}`).join("; ");
 }
 
+/**
+ * A token the store's page carries in its own inline state, read out of an
+ * open tab on that store's domain. Tesco's trolley talks to a same-origin
+ * BFF and embeds the bearer it uses in the page, so `onSendHeaders` above
+ * never sees one for it. Only tabs on the domains the PANEL named are looked
+ * at, the script returns nothing but the one matched group, and the value
+ * goes to the panel that asked like every other capture.
+ */
+async function bearerFromPage(domains, patternSource) {
+  let pattern;
+  try {
+    pattern = new RegExp(patternSource);
+  } catch {
+    return "";
+  }
+  const urls = domains.flatMap((d) => [`https://${d}/*`, `https://*.${d}/*`]);
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: urls });
+  } catch {
+    return "";
+  }
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    try {
+      const [hit] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (src) => {
+          const m = new RegExp(src).exec(document.documentElement.outerHTML);
+          return m && m[1] ? m[1] : "";
+        },
+        args: [patternSource],
+      });
+      let raw = hit && hit.result ? String(hit.result) : "";
+      if (!raw) continue;
+      try {
+        raw = JSON.parse(`"${raw}"`); // undo / and friends
+      } catch {
+        // not a JSON string literal: take it as written
+      }
+      raw = raw.replace(/^Bearer\s+/i, "").trim();
+      if (raw) return raw;
+    } catch {
+      // tab gone, or a page Chrome will not script (chrome://, the store's own error page)
+    }
+  }
+  return "";
+}
+
 /** Does this jar carry a cookie only a signed-in session has? */
 function looksSignedIn(cookieHeader, authCookies) {
   if (!authCookies || !authCookies.length) return false;
@@ -172,7 +221,10 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     if (bearerMatch) watchedMatches.add(bearerMatch);
 
     const cookieHeader = await cookiesFor(note.domains || []);
-    const bearer = bearerMatch ? bearers.get(bearerMatch) || "" : "";
+    let bearer = bearerMatch ? bearers.get(bearerMatch) || "" : "";
+    if (!bearer && note.bearer_page_pattern) {
+      bearer = await bearerFromPage(note.domains || [], note.bearer_page_pattern);
+    }
     respond({
       ok: true,
       cookieHeader,

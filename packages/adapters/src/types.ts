@@ -25,6 +25,14 @@ import type {
 export interface AdapterCtx {
   /** Pre-authenticated fetch. Auth is already applied; the adapter just calls it. */
   http: typeof fetch;
+  /**
+   * Ask for the store session to be renewed, for stores that report an
+   * expired credential INSIDE a 200 (a GraphQL "Unauthorized" envelope, say)
+   * where the transport-level refresh in `http` cannot see it. Resolves true
+   * when the credential behind `http` has been replaced and the call can be
+   * retried once. Absent when no session manager is running.
+   */
+  reauth?: () => Promise<boolean>;
   log: (msg: string, meta?: Record<string, unknown>) => void;
   /** Replay from fixtures/snapshots instead of the network (wifi-failure drill). */
   snapshots: boolean;

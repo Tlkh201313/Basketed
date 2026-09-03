@@ -12,3 +12,4 @@ export * from "./target/index.js";
 export * from "./etsy/index.js";
 export * from "./ebay/index.js";
 export * from "./bestbuy/index.js";
+export { DEFAULT_ARGS, STEALTH_ARGS, HARMFUL_ARGS, USER_AGENT } from "./stealth/browser.js";

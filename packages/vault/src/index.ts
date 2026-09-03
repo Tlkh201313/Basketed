@@ -292,8 +292,38 @@ export interface AuthorizedFetchOptions {
   onRefuse?: ((url: string) => void) | undefined;
 }
 
+/**
+ * The vault key under which a store's OPTIONAL sign-in email and password
+ * live, beside (never instead of) the session the store issued. `store_id`
+ * is the table's primary key, so the second credential gets a second key;
+ * the panel filters these rows out of "connections" by the suffix.
+ */
+export function loginKey(storeId: string): string {
+  return `${storeId}#login`;
+}
+
+export function isLoginKey(storeId: string): boolean {
+  return storeId.endsWith("#login");
+}
+
+/**
+ * The vault key for a store's cookie jar when the session came from the
+ * user's OWN browser (the extension) rather than a Basketed profile. A
+ * bearer alone dies in an hour; the jar beside it is what renews it -- see
+ * `@basketed/session`'s `renewBearerFromJar`. Hidden from the panel like the
+ * login row.
+ */
+export function jarKey(storeId: string): string {
+  return `${storeId}#jar`;
+}
+
+/** Any row that lives BESIDE a connection rather than being one. */
+export function isAuxKey(storeId: string): boolean {
+  return isLoginKey(storeId) || storeId.endsWith("#jar");
+}
+
 /** `tesco.com` covers `tesco.com` and `xapi.tesco.com`, never `nottesco.com`. */
-function sameSite(host: string, domain: string): boolean {
+export function sameSite(host: string, domain: string): boolean {
   const h = host.toLowerCase();
   const d = domain.toLowerCase();
   return h === d || h.endsWith(`.${d}`);

@@ -184,7 +184,16 @@ Read-only:
 | `basket_get_product_detail` | heavy fields only via `include` |
 | `basket_get_token_report` | tokens served vs baseline, cumulative |
 
-Money-adjacent — `destructiveHint: true`, never promotable to ALLOW:
+Basket mode — the default, and the only mode this build unlocks. Never
+promotable to ALLOW:
+
+| | |
+|---|---|
+| `basket_add_to_cart` | puts the items in **your own basket** at the store, in the account you connected, and returns the link. **`charged: false`.** You check out yourself. |
+
+Purchase mode — `destructiveHint: true`, never promotable to ALLOW. **Locked
+in this build**: shown greyed out in the panel's Approvals page, and both tools
+refuse while basket mode is in force.
 
 | | |
 |---|---|
@@ -278,45 +287,56 @@ annotations, namespaced names.
   basket adapter actually calls with. (`sim:amazon` is the sign-in target — not
   the real `amz:amazon` discovery/detail adapter below, which needs no
   credential at all.)
-- **Connect signs you in at the store, in a browser — there is no password box
-  (S19), and it is the browser you already have open (S20). Covers Amazon,
-  Costco, IKEA, Shopee, Taobao, Tesco and Walmart.**
+- **Connect signs you in at the store, one time, in a browser profile Basketed
+  keeps for that store (S23). Covers Tesco, Amazon, IKEA, Target, Etsy, eBay
+  and Best Buy, plus the Costco, Walmart, Shopee and Taobao sample rows.**
   None of them publish a consumer OAuth flow, so the alternative to a
   password-paste box is not a nicer password-paste box: it is opening the
-  retailer's own login page in the browser you already use and letting you sign
-  in there. Basketed has **no field anywhere that accepts a retailer password**,
-  and the route refuses one even if a policy offered it — a test asserts both.
+  retailer's own sign-in page, at the real URL, and letting you sign in there
+  — codes, captchas, browser checks and all. The window is a persistent
+  Chromium profile under `~/.basketed/profiles/<store>`, readable by this user
+  only. Basketed reads the page it landed on, not just the cookie jar: an
+  account page that bounced to `/login` is signed-out, a sign-out link or a
+  greeting is signed-in, and a one-time-code or captcha page is *needs you*,
+  never mistaken for either. Once it sees you are through it seals the session
+  and closes the window, and **the profile stays signed in**, so the next
+  basket, and the one a month later, need nothing from you.
 
-  Connect is a plain `<a target="_blank">`, so the tab opens in **the same
-  browser window the panel is running in**, with the accounts already in it.
-  Nothing is launched and nothing about the login is automated. If you are
-  already signed in, the connection finishes on its own; if you are not, you
-  land on the retailer's sign-in page and it finishes the moment you are
-  through.
+  Every few hours a headless check asks the store whether the profile is still
+  signed in, and re-seals what it renewed — that is what makes "connected" a
+  fact rather than a memory. A store that answers 401 to a basket call gets one
+  silent refresh and one retry before the adapter reports what it saw.
 
-  Reading the session back out of that tab is the half an outside program
-  cannot do, and should not be able to: since Chrome 136,
+  Optionally, you can leave a store's email and password with Basketed, sealed
+  like every other credential. They are typed into exactly one place — the
+  retailer's own sign-in form, on the retailer's own host, checked before a
+  keystroke, inside that store's profile — so a session that dies while you are
+  away can be re-made without you. If the retailer then asks for a code or a
+  captcha, Basketed stops, says *needs you* in the panel, and never guesses.
+  There is no other password field in the product, and the plain connect
+  route still refuses one.
+
+  Reading a session out of the browser you already use is the half an outside
+  program cannot do, and should not be able to: since Chrome 136,
   `--remote-debugging-port` is ignored against the default profile
   ([Chrome for Developers](https://developer.chrome.com/blog/remote-debugging-port))
   exactly so that no process can lift another profile's cookies. Basketed does
-  not route around that — no profile copying, no decrypting Chrome's cookie
-  store, no injection. It goes in the sanctioned way instead: a small extension
-  (`packages/extension`, load-unpacked, under 200 lines) that reads the session
-  from the inside, talks to one pinned local origin and nothing else, stores
-  only that origin, and refuses any page that is not served from it — the
-  token is checked against the pinned panel, not against whoever is asking,
-  because ports are not a cookie boundary and "I am the panel" is not proof
-  coming from the caller. Without
-  the extension the tab still opens — the panel then offers a Basketed-driven
-  window on its own persistent profile, which does auto-capture, rather than
-  spinning forever.
+  not route around that. For people who would rather not run a second profile,
+  the small extension (`packages/extension`, load-unpacked, under 200 lines)
+  still reads the session from the inside of your own browser, talks to one
+  pinned local origin and nothing else, and refuses any page not served from
+  it — the token is checked against the pinned panel, not against whoever is
+  asking. That path cannot keep itself signed in; the profile can.
 
   Every one of these retailers' Terms of Service prohibits automated access,
   including by the account owner; that risk is disclosed on the Connect page
   itself, not just here. What is sealed is what the store's adapter can
   actually use: the cookie jar, or — for real Tesco, whose basket API is a
   bearer API — the `Authorization` token its own frontend sends to
-  `xapi.tesco.com`, read out of the signed-in tab instead of asked for by hand.
+  `xapi.tesco.com`, read out of the signed-in profile instead of asked for by
+  hand. Nothing here opens a window unattended: a headless check that finds a
+  challenge waits for you in the panel, and never opens a window when nobody
+  is there.
 - The agent sees only an **opaque account handle**, never anything that could
   become one.
 - **The approval surface is behind a per-process token** printed on the server's

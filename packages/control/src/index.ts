@@ -4,13 +4,12 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { handleApi } from "./api.js";
 import { panelBase } from "./base.js";
-import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked, type StoreRow } from "./pages.js";
-import { stateOf as chromeLoginStateOf, chromeMode } from "./browser-connect.js";
+import { renderApprovals, renderConnect, renderConnections, renderHome, renderLocked } from "./pages.js";
+import { brandOf, type StoreRow } from "./connections.js";
 import type { ControlDeps } from "./types.js";
 
 export * from "./clients.js";
 export type { ControlDeps } from "./types.js";
-export { closeAll as closeAllChromeLogins } from "./browser-connect.js";
 
 /**
  * The control panel (§7), served by the same process and the same port as the
@@ -354,6 +353,20 @@ export function createPanelHandler(
           );
           return true;
         }
+        // One page per brand (S23): the sample twin's page IS the live one's.
+        const rows: StoreRow[] = deps.registry.list().map((s) => ({
+          id: s.id,
+          name: s.name,
+          mode: s.mode,
+          country: s.country,
+          currency: s.currency,
+        }));
+        const group = brandOf(rows, storeId);
+        if (group && group.primary.id !== storeId) {
+          res.writeHead(302, { location: `${base}/connections/${encodeURIComponent(group.primary.id)}` });
+          res.end();
+          return true;
+        }
         const held = deps.vault.get(storeId);
         send(
           res,
@@ -361,12 +374,12 @@ export function createPanelHandler(
           "text/html; charset=utf-8",
           renderConnect({
             store: { id: store.id, name: store.name, mode: store.mode, country: store.country, currency: store.currency },
+            group,
             token: opts.token,
             connected: held ? { method: held.kind, username: held.username, broken: held.broken } : null,
-            // "logged_in" is still a window waiting to be captured, so both
-            // non-idle states render the waiting card.
-            chromeWaiting: chromeLoginStateOf(storeId) !== "idle",
-            chrome: await chromeMode(),
+            loginState: deps.sessions.pollStatus(storeId).state,
+            session: deps.sessions.health(storeId),
+            hasLoginCredentials: deps.sessions.hasCredentials(storeId),
           }),
           { "set-cookie": setCookie },
         );
