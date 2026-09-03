@@ -9,10 +9,13 @@ import {
   GuardrailValueError,
   spentInWindow,
   type CartMandate,
+  describeShoppingModes,
+  listBaskets,
+  saveShoppingMode,
+  ShoppingModeError,
 } from "@basketed/commerce";
-import type { CredentialKind } from "@basketed/vault";
+import { isAuxKey, isLoginKey, jarKey, loginKey, type CredentialKind } from "@basketed/vault";
 import { authPolicyFor } from "./connections.js";
-import { startLogin, captureLogin, cancelLogin, stateOf, statusOf } from "./browser-connect.js";
 import { openConnect, pendingFor, listPending, closeConnect, finish, statusFor } from "./handoff.js";
 import type { ControlDeps } from "./types.js";
 
@@ -109,9 +112,33 @@ export async function handleApi(
           ...g,
           spent_24h: Number(spentInWindow(purchase.db, 24 * 60 * 60 * 1000, now).toFixed(2)),
         },
+        // The mode in force and every option, locked ones included, so the
+        // panel can grey out what this build does not unlock (S24).
+        shopping_mode: describeShoppingModes(purchase.db),
         redaction_alarms: deps.redactionAlarms(),
       },
     };
+  }
+
+  if (method === "GET" && path === "/api/baskets") {
+    return { status: 200, body: { baskets: listBaskets(purchase.db, 50) } };
+  }
+
+  if (method === "POST" && path === "/api/settings/mode") {
+    const payload = await body();
+    const wanted = String(payload["mode"] ?? "");
+    try {
+      const mode = saveShoppingMode(purchase.db, wanted);
+      log(`shopping mode set to ${mode}`);
+    } catch (err) {
+      // A locked mode is refused as a lock, not as an error the panel should
+      // retry: the response says so and the mode in force is unchanged.
+      if (err instanceof ShoppingModeError) {
+        return { status: err.locked ? 423 : 400, body: { error: err.message, locked: err.locked, ...describeShoppingModes(purchase.db) } };
+      }
+      throw err;
+    }
+    return { status: 200, body: describeShoppingModes(purchase.db) };
   }
 
   if (method === "GET" && path === "/api/approvals") {
@@ -144,13 +171,19 @@ export async function handleApi(
    * it again is the request interceptor, inside the process.
    */
   if (method === "GET" && path === "/api/connections") {
-    const held = new Map(deps.vault.list().map((c) => [c.storeId, c]));
+    // The optional email+password rows (S23) are not connections: they are
+    // what a profile uses to make one. Filtered out here, reported as a flag.
+    const all = deps.vault.list();
+    const held = new Map(all.filter((c) => !isAuxKey(c.storeId)).map((c) => [c.storeId, c]));
+    const withCredentials = new Set(all.filter((c) => isLoginKey(c.storeId)).map((c) => c.storeId));
     return {
       status: 200,
       body: {
         connections: deps.registry.list().map((s) => {
           const policy = authPolicyFor(s);
           const held_ = held.get(s.id) ?? null;
+          const session = deps.sessions.health(s.id);
+          const login = deps.sessions.pollStatus(s.id);
           return {
             store_id: s.id,
             name: s.name,
@@ -166,9 +199,12 @@ export async function handleApi(
             username: held_?.username ?? null,
             connected_at: held_?.createdAt ?? null,
             last_used_at: held_?.lastUsedAt ?? null,
-            chrome_login: policy.chromeLogin !== null,
-            chrome_login_waiting: stateOf(s.id) !== "idle",
-            chrome_login_logged_in: stateOf(s.id) === "logged_in",
+            login: policy.login !== null,
+            login_state: login.state,
+            login_human: login.human,
+            session_state: held_ ? session.session_state : "unknown",
+            last_verified_at: session.last_verified_at,
+            has_login_credentials: withCredentials.has(loginKey(s.id)),
           };
         }),
       },
@@ -176,99 +212,117 @@ export async function handleApi(
   }
 
   /*
-   * The Chrome-login prototype (S15): a real Chrome window on the real site,
-   * a human logging in themselves, and nothing captured until they say so.
-   * Three routes, same shape as the rest of this file -- start, act, cancel.
+   * Sign in, in a window Basketed keeps for the store (S23).
+   *
+   * POST opens the window (or reports the one already open), GET is what the
+   * panel polls, DELETE closes it. `finish` seals whatever the profile holds
+   * right now, for the case where the page-reading probe cannot tell that a
+   * human is in fact signed in. Every reply is a state word and a clock --
+   * no cookie names, no values, nothing that turns a poll into a read.
    */
-  const chromeStart = /^\/api\/connections\/([^/]+)\/chrome-login$/.exec(path);
-  if (method === "POST" && chromeStart) {
-    const storeId = decodeURIComponent(chromeStart[1]!);
+  const login = /^\/api\/connections\/([^/]+)\/login$/.exec(path);
+  if (login && (method === "POST" || method === "GET" || method === "DELETE")) {
+    const storeId = decodeURIComponent(login[1]!);
+    if (method === "GET") return { status: 200, body: deps.sessions.pollStatus(storeId) };
+    if (method === "DELETE") {
+      const closed = await deps.sessions.cancelLogin(storeId);
+      return { status: 200, body: { ok: true, closed } };
+    }
     const store = deps.registry.list().find((s) => s.id === storeId);
     if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
     const policy = authPolicyFor(store);
-    if (!policy.chromeLogin) {
-      return { status: 400, body: { error: `Chrome login is not offered for ${store.name} in this build.` } };
+    if (!policy.login) {
+      return { status: 400, body: { error: `${store.name} needs no account: there is nothing to sign in to.` } };
     }
-    const result = await startLogin(storeId, policy.chromeLogin);
-    if (!result.ok) {
-      log(`connect ${storeId} could not open a tab: ${result.error}`);
-      return { status: 503, body: { error: result.error } };
+    const opened = await deps.sessions.openLogin(storeId);
+    if (!opened.ok) {
+      log(`connect ${storeId} could not open a window: ${opened.error}`);
+      return { status: 503, body: { error: opened.error } };
     }
-    log(
-      `connect ${storeId}: tab opened at ${policy.chromeLogin.url}` +
-        (result.attached ? " in the browser already running" : " in Basketed's Chrome profile") +
-        (result.logged_in ? " (already signed in)" : ""),
-    );
-    return {
-      status: 200,
-      body: { ok: true, waiting: true, logged_in: result.logged_in, attached: result.attached },
-    };
+    log(`connect ${storeId}: sign-in window ${opened.state}`);
+    return { status: 200, body: { ok: true, state: opened.state } };
+  }
+
+  const loginFinish = /^\/api\/connections\/([^/]+)\/login\/finish$/.exec(path);
+  if (method === "POST" && loginFinish) {
+    const storeId = decodeURIComponent(loginFinish[1]!);
+    const store = deps.registry.list().find((s) => s.id === storeId);
+    if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
+    if (!authPolicyFor(store).login) {
+      return { status: 400, body: { error: `${store.name} needs no account: there is nothing to sign in to.` } };
+    }
+    const sealed = await deps.sessions.finishLogin(storeId);
+    if (!sealed.ok) return { status: 409, body: { error: sealed.error } };
+    log(`connect ${storeId}: sealed as ${sealed.kind}`);
+    return { status: 200, body: { ok: true, store_id: storeId, method: sealed.kind } };
   }
 
   /*
-   * Status for the open window (S18). The panel polls this so it can notice
-   * the login finishing by itself. It reports a boolean and a clock and
-   * nothing else -- no cookie names, no values, nothing that would turn a
-   * status poll into a way to read the session.
+   * The optional email and password (S23). Stored under a second vault key
+   * beside the session, typed by Basketed into the retailer's own form and
+   * nowhere else -- see connections.ts. The reply is metadata: the email
+   * comes back, the password never does.
    */
-  const chromeStatus = /^\/api\/connections\/([^/]+)\/chrome-login$/.exec(path);
-  if (method === "GET" && chromeStatus) {
-    const storeId = decodeURIComponent(chromeStatus[1]!);
-    return { status: 200, body: statusOf(storeId) };
-  }
-
-  const chromeCapture = /^\/api\/connections\/([^/]+)\/chrome-login\/capture$/.exec(path);
-  if (method === "POST" && chromeCapture) {
-    const storeId = decodeURIComponent(chromeCapture[1]!);
+  const credentials = /^\/api\/connections\/([^/]+)\/credentials$/.exec(path);
+  if (credentials && (method === "POST" || method === "DELETE")) {
+    const storeId = decodeURIComponent(credentials[1]!);
     const store = deps.registry.list().find((s) => s.id === storeId);
     if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
     const policy = authPolicyFor(store);
-    if (!policy.chromeLogin) {
-      return { status: 400, body: { error: `Chrome login is not offered for ${store.name} in this build.` } };
+    if (!policy.login) {
+      return { status: 400, body: { error: `${store.name} needs no account: there is nothing to sign in to.` } };
     }
-    const captured = await captureLogin(storeId, policy.chromeLogin.domains);
-    if (!captured.ok) {
-      log(`connect ${storeId} capture failed: ${captured.error}`);
-      return { status: 409, body: { error: captured.error } };
+    if (method === "DELETE") {
+      const forgotten = deps.vault.forget(loginKey(storeId));
+      return { status: forgotten ? 200 : 404, body: { ok: forgotten, store_id: storeId } };
     }
-    /*
-     * Seal what the store's adapter can actually use (S19). A bearer store's
-     * cookie jar is the WRONG credential -- sealing it would look like success
-     * here and fail at the first basket call -- so a store that asked for a
-     * bearer and did not get one is a 409, not a silent downgrade.
-     */
-    const wantsBearer = policy.chromeLogin.bearer !== undefined;
-    if (wantsBearer && !captured.bearer) {
-      return {
-        status: 409,
-        body: {
-          error:
-            `Signed in, but ${store.name} has not issued a session token yet. ` +
-            `Browse to your basket in the open tab, then press Connect again.`,
-        },
-      };
+    if (!policy.login.loginForm) {
+      return { status: 400, body: { error: `${store.name}'s sign-in form is not one Basketed can fill in yet.` } };
     }
-    const kind: CredentialKind = wantsBearer ? "token" : "cookie";
-    const secret = wantsBearer ? captured.bearer! : captured.cookieHeader;
+    const payload = await body();
+    const email = String(payload["email"] ?? "").trim();
+    const password = String(payload["password"] ?? "");
+    if (!email || !password) return { status: 400, body: { error: "Both the email and the password are needed." } };
     try {
-      const saved = deps.vault.connect({ storeId, kind, username: null, secret });
-      log(`connect ${storeId}: session captured and sealed as ${kind}`);
-      return {
-        status: 200,
-        body: { ok: true, store_id: saved.storeId, method: saved.kind, connected_at: saved.createdAt },
-      };
+      const saved = deps.vault.connect({ storeId: loginKey(storeId), kind: "password", username: email, secret: password });
+      log(`connect ${storeId}: sign-in details stored`);
+      return { status: 200, body: { ok: true, store_id: storeId, email: saved.username, stored_at: saved.createdAt } };
     } catch (err) {
       const reason = (err as Error).message;
-      log(`connect ${storeId} could not be saved: ${reason}`);
+      log(`connect ${storeId} credentials could not be saved: ${reason}`);
       return { status: 503, body: { error: reason } };
     }
   }
 
-  const chromeCancel = /^\/api\/connections\/([^/]+)\/chrome-login$/.exec(path);
-  if (method === "DELETE" && chromeCancel) {
-    const storeId = decodeURIComponent(chromeCancel[1]!);
-    const closed = await cancelLogin(storeId);
-    return { status: 200, body: { ok: true, closed } };
+  /*
+   * Is the profile still signed in? GET is the cached answer; POST runs the
+   * headless check now, and -- because a human is at the panel to press it --
+   * may fall through to a stored-password re-login that escalates to a window
+   * if the store asks for a code.
+   */
+  const health = /^\/api\/connections\/([^/]+)\/health$/.exec(path);
+  if (health && (method === "GET" || method === "POST")) {
+    const storeId = decodeURIComponent(health[1]!);
+    const store = deps.registry.list().find((s) => s.id === storeId);
+    if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
+    if (method === "GET") return { status: 200, body: deps.sessions.health(storeId) };
+    if (!authPolicyFor(store).login) {
+      return { status: 400, body: { error: `${store.name} needs no account: there is nothing to check.` } };
+    }
+    let result = await deps.sessions.checkSession(storeId);
+    if (result.session_state === "expired" && deps.sessions.hasCredentials(storeId)) {
+      result = await deps.sessions.reloginWithCredentials(storeId, { interactive: true });
+    }
+    log(`health ${storeId}: ${result.session_state}${result.reason ? ` (${result.reason})` : ""}`);
+    return { status: 200, body: result };
+  }
+
+  const profile = /^\/api\/connections\/([^/]+)\/profile$/.exec(path);
+  if (method === "DELETE" && profile) {
+    const storeId = decodeURIComponent(profile[1]!);
+    const removed = await deps.sessions.forgetProfile(storeId);
+    log(`connect ${storeId}: profile ${removed ? "removed" : "was not there"}`);
+    return { status: 200, body: { ok: true, removed } };
   }
 
   /*
@@ -293,16 +347,17 @@ export async function handleApi(
 
     if (method === "POST") {
       const policy = authPolicyFor(store);
-      if (!policy.chromeLogin) {
+      if (!policy.login) {
         return { status: 400, body: { error: `${store.name} needs no account: there is nothing to sign in to.` } };
       }
       const note = openConnect({
         storeId,
         storeName: store.name,
-        url: policy.chromeLogin.url,
-        domains: policy.chromeLogin.domains,
-        authCookies: policy.chromeLogin.authCookies,
-        bearerMatch: policy.chromeLogin.bearer ?? null,
+        url: policy.login.bearer?.triggerUrl ?? policy.login.accountUrl,
+        domains: policy.login.domains,
+        authCookies: policy.login.probe.authCookies,
+        bearerMatch: policy.login.bearer?.match ?? null,
+        bearerPagePattern: policy.login.bearer?.pagePattern?.source ?? null,
       });
       log(`connect ${storeId}: waiting on a sign-in at ${note.url}`);
       return { status: 200, body: { ok: true, url: note.url, waiting: true } };
@@ -341,6 +396,7 @@ export async function handleApi(
           domains: p.domains,
           auth_cookies: p.authCookies,
           bearer_match: p.bearerMatch,
+          bearer_page_pattern: p.bearerPagePattern,
         })),
       },
     };
@@ -361,7 +417,7 @@ export async function handleApi(
     const store = deps.registry.list().find((s) => s.id === storeId);
     if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
     const policy = authPolicyFor(store);
-    if (!policy.chromeLogin) {
+    if (!policy.login) {
       return { status: 400, body: { error: `${store.name} needs no account: there is nothing to sign in to.` } };
     }
     const note = pendingFor(storeId);
@@ -372,7 +428,28 @@ export async function handleApi(
     const payload = await body();
     const cookieHeader = String(payload["cookie_header"] ?? "").trim();
     const bearer = String(payload["bearer"] ?? "").trim();
-    const wantsBearer = policy.chromeLogin.bearer !== undefined;
+    const wantsBearer = policy.login.bearer !== undefined;
+    if (wantsBearer && !bearer && cookieHeader) {
+      // The extension read the jar but saw no token (the basket tab was not
+      // open, or the store keeps it off the wire). The jar is enough: seed
+      // it into this store's headless profile, which then probes and seals
+      // -- and keeps the session renewed from there on (session/jar.ts).
+      deps.vault.connect({ storeId: jarKey(storeId), kind: "cookie", username: null, secret: cookieHeader });
+      const h = await deps.sessions.checkSession(storeId);
+      if (h.session_state === "live") {
+        finish(storeId, "extension");
+        closeConnect(storeId);
+        log(`connect ${storeId}: sealed as token, seeded from the user's own browser`);
+        return {
+          status: 200,
+          body: { ok: true, store_id: storeId, method: "token", connected_at: deps.vault.get(storeId)?.createdAt ?? null },
+        };
+      }
+      log(`connect ${storeId}: the captured jar did not seed a session (${h.session_state}${h.reason ? `: ${h.reason}` : ""})`);
+      if (h.session_state === "needs_human") {
+        return { status: 409, body: { error: `${store.name} asked for a human check before it would issue a token. Try again in a moment.` } };
+      }
+    }
     if (wantsBearer && !bearer) {
       return {
         status: 409,
@@ -390,6 +467,16 @@ export async function handleApi(
     const kind: CredentialKind = wantsBearer ? "token" : "cookie";
     try {
       const saved = deps.vault.connect({ storeId, kind, username: null, secret: wantsBearer ? bearer : cookieHeader });
+      // The jar beside the seal is what lets the session outlive its access
+      // token's hour without a browser of ours: the session manager seeds it
+      // into a headless profile, which renews itself from then on (see
+      // @basketed/session jar.ts). Kicked off now, off the response path.
+      if (cookieHeader) {
+        deps.vault.connect({ storeId: jarKey(storeId), kind: "cookie", username: null, secret: cookieHeader });
+        void deps.sessions.checkSession(storeId).catch((err: unknown) => {
+          log(`connect ${storeId}: seeding the captured jar failed: ${(err as Error).message}`);
+        });
+      }
       finish(storeId, "extension");
       closeConnect(storeId);
       log(`connect ${storeId}: sealed as ${kind}, captured from the user's own browser`);
@@ -407,11 +494,13 @@ export async function handleApi(
   const connect = /^\/api\/connections\/([^/]+)$/.exec(path);
   if (connect && (method === "POST" || method === "DELETE")) {
     const storeId = decodeURIComponent(connect[1]!);
+    if (isLoginKey(storeId)) return { status: 404, body: { error: `No such store: ${storeId}.` } };
     const store = deps.registry.list().find((s) => s.id === storeId);
     if (!store) return { status: 404, body: { error: `No such store: ${storeId}.` } };
 
     if (method === "DELETE") {
       const forgotten = deps.vault.forget(storeId);
+      deps.vault.forget(jarKey(storeId));
       return { status: forgotten ? 200 : 404, body: { ok: forgotten, store_id: storeId } };
     }
 

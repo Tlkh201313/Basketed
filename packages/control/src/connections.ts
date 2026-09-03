@@ -1,7 +1,8 @@
 import type { CredentialKind } from "@basketed/vault";
+import { loginFor, type StoreLogin } from "@basketed/session";
 
 /**
- * What connecting a store actually means, per store (S14, rewritten S19).
+ * What connecting a store actually means, per store (S14, rewritten S19, S23).
  *
  * This table exists because the honest answer differs by retailer, and a
  * panel that rendered one identical "Connect" button for all of them would be
@@ -10,85 +11,60 @@ import type { CredentialKind } from "@basketed/vault";
  *   - **Shopify UCP merchants** need nothing. Their agentic endpoint is
  *     anonymous; there is no account to connect and adding a login step would
  *     invent one that does not exist.
- *   - **Amazon, IKEA and Target** are reached signed-out, through their own
- *     public pages. Nothing to connect either -- and that is a feature, not a
- *     gap: the data is there without an account.
- *   - **Tesco, Costco, Walmart, Amazon's account tier, Shopee, Taobao** have
- *     no consumer API and no consumer OAuth. Nobody can hand you a "Sign in
- *     with Tesco" button, because Tesco does not publish one. What CAN be
- *     done is what this build does: open the retailer's own site in a real
- *     browser tab, let the human sign in there, and seal the resulting
- *     session on this machine.
+ *   - **The seven real retailers** -- Tesco, Amazon, IKEA, Target, Etsy, eBay,
+ *     Best Buy -- are searched signed-out through their own public pages or
+ *     API. That works today with no account. A basket, a checkout handoff
+ *     that lands in YOUR account: those need the store to know who you are,
+ *     and none of these retailers publishes a consumer API or OAuth flow for
+ *     it. So Connect does the one thing that is real: it signs you in at the
+ *     retailer's own page, in a browser profile Basketed keeps for that store,
+ *     and keeps that profile signed in.
+ *   - **The simulated twins** (`sim:*`) show demo catalogue data but connect
+ *     to the same real retailer, so the offline drill has something to sign
+ *     into.
  *
- * ## Why there is no password box anywhere in this panel (S19)
+ * ## Where the password goes (S23)
  *
- * Until S19 every one of these stores also offered "email & password", typed
- * into a Basketed form. That is gone, and it is not coming back. Typing a
- * retailer password into someone else's form is the exact shape of every
- * credential-phishing page ever built, and no amount of "but it is sealed
- * with AES-256-GCM afterwards" changes what the user had to do to get there:
- * hand a password to software that is not the retailer. The Chrome flow asks
- * for the one thing that is safe to ask for -- that they sign in on the
- * retailer's own page, in a real browser, at the real URL, with the padlock
- * they can check themselves. Basketed never sees the password, only the
- * session it produced.
+ * S19 removed every password box from this panel, and the reason stands: a
+ * retailer password typed into someone else's form is the shape of every
+ * phishing page ever built. Connect still asks you to sign in on the
+ * retailer's own page, at the real URL, with the padlock you can check.
+ *
+ * What S23 adds is OPTIONAL: you may leave a store's email and password with
+ * Basketed, sealed like every other credential, so that when a session goes
+ * stale weeks later the profile can re-sign-in by itself instead of waiting
+ * for you. That password is typed by Basketed into exactly one place -- the
+ * retailer's own sign-in form, on the retailer's own host (checked before a
+ * keystroke), inside the profile that belongs to that store -- and nowhere
+ * else, ever. If the retailer then asks for a code or a captcha, Basketed
+ * stops and says "needs you" in the panel. It never guesses, never bypasses,
+ * never opens a window when nobody is there.
  *
  * `reach` is the sentence the card shows under the store name.
  */
 
 export type ConnectMethod = CredentialKind;
 
-/** Where "Connect" sends a human, and what to read back afterwards. */
-export interface ChromeLogin {
-  /** Where the tab lands first: a page that reveals whether you are signed in. */
-  url: string;
-  /**
-   * Where to send someone who turns out NOT to be signed in. Landing a
-   * signed-out shopper on a homepage and leaving them to find the account
-   * menu is a worse flow than opening the login page for them.
-   */
-  loginUrl: string;
-  domains: string[];
-  /**
-   * Cookie-name prefixes that only a signed-in session has. The server polls
-   * for one of these so the panel can say "you are in" by itself instead of
-   * asking a human to confirm a login they just performed.
-   *
-   * Best-effort signatures, not a contract: none of these retailers documents
-   * its cookies and any of them may rename one without notice. A miss stays
-   * recoverable -- the capture route never consults this list.
-   */
-  authCookies: string[];
-  /**
-   * Capture the `Authorization` header off requests whose URL contains this
-   * string, and seal THAT rather than the cookie jar.
-   *
-   * Set only for real Tesco, whose basket API is a bearer-token API: its own
-   * frontend calls `xapi.tesco.com` with `Authorization: Bearer <token>`, and
-   * that token is exactly what the adapter needs. Reading it out of the tab
-   * the shopper just signed into yields the same value the old form asked
-   * them to dig out of DevTools by hand -- same source, minus the errand.
-   */
-  bearer?: string;
-}
-
 export interface StoreAuthPolicy {
-  /** Empty when there is nothing to connect. Never contains "password" (see above). */
+  /** Empty when there is nothing to connect. Never contains "password": that is a separate, optional row. */
   methods: ConnectMethod[];
   /** True once a retailer publishes a real consumer OAuth flow. None do today. */
   oauth: boolean;
   /** One line, shown on the card. Says what a connection here can actually do. */
   reach: string;
   /** Set for every store that has an account to sign in to. */
-  chromeLogin: ChromeLogin | null;
+  login: StoreLogin | null;
 }
 
 const ANONYMOUS: StoreAuthPolicy = {
   methods: [],
   oauth: false,
   reach: "Anonymous. This merchant's agentic endpoint needs no account, so there is nothing to connect.",
-  chromeLogin: null,
+  login: null,
 };
+
+const TOS =
+  "That is real automated access to a site whose Terms of Service does not permit it, including for the account owner.";
 
 /**
  * The retailers a person actually shops at, none of which expose a consumer
@@ -107,83 +83,6 @@ const NO_PUBLIC_API: Record<string, string> = {
 };
 
 /**
- * Every store with an account, and how to reach it (S19).
- *
- * `url` is a page that answers "am I signed in?" cheaply. `loginUrl` is where
- * a signed-out shopper is taken instead. This is real automation of a real
- * login page, against Terms of Service these retailers write to prohibit
- * automated access -- including, in most of them, by the account owner's own
- * tooling. That is disclosed on the connect page itself, not buried here.
- */
-const CHROME_LOGIN: Record<string, ChromeLogin> = {
-  // Real Tesco (S16/S19). The signed-in state rides on an access/refresh
-  // token pair its own frontend reads before calling xapi.tesco.com -- the
-  // same API this build's `tsc:tesco` adapter uses for a basket, which is why
-  // `bearer` is set here and nowhere else.
-  "tsc:tesco": {
-    url: "https://www.tesco.com/groceries/en-GB/",
-    loginUrl: "https://www.tesco.com/account/login/en-GB",
-    domains: ["tesco.com"],
-    authCookies: ["_ttoken", "trefresh", "atrc_", "access_token"],
-    bearer: "xapi.tesco.com",
-  },
-  "sim:tesco": {
-    url: "https://www.tesco.com/groceries/en-GB/",
-    loginUrl: "https://www.tesco.com/account/login/en-GB",
-    domains: ["tesco.com"],
-    authCookies: ["_ttoken", "trefresh", "atrc_", "access_token"],
-  },
-  // `at-main` is Amazon's authentication token and `sess-at-main` its signed
-  // session twin; `x-main` alone only means "recognised", not "signed in".
-  "sim:amazon": {
-    url: "https://www.amazon.com/gp/css/homepage.html",
-    loginUrl: "https://www.amazon.com/gp/sign-in.html",
-    domains: ["amazon.com"],
-    authCookies: ["at-main", "sess-at-main"],
-  },
-  // Costco runs WebSphere Commerce, which issues WC_AUTHENTICATION_<userId>
-  // on sign-in and nothing resembling it before.
-  "sim:costco": {
-    url: "https://www.costco.com/myaccount",
-    loginUrl: "https://www.costco.com/LogonForm",
-    domains: ["costco.com"],
-    authCookies: ["WC_AUTHENTICATION_", "C_AUTH", "costco_auth"],
-  },
-  // Walmart's `CID`/`customer` pair carries the signed-in customer id; the
-  // anonymous session has neither.
-  "sim:walmart": {
-    url: "https://www.walmart.com/account",
-    loginUrl: "https://www.walmart.com/account/login",
-    domains: ["walmart.com"],
-    authCookies: ["customer", "CID", "auth-"],
-  },
-  // Shopee issues SPC_ST (the signed session) and SPC_U (the user id) on
-  // sign-in; an anonymous visitor gets neither.
-  "sim:shopee": {
-    url: "https://shopee.sg/user/account/profile",
-    loginUrl: "https://shopee.sg/buyer/login",
-    domains: ["shopee.sg"],
-    authCookies: ["SPC_ST", "SPC_U", "SPC_R_T_ID"],
-  },
-  // Taobao's login mints `_l_g_` / `cookie2` / `unb` (the user number); a
-  // signed-out visitor has none of the three.
-  "sim:taobao": {
-    url: "https://i.taobao.com/my_taobao.htm",
-    loginUrl: "https://login.taobao.com/member/login.jhtml",
-    domains: ["taobao.com"],
-    authCookies: ["_l_g_", "unb", "cookie2", "_nk_"],
-  },
-  // IKEA's profile session is `idp_reference_id` plus the `ikea-` prefixed
-  // pair its identity provider sets.
-  "sim:ikea": {
-    url: "https://www.ikea.com/gb/en/profile/login/",
-    loginUrl: "https://www.ikea.com/gb/en/profile/login/",
-    domains: ["ikea.com"],
-    authCookies: ["idp_reference_id", "ikea-", "guest_session"],
-  },
-};
-
-/**
  * Real Tesco (S16). `mode: "native"` because search/detail genuinely are --
  * Tesco's own live API, no auth needed. That is also why it cannot fall
  * through to the generic `mode === "native"` case below: unlike Shopify UCP,
@@ -191,65 +90,65 @@ const CHROME_LOGIN: Record<string, ChromeLogin> = {
  * synonym for "nothing to connect".
  */
 const REAL_TESCO_POLICY: StoreAuthPolicy = {
-  // The bearer token the capture lifts out of the signed-in tab. `token` is
-  // what makes the vault's interceptor attach `Authorization: Bearer ...`,
-  // which is what the Tesco basket API wants.
-  methods: ["token"],
+  // The signed-in cookie jar. Tesco's basket lives behind the site's own
+  // cookie-authenticated endpoints; the bearer its page embeds is rejected
+  // by xapi.tesco.com for `basket` (see the session descriptor).
+  methods: ["cookie"],
   oauth: false,
   reach:
     "Real Tesco search and product data -- no account needed for that, and it works right now. " +
-    "Connect adds a real basket: a tab opens on tesco.com, you sign in on Tesco's own page, and " +
-    "Basketed seals the session that produces. Tesco does not publish this as a supported " +
-    "integration; using it this way is outside their Terms of Service, the same as any unofficial " +
-    "API client.",
-  chromeLogin: CHROME_LOGIN["tsc:tesco"] ?? null,
+    "Connect adds a real basket: you sign in once on tesco.com in a window Basketed keeps for Tesco, " +
+    "and it stays signed in from then on. Tesco does not publish this as a supported integration; " +
+    "using it this way is outside their Terms of Service, the same as any unofficial API client.",
+  login: loginFor("tsc:tesco"),
 };
 
 /**
- * Real Amazon, IKEA, Target (S17). `mode: "native"` for the same reason as
- * Tesco -- genuinely their own live pages, reaching a real signed-out shopper
- * -- but the mechanism differs and the card says so: there is no JSON API
- * here, a stealth browser renders the retailer's own public page and the
- * adapter parses what a signed-out visitor sees. Nothing to connect, because
- * nothing here needs an account.
+ * Real Amazon, IKEA, Target, Etsy, eBay, Best Buy (S17, S21, S23). Search and
+ * detail are the retailer's own public pages, rendered by a stealth browser
+ * and read as a signed-out visitor sees them -- no account needed, and the
+ * card says so first. Connect is for the part a visitor cannot do: a basket
+ * and a checkout that land in YOUR account.
  */
-function realScrapePolicy(name: string): StoreAuthPolicy {
+function realStorePolicy(id: string, name: string, how: string): StoreAuthPolicy {
   return {
-    methods: [],
+    methods: ["cookie"],
     oauth: false,
     reach:
-      `Real ${name} search and product data -- rendered live from ${name}'s own public pages by a stealth ` +
-      `browser, not a published API (${name} does not offer one). No account needed: everything this ` +
-      `store returns is what any visitor sees, so there is nothing to connect.`,
-    chromeLogin: null,
+      `Real ${name} search and product data -- no account needed for that, ${how}. ` +
+      `Connect signs you in once on ${name}'s own page, in a window Basketed keeps for ${name}, and keeps ` +
+      `that profile signed in so a basket and checkout land in your account. ${TOS}`,
+    login: loginFor(id),
   };
 }
 
-const REAL_AMAZON_POLICY = realScrapePolicy("Amazon");
-const REAL_IKEA_POLICY = realScrapePolicy("IKEA");
-const REAL_TARGET_POLICY = realScrapePolicy("Target");
+const REAL_POLICIES: Record<string, StoreAuthPolicy> = {
+  "tsc:tesco": REAL_TESCO_POLICY,
+  "amz:amazon": realStorePolicy("amz:amazon", "Amazon", "rendered live from Amazon's public pages (Amazon offers no consumer API)"),
+  "ikea:ikea": realStorePolicy("ikea:ikea", "IKEA", "rendered live from IKEA's public pages (IKEA offers no public API)"),
+  "tgt:target": realStorePolicy("tgt:target", "Target", "rendered live from Target's public pages (Target offers no consumer API)"),
+  "etsy:etsy": realStorePolicy("etsy:etsy", "Etsy", "read live from Etsy's public listings (Etsy's API is for sellers)"),
+  "ebay:ebay": realStorePolicy("ebay:ebay", "eBay", "read live from eBay's public listings"),
+  "bby:bestbuy": realStorePolicy("bby:bestbuy", "Best Buy", "rendered live from Best Buy's public pages"),
+};
 
 export function authPolicyFor(store: { id: string; mode: string }): StoreAuthPolicy {
-  if (store.id === "tsc:tesco") return REAL_TESCO_POLICY;
-  if (store.id === "amz:amazon") return REAL_AMAZON_POLICY;
-  if (store.id === "ikea:ikea") return REAL_IKEA_POLICY;
-  if (store.id === "tgt:target") return REAL_TARGET_POLICY;
+  const real = REAL_POLICIES[store.id];
+  if (real) return real;
   if (store.mode === "native") return ANONYMOUS;
 
   const why = NO_PUBLIC_API[store.id];
   if (why) {
-    const chromeLogin = CHROME_LOGIN[store.id] ?? null;
+    const login = loginFor(store.id);
     return {
-      // One method, and it is the one the capture produces. No password
-      // anywhere -- see the header comment.
-      methods: chromeLogin ? ["cookie"] : [],
+      // One method, and it is the one the sign-in produces.
+      methods: login ? ["cookie"] : [],
       oauth: false,
-      reach: chromeLogin
-        ? `${why} Connect opens the real site in a browser tab -- you sign in on their own page, and the ` +
-          `session is sealed on this machine. That read-back is real automated access to a site whose ` +
-          `Terms of Service does not permit it, including for the account owner.`
+      reach: login
+        ? `${why} Connect signs you in once on the real site, in a window Basketed keeps for it, and the ` +
+          `session is sealed on this machine. ${TOS}`
         : why,
-      chromeLogin,
+      login,
     };
   }
 
@@ -257,7 +156,7 @@ export function authPolicyFor(store: { id: string; mode: string }): StoreAuthPol
     methods: [],
     oauth: false,
     reach: "Nothing to connect: this store needs no account.",
-    chromeLogin: null,
+    login: null,
   };
 }
 
@@ -268,4 +167,63 @@ export function secretLabel(method: ConnectMethod): string {
 
 export function methodLabel(method: ConnectMethod): string {
   return method === "cookie" ? "Browser session" : method === "token" ? "Access token" : "Account";
+}
+
+/* ------------------------------------------------------------- brands (S23) */
+
+export interface StoreRow {
+  id: string;
+  name: string;
+  mode: string;
+  country?: string;
+  currency?: string;
+}
+
+/**
+ * One brand, however many registry rows carry it.
+ *
+ * Amazon, Tesco and IKEA each appear twice in the registry, and the reason is
+ * real: one row is the retailer's own live data, the other a fixture set the
+ * offline drill depends on. They are different stores with different
+ * capabilities, so the registry rightly refuses to merge them. The PANEL can
+ * merge them, because a shopper connects to Tesco, not to `tsc:tesco`: one
+ * card, two mode chips, and Connect belongs to the row that actually reaches
+ * the retailer -- live when there is one, the sample twin otherwise.
+ */
+export interface BrandGroup {
+  brandKey: string;
+  name: string;
+  live: StoreRow | null;
+  sample: StoreRow | null;
+  /** Rows that are neither `native` nor `simulated`, kept visible rather than dropped. */
+  others: StoreRow[];
+  primary: StoreRow;
+  ids: string[];
+}
+
+export function brandKeyOf(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+export function groupByBrand(stores: StoreRow[]): BrandGroup[] {
+  const byBrand = new Map<string, StoreRow[]>();
+  for (const s of stores) {
+    const key = brandKeyOf(s.name);
+    byBrand.set(key, [...(byBrand.get(key) ?? []), s]);
+  }
+  const groups: BrandGroup[] = [];
+  for (const [brandKey, rows] of byBrand) {
+    const sorted = [...rows].sort((a, b) => a.id.localeCompare(b.id));
+    const live = sorted.find((s) => s.mode === "native") ?? null;
+    const sample = sorted.find((s) => s.mode === "simulated") ?? null;
+    const others = sorted.filter((s) => s !== live && s !== sample);
+    const primary = live ?? sample ?? (others[0] as StoreRow);
+    groups.push({ brandKey, name: primary.name, live, sample, others, primary, ids: sorted.map((s) => s.id) });
+  }
+  return groups.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The brand a store id belongs to, or null if the id is not in the list. */
+export function brandOf(stores: StoreRow[], id: string): BrandGroup | null {
+  return groupByBrand(stores).find((g) => g.ids.includes(id)) ?? null;
 }

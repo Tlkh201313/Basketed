@@ -562,14 +562,26 @@ pre.code {
 /* min-height so a one-line reach and a three-line reach still line their
    footers up -- a ragged grid reads as broken rather than as varied. */
 .appcard .reach { font-size: 12.5px; line-height: 1.5; color: var(--ink2); margin: 0; min-height: 38px; max-width: none; }
-/* The twin note (S18): the same brand carried by a second source. Set on the
-   sunken ground so it reads as a footnote about the card, not more card. */
-.appcard .twin {
-  margin: 10px 0 0; padding: 8px 10px; border-radius: 6px;
-  background: var(--sunken); border: 1px solid var(--rule);
-  font-size: 11.5px; line-height: 1.45; color: var(--ink3);
+/* The mode chips (S23): one brand, one card, a chip per source it has.
+   Live in the ok tokens, Sample in the sim tokens -- the same colours the
+   old two-card layout used for its mode pills, so nothing has to be
+   relearned; the id under each keeps the rows addressable. */
+.modes { margin-left: auto; display: flex; gap: 6px; flex: none; }
+.mode {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 4px 8px; border-radius: 7px; border: 1px solid var(--rule);
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  line-height: 1.2;
 }
-.appcard .twin a { color: var(--pri); }
+.mode.live { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.mode.sample { background: var(--sim-bg); color: var(--sim); border-color: transparent; }
+.mode.other { background: var(--sunken); color: var(--ink3); }
+.mode .mid { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink3); font-size: 10px; }
+.field {
+  font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--rule2); background: var(--surface); color: var(--ink); min-width: 180px;
+}
+.field:disabled { color: var(--ink3); background: var(--sunken); }
 .appcard .foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 11px; border-top: 1px solid var(--rule); }
 .appcard .foot .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .appcard .foot .none { font-size: 12px; color: var(--ink3); }
@@ -663,6 +675,23 @@ input.typed.yes { border-color: var(--pri); }
 }
 .rails .tile2 b.good { color: var(--ok); }
 .rails .tile2 b.risk { color: var(--bad); }
+
+/* ========================================================= shopping mode */
+
+.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.modeopt {
+  display: block; width: 100%; text-align: left; font: inherit; color: var(--ink);
+  padding: 16px 18px; border: 1px solid var(--rule); border-radius: 14px; background: var(--surface);
+  cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease;
+}
+.modeopt:hover:not(:disabled) { border-color: var(--ink3); }
+.modeopt .head { display: flex; align-items: center; gap: 10px; }
+.modeopt .head b { font-size: 14px; font-weight: 600; }
+.modeopt p { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink2); }
+.modeopt.on { border-color: var(--pri); box-shadow: inset 0 0 0 1px var(--pri); }
+/* Locked: drawn, greyed, and not a control. The reason sits under it. */
+.modeopt.locked, .modeopt:disabled { opacity: .5; filter: grayscale(1); cursor: not-allowed; background: var(--sunken); }
+.modeopt .why { display: block; margin-top: 10px; font-family: var(--mono); font-size: 11.5px; line-height: 1.45; color: var(--ink3); }
 
 /* ================================================================ locked */
 

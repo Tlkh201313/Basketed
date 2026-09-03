@@ -18,6 +18,7 @@
     "@basketed/core": "workspace:*",
     "@basketed/adapters": "workspace:*",
     "@basketed/commerce": "workspace:*",
+    "@basketed/session": "workspace:*",
     "@basketed/vault": "workspace:*",
     "@modelcontextprotocol/server": "2.0.0",
     "zod": "^4.4.3"

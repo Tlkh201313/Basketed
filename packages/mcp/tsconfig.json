@@ -9,6 +9,7 @@
     { "path": "../core" },
     { "path": "../adapters" },
     { "path": "../commerce" },
-    { "path": "../vault" }
+    { "path": "../vault" },
+    { "path": "../session" }
   ]
 }

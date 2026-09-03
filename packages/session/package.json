@@ -1,17 +1,10 @@
 {
-  "name": "@basketed/cli",
+  "name": "@basketed/session",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "basketed": "./bin.js"
-  },
-  "files": [
-    "bin.js",
-    "dist"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -24,11 +17,7 @@
   "dependencies": {
     "@basketed/core": "workspace:*",
     "@basketed/adapters": "workspace:*",
-    "@basketed/commerce": "workspace:*",
-    "@basketed/control": "workspace:*",
-    "@basketed/mcp": "workspace:*",
-    "@basketed/session": "workspace:*",
     "@basketed/vault": "workspace:*",
-    "zod": "^4.4.3"
+    "patchright": "^1.62.2"
   }
 }

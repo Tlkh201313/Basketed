@@ -26,7 +26,7 @@ import { chromium } from "patchright";
  * here.
  */
 
-const DEFAULT_ARGS = [
+export const DEFAULT_ARGS = [
   "--no-pings",
   "--no-first-run",
   "--disable-infobars",
@@ -40,7 +40,7 @@ const DEFAULT_ARGS = [
   "--disable-search-engine-choice-screen",
 ];
 
-const STEALTH_ARGS = [
+export const STEALTH_ARGS = [
   "--test-type",
   "--mute-audio",
   "--disable-sync",
@@ -97,7 +97,7 @@ const STEALTH_ARGS = [
 ];
 
 /** Chromium adds these by default; each one is itself a detectable signal. */
-const HARMFUL_ARGS = [
+export const HARMFUL_ARGS = [
   "--enable-automation",
   "--disable-popup-blocking",
   "--disable-component-update",
@@ -105,7 +105,7 @@ const HARMFUL_ARGS = [
   "--disable-extensions",
 ];
 
-const USER_AGENT =
+export const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 export interface RenderOptions {

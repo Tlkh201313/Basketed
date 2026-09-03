@@ -24,7 +24,14 @@ export type ToolPolicy = "allow" | "ask" | "locked";
  * in commerce: `purchase_confirm` refuses without a human approval event on
  * record regardless of what any policy here says.
  */
-export const NEVER_ALLOW = ["basket_cart_prepare", "basket_purchase_confirm", "basket_cancel_order"] as const;
+export const NEVER_ALLOW = [
+  // Basket mode writes to an account the person connected. It cannot charge
+  // it, but "skip confirmation" was promised for read-only tools only.
+  "basket_add_to_cart",
+  "basket_cart_prepare",
+  "basket_purchase_confirm",
+  "basket_cancel_order",
+] as const;
 
 export interface Policy {
   /** Skips per-call confirmation for read-only tools. Never anything else. */

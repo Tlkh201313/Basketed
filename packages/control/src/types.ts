@@ -1,6 +1,7 @@
 import type { PurchaseDeps } from "@basketed/commerce";
 import type { StoreRegistry } from "@basketed/adapters";
 import type { Vault } from "@basketed/vault";
+import type { SessionManager } from "@basketed/session";
 
 /**
  * What the panel needs, declared here rather than imported from `@basketed/mcp`.
@@ -30,4 +31,10 @@ export interface ControlDeps {
    * vault reachable by a human and not by the agent sharing the machine.
    */
   vault: Vault;
+  /**
+   * The sign-in engine (S23). Routes start a visible sign-in window, poll it,
+   * seal what it captured, and ask for a headless health check. Like the
+   * vault, it hands back verdicts and metadata, never a secret.
+   */
+  sessions: SessionManager;
 }

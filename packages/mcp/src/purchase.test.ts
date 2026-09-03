@@ -3,10 +3,15 @@ import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { StoreRegistry, SimulatedAdapter } from "@basketed/adapters";
 import {
+  addToBasket,
   approveApproval,
   confirmPurchase,
+  listBaskets,
+  loadShoppingMode,
   openDb,
   prepareCart,
+  saveShoppingMode,
+  ShoppingModeError,
   rejectApproval,
   saveGuardrails,
   loadGuardrails,
@@ -58,7 +63,15 @@ beforeEach(async () => {
   // A generous home currency and cap, so a test that fails does so for the
   // reason it is named after rather than tripping a guardrail by accident.
   saveGuardrails(deps.db, { homeCurrency: "GBP", perOrderCap: 1000, dailyCap: 5000 });
+  // The purchase gate is what these tests are about, and purchase mode is
+  // locked in this build (S24): `saveShoppingMode` refuses it by design, so
+  // the row is written directly. The gate itself does not get weaker for it.
+  unlockPurchaseMode(deps.db);
 });
+
+function unlockPurchaseMode(db: PurchaseDeps["db"]): void {
+  db.prepare("INSERT INTO settings (k, v) VALUES ('shopping_mode', 'purchase') ON CONFLICT(k) DO UPDATE SET v = excluded.v").run();
+}
 
 /** The code only ever exists on the announce surface. Tests read it there. */
 function codeFromBanner(): string {
@@ -288,9 +301,94 @@ describe("5 — the surface itself cannot approve", () => {
   });
 
   it("keeps every money-adjacent tool in the never-allow list", () => {
-    for (const name of ["basket_cart_prepare", "basket_purchase_confirm"]) {
+    for (const name of ["basket_add_to_cart", "basket_cart_prepare", "basket_purchase_confirm"]) {
       expect(NEVER_ALLOW).toContain(name);
     }
+  });
+});
+
+/* ------------------------------------------------- shopping mode (S24) */
+
+describe("basket mode is the mode in force, and purchase mode is locked", () => {
+  beforeEach(() => {
+    // Back to what a fresh install has: no row at all.
+    deps.db.prepare("DELETE FROM settings WHERE k = 'shopping_mode'").run();
+  });
+
+  it("reads as basket mode with nothing set, and refuses to be set to purchase", () => {
+    expect(loadShoppingMode(deps.db)).toBe("basket");
+    let err: unknown;
+    try {
+      saveShoppingMode(deps.db, "purchase");
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ShoppingModeError);
+    expect((err as ShoppingModeError).locked).toBe(true);
+    expect(loadShoppingMode(deps.db)).toBe("basket");
+    expect(saveShoppingMode(deps.db, "basket")).toBe("basket");
+    expect(() => saveShoppingMode(deps.db, "yolo")).toThrow(/Unknown shopping mode/);
+  });
+
+  it("a row the code has no name for reads as the default, not as an unlock", () => {
+    deps.db.prepare("INSERT INTO settings (k, v) VALUES ('shopping_mode', 'checkout')").run();
+    expect(loadShoppingMode(deps.db)).toBe("basket");
+  });
+
+  it("prepare refuses in basket mode before anything is built or written", async () => {
+    await expect(prepare()).rejects.toThrow(/basket mode/);
+    expect(deps.db.prepare("SELECT COUNT(*) AS n FROM approvals").get()).toEqual({ n: 0 });
+    expect(announced).toHaveLength(0);
+  });
+
+  it("confirm refuses in basket mode and does not spend the approval", async () => {
+    unlockPurchaseMode(deps.db);
+    const { approvalId } = await prepare();
+    approveApproval(deps, approvalId, PRINCIPAL, { channel: "console", code: codeFromBanner() });
+    deps.db.prepare("DELETE FROM settings WHERE k = 'shopping_mode'").run();
+
+    const refused = await confirmPurchase(deps, approvalId, PRINCIPAL);
+    expect(refused.ok).toBe(false);
+    expect(refused.reason).toMatch(/basket mode/);
+    const row = deps.db.prepare("SELECT state FROM approvals WHERE id = ?").get(approvalId) as { state: string };
+    expect(row.state).toBe("APPROVED");
+    expect(deps.db.prepare("SELECT COUNT(*) AS n FROM orders").get()).toEqual({ n: 0 });
+  });
+
+  it("add-to-basket works in basket mode, records the basket, and never charges", async () => {
+    const result = await addToBasket(deps, {
+      items: [{ id: productIds[0]!, quantity: 2 }],
+      accountHandle: "acct_sim_tesco",
+      principal: PRINCIPAL,
+    });
+    expect(result.basketId).toMatch(/^bsk_/);
+    expect(result.storeId).toBe("sim:tesco");
+    expect(result.lineItems).toHaveLength(1);
+    expect(result.lineItems[0]!.quantity).toBe(2);
+    // A demo twin has no real basket, and the report says so rather than
+    // handing back a link to nothing.
+    expect(result.mode).toBe("simulated");
+    expect(result.basketUrl).toBeNull();
+    expect(result.report).toMatch(/SIMULATED/);
+    expect(result.report).not.toMatch(/https?:\/\//);
+
+    const listed = listBaskets(deps.db);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!["id"]).toBe(result.basketId);
+    expect(listed[0]!["cart_url"]).toBeNull();
+    expect(Object.keys(listed[0]!)).not.toContain("account_handle");
+    // Nothing on the purchase side moved.
+    expect(deps.db.prepare("SELECT COUNT(*) AS n FROM approvals").get()).toEqual({ n: 0 });
+    expect(deps.db.prepare("SELECT COUNT(*) AS n FROM orders").get()).toEqual({ n: 0 });
+    expect(deps.db.prepare("SELECT COUNT(*) AS n FROM spend").get()).toEqual({ n: 0 });
+    // The console got a summary and no approval code: there is nothing to approve.
+    expect(announced.at(-1)!.join("\n")).not.toMatch(/APPROVAL CODE/);
+  });
+
+  it("add-to-basket still needs one store, and a real product id", async () => {
+    await expect(
+      addToBasket(deps, { items: [{ id: "bk_sim-tesco_forged", quantity: 1 }], accountHandle: "a", principal: PRINCIPAL }),
+    ).rejects.toThrow();
   });
 });
 

@@ -34,14 +34,28 @@ import type { AdapterCtx, CartLineItem, RawCart, StoreAdapter } from "../types.j
  * fixture-backed, still what the offline drill depends on.
  *
  * Cart needs the shopper's own session, which nobody can hand out an API key
- * for -- there is no "Sign in with Tesco". `buildCart` sends whatever bearer
- * token the Connect-stores page has sealed for this store (via ctx.http,
- * never seen by this file -- see AdapterCtx and vault/authorizedFetch). If
- * that token is missing, expired, or Tesco's basket API additionally wants a
- * customer identifier this integration does not send, the call fails with
- * Tesco's own real error -- this file does not paper over that with a fake
- * cart, per the project's "never claim success it cannot back" rule.
+ * for -- there is no "Sign in with Tesco". `buildCart` sends whatever the
+ * Connect-stores page has sealed for this store (via ctx.http, never seen by
+ * this file -- see AdapterCtx and vault/authorizedFetch). What that is, as
+ * verified from a signed-in tesco.com tab on 2026-09-03: the site's own
+ * COOKIE jar, sent to xapi.tesco.com with NO Authorization header. The token
+ * the page embeds is the same value as its `OAuth.AccessToken` cookie and is
+ * refused for `basket` when sent as a bearer, so a cookie seal is the only
+ * shape that works. If the jar is missing or its hour-long access token has
+ * lapsed, Tesco answers 200 with a GraphQL "Unauthorized"; that is handed to
+ * `ctx.reauth` once (the session manager re-seals from its profile) and the
+ * operation is retried once. Anything else fails with Tesco's own real error
+ * -- this file does not paper over that with a fake cart, per the project's
+ * "never claim success it cannot back" rule.
  */
+
+/** Tesco said the session behind `ctx.http` is not signed in (in-band, inside a 200). */
+export class TescoAuthError extends Error {
+  constructor(detail: string) {
+    super(`Tesco refused the stored session (${detail}) -- it is expired or invalid. Reconnect Tesco.`);
+    this.name = "TescoAuthError";
+  }
+}
 
 const SEARCH_URL = "https://search.api.tesco.com/search";
 const GRAPHQL_URL = "https://xapi.tesco.com/";
@@ -288,28 +302,30 @@ export class TescoAdapter implements StoreAdapter {
       return { ...i, cached };
     });
 
-    const basket = await this.#basketOp(GET_BASKET_QUERY, {}, ctx);
-    const orderId = basket.id;
-    if (!orderId) {
-      throw new Error(
-        "Tesco did not return a basket -- the connected token is likely missing, expired, or belongs to a " +
-          "session with no active basket. Reconnect Tesco from the Connect-stores page.",
+    const { orderId, update } = await this.#withReauth(ctx, async () => {
+      const basket = await this.#basketOp(GET_BASKET_QUERY, {}, ctx);
+      const orderId = basket.id;
+      if (!orderId) {
+        throw new Error(
+          "Tesco did not return a basket -- the connected session is likely missing, expired, or belongs to a " +
+            "session with no active basket. Reconnect Tesco from the Connect-stores page.",
+        );
+      }
+      const update = await this.#basketOp(
+        UPDATE_BASKET_MUTATION,
+        {
+          orderId,
+          items: resolved.map((r) => ({
+            adjustment: false,
+            id: r.cached.tescoId,
+            newValue: r.quantity,
+            newUnitChoice: "pcs",
+          })),
+        },
+        ctx,
       );
-    }
-
-    const update = await this.#basketOp(
-      UPDATE_BASKET_MUTATION,
-      {
-        orderId,
-        items: resolved.map((r) => ({
-          adjustment: false,
-          id: r.cached.tescoId,
-          newValue: r.quantity,
-          newUnitChoice: "pcs",
-        })),
-      },
-      ctx,
-    );
+      return { orderId, update };
+    });
 
     const updates = (update as unknown as { updates?: { items?: Array<{ id?: string; successful?: boolean }> } }).updates?.items ?? [];
     const failed = updates.filter((u) => u.successful === false);
@@ -370,9 +386,7 @@ export class TescoAdapter implements StoreAdapter {
       headers: graphqlHeaders(),
       body: JSON.stringify([{ operationName, variables, query }]),
     });
-    if (res.status === 401 || res.status === 403) {
-      throw new Error("Tesco refused the stored token (401/403) -- it is expired or invalid. Reconnect Tesco.");
-    }
+    if (res.status === 401 || res.status === 403) throw new TescoAuthError(`HTTP ${res.status}`);
     if (!res.ok) throw new Error(`Tesco basket API returned HTTP ${res.status}.`);
     const bodyText = await res.text();
     this.lastRawBytes += bodyText.length;
@@ -385,8 +399,32 @@ export class TescoAdapter implements StoreAdapter {
     const envelope = envelopes[0];
     if (!envelope) throw new Error("Tesco basket API returned an empty response.");
     if (envelope.errors?.length) {
+      const unauthenticated = envelope.errors.some(
+        (e) =>
+          /unauthori[sz]ed|unauthenticated/i.test(e.message ?? "") ||
+          (e as { extensions?: { code?: string; http?: { status?: number } } }).extensions?.code === "UNAUTHENTICATED" ||
+          (e as { extensions?: { http?: { status?: number } } }).extensions?.http?.status === 401,
+      );
+      if (unauthenticated) throw new TescoAuthError("GraphQL Unauthorized");
       throw new Error(`Tesco basket API error: ${envelope.errors.map((e) => e.message).join("; ")}`);
     }
     return envelope.data?.basket ?? {};
+  }
+
+  /**
+   * Run the basket operations once; if Tesco says the session is not signed
+   * in, let the session manager renew it and run them ONE more time. A second
+   * refusal is the real answer and is thrown as-is.
+   */
+  async #withReauth<T>(ctx: AdapterCtx, op: () => Promise<T>): Promise<T> {
+    try {
+      return await op();
+    } catch (err) {
+      if (!(err instanceof TescoAuthError) || !ctx.reauth) throw err;
+      ctx.log("tesco: basket session refused; asking for a refresh and retrying once");
+      const renewed = await ctx.reauth();
+      if (!renewed) throw err;
+      return op();
+    }
   }
 }

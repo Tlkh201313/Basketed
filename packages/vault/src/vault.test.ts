@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { openVault, degradedVault, authorizedFetch, type Vault } from "./index.js";
+import { openVault, degradedVault, authorizedFetch, loginKey, isLoginKey, type Vault } from "./index.js";
 
 /**
  * The vault's one job: hold a secret so a human can add it, and make sure the
@@ -236,6 +236,15 @@ describe("authorizedFetch — the trust boundary an adapter cannot cross", () =>
  * stored. Nowhere in production source outside `packages/vault` -- meaning no
  * MCP tool handler, no adapter, and no panel route ever calls it.
  */
+describe("loginKey", () => {
+  it("never collides with a store id and is recognisable", () => {
+    expect(loginKey("tsc:tesco")).toBe("tsc:tesco#login");
+    expect(isLoginKey(loginKey("tsc:tesco"))).toBe(true);
+    expect(isLoginKey("tsc:tesco")).toBe(false);
+    expect(loginKey("tsc:tesco")).not.toBe("tsc:tesco");
+  });
+});
+
 describe("reveal() has exactly the call sites README claims", () => {
   function walk(dir: string, out: string[] = []): string[] {
     for (const entry of readdirSync(dir)) {
@@ -248,13 +257,14 @@ describe("reveal() has exactly the call sites README claims", () => {
     return out;
   }
 
-  it("is called only inside packages/vault, or from a test asserting on it", () => {
+  it("is called only inside packages/vault, the session autofill, or a test asserting on it", () => {
     const root = resolve(import.meta.dirname, "../../.."); // repo root from packages/vault/src
     const packagesDir = resolve(root, "packages");
     const offenders: string[] = [];
     for (const file of walk(packagesDir)) {
       const rel = file.replace(packagesDir, "packages").replace(/\\/g, "/");
       if (rel.startsWith("packages/vault/")) continue; // the definition and its own tests
+      if (rel === "packages/session/src/login.ts") continue; // autofills the retailer's own form; see S23
       if (rel.endsWith(".test.ts")) continue; // a test may call it to check what got stored
       const src = readFileSync(file, "utf8");
       if (/\.reveal\(/.test(src)) offenders.push(rel);

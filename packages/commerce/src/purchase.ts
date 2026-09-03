@@ -3,9 +3,14 @@ import type { FxTable, Money } from "@basketed/core";
 
 function isTransientCartError(e: unknown): boolean {
   const msg = String((e as Error)?.message ?? e);
+  // A refused session is a final answer, not a blip: the adapter has already
+  // asked for one renewal and been told no. Excluded explicitly because the
+  // case-insensitive `ECONN` below also matches "Reconnect Tesco", which had
+  // every stale-session failure launching the headless profile three times.
+  if (/expired|invalid|unauthori[sz]ed|unauthenticated|reconnect|sign in again/i.test(msg)) return false;
   return /429|503|5\d\d|timeout|ECONN|ENET|ETIMEDOUT|fetch failed|blocked|captcha|rate.?limit/i.test(msg) && !/cannot build a cart/i.test(msg);
 }
-async function withRetryCart<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+export async function withRetryCart<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   let last: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -18,7 +23,7 @@ async function withRetryCart<T>(fn: () => Promise<T>, attempts = 3): Promise<T> 
   }
   throw last;
 }
-import type { AdapterCtx, StoreRegistry } from "@basketed/adapters";
+import type { AdapterCtx, StoreAdapter, StoreRegistry } from "@basketed/adapters";
 import { describeRoute, productDeepLink, type PurchaseRoute } from "@basketed/adapters";
 import { authorizedFetch, type Vault } from "@basketed/vault";
 import type { Db } from "./db.js";
@@ -30,6 +35,7 @@ import {
   type GuardrailVerdict,
   type Guardrails,
 } from "./guardrails.js";
+import { loadShoppingMode, purchaseLockedMessage } from "./mode.js";
 
 /**
  * The purchase gate (§6).
@@ -54,6 +60,10 @@ export type OrderState =
   | "FAILED"
   | "CANCELLED";
 
+export interface SessionRefresher {
+  refresh(storeId: string): Promise<{ ok: boolean; state: "live" | "expired" | "needs_human"; reason?: string }>;
+}
+
 export interface PurchaseDeps {
   db: Db;
   registry: StoreRegistry;
@@ -67,6 +77,15 @@ export interface PurchaseDeps {
    * authenticated store, and search/detail never need one at all.
    */
   vault?: Vault;
+  /**
+   * The session engine (S23), so a store answering 401/403 to a request the
+   * vault authorised gets ONE silent refresh -- headless profile check, then
+   * a stored-password re-login if there is one -- and one retry. Structural,
+   * so commerce does not depend on the session package: the refresh never
+   * returns a secret, only a verdict; `authorizedFetch` re-reveals per call
+   * and so picks up whatever the refresh sealed.
+   */
+  sessions?: SessionRefresher;
   /**
    * Where the approval code is announced.
    *
@@ -149,7 +168,7 @@ export function fingerprint(approvalId: string): string {
   return createHash("sha256").update(approvalId).digest("hex").slice(0, 12);
 }
 
-function audit(db: Db, kind: string, detail: string, at: number): void {
+export function audit(db: Db, kind: string, detail: string, at: number): void {
   db.prepare("INSERT INTO audit (at, kind, detail) VALUES (?, ?, ?)").run(at, kind, detail);
 }
 
@@ -178,20 +197,73 @@ export interface PrepareResult {
   instructions: string;
 }
 
-export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Promise<PrepareResult> {
-  const now = deps.now?.() ?? Date.now();
-  if (!input.items.length) throw new Error("A cart needs at least one item.");
+function replayable(body: RequestInit["body"] | undefined): boolean {
+  return (
+    body === undefined ||
+    body === null ||
+    typeof body === "string" ||
+    body instanceof Uint8Array ||
+    body instanceof URLSearchParams
+  );
+}
+
+/**
+ * One silent refresh on a rejected credential, then one retry (S23).
+ *
+ * A stored session going stale is the normal case, not an error: the store
+ * answers 401 or 403, the profile that produced the session is asked to
+ * renew it, and the request goes again with what got re-sealed. If the
+ * refresh cannot help -- no profile, the store wants a human -- the ORIGINAL
+ * response is returned so the adapter reports exactly what it saw, and the
+ * registry pill says why. Only bodies that can be sent twice are retried.
+ */
+export function withSessionRefresh(http: typeof fetch, storeId: string, deps: PurchaseDeps): typeof fetch {
+  const sessions = deps.sessions;
+  if (!sessions) return http;
+  const refreshing: typeof fetch = async (input, init) => {
+    const res = await http(input, init);
+    if (res.status !== 401 && res.status !== 403) return res;
+    if (!deps.vault?.get(storeId)) return res;
+    if (!replayable(init?.body)) return res;
+    deps.ctx.log(`session: ${storeId} answered ${res.status}; refreshing`);
+    let verdict: Awaited<ReturnType<SessionRefresher["refresh"]>>;
+    try {
+      verdict = await sessions.refresh(storeId);
+    } catch (err) {
+      deps.ctx.log(`session: refresh ${storeId} threw: ${(err as Error).message}`);
+      return res;
+    }
+    if (!verdict.ok) {
+      deps.registry.setStatus(storeId, verdict.state === "needs_human" ? "needs_auth" : "expired");
+      deps.ctx.log(`session: ${storeId} ${verdict.state}${verdict.reason ? ` (${verdict.reason})` : ""}`);
+      return res;
+    }
+    return http(input, init);
+  };
+  return refreshing;
+}
+
+type CartAdapter = StoreAdapter & { buildCart: NonNullable<StoreAdapter["buildCart"]> };
+
+/**
+ * The one store a list of items belongs to, and the adapter that can build a
+ * cart there. Shared by the purchase gate and basket mode: one cart = one
+ * merchant, because two retailers are two carts and two prices that can drift.
+ */
+export function cartStoreFor(
+  deps: PurchaseDeps,
+  items: Array<{ id: string; quantity: number }>,
+): { storeId: string; adapter: CartAdapter } {
+  if (!items.length) throw new Error("A cart needs at least one item.");
 
   const stores = new Set(
-    input.items.map((i) => {
+    items.map((i) => {
       const parsed = parseStoreOf(deps.registry, i.id);
       if (!parsed) throw new Error(`No such product id "${i.id}".`);
       return parsed;
     }),
   );
   if (stores.size > 1) {
-    // One mandate = one merchant checkout. A basket spanning two retailers is
-    // two approvals, because it is two carts and two prices that can drift.
     throw new Error(
       `Items span ${stores.size} stores (${[...stores].join(", ")}). Prepare one cart per store.`,
     );
@@ -202,27 +274,65 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
   if (!adapter.buildCart) {
     throw new Error(`Store "${storeId}" cannot build a cart. It reaches only ${adapter.manifest.capabilities.join(", ")}.`);
   }
+  return { storeId, adapter: adapter as CartAdapter };
+}
 
-  // Vault-wrapped only for THIS store's id -- a store with no stored
-  // credential gets deps.ctx.http back unchanged (authorizedFetch no-ops).
-  //
-  // The manifest's own domain is the leash: the credential is attached only to
-  // requests aimed at the store it belongs to. A store with no declared domain
-  // (every simulated one) attaches nothing, which is correct -- those hold real
-  // captured cookies and make no network calls.
-  const cartCtx = deps.vault
+/**
+ * The adapter context for a cart at ONE store.
+ *
+ * Vault-wrapped only for THIS store's id -- a store with no stored credential
+ * gets deps.ctx.http back unchanged (authorizedFetch no-ops).
+ *
+ * The manifest's own domain is the leash: the credential is attached only to
+ * requests aimed at the store it belongs to. A store with no declared domain
+ * (every simulated one) attaches nothing, which is correct -- those hold real
+ * captured cookies and make no network calls.
+ */
+export function cartContextFor(deps: PurchaseDeps, storeId: string, adapter: StoreAdapter): AdapterCtx {
+  return deps.vault
     ? {
         ...deps.ctx,
-        http: authorizedFetch(deps.vault, storeId, deps.ctx.http, {
-          allowedDomain: adapter.manifest.domain,
-          onRefuse: (url) =>
-            deps.ctx.log(
-              `vault: withheld ${storeId} credential from ${url} — not https on ${adapter.manifest.domain ?? "(no domain declared)"}`,
-            ),
-        }),
+        http: withSessionRefresh(
+          authorizedFetch(deps.vault, storeId, deps.ctx.http, {
+            allowedDomain: adapter.manifest.domain,
+            onRefuse: (url) =>
+              deps.ctx.log(
+                `vault: withheld ${storeId} credential from ${url} — not https on ${adapter.manifest.domain ?? "(no domain declared)"}`,
+              ),
+          }),
+          storeId,
+          deps,
+        ),
+        ...(deps.sessions
+          ? {
+              reauth: async (): Promise<boolean> => {
+                const sessions = deps.sessions!;
+                deps.ctx.log(`session: ${storeId} reported an expired credential in-band; refreshing`);
+                const verdict = await sessions.refresh(storeId);
+                if (!verdict.ok) {
+                  deps.registry.setStatus(storeId, verdict.state === "needs_human" ? "needs_auth" : "expired");
+                  deps.ctx.log(`session: ${storeId} ${verdict.state}${verdict.reason ? ` (${verdict.reason})` : ""}`);
+                }
+                return verdict.ok;
+              },
+            }
+          : {}),
       }
     : deps.ctx;
-  const raw = await withRetryCart(() => adapter.buildCart!(input.items, cartCtx));
+}
+
+export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Promise<PrepareResult> {
+  const now = deps.now?.() ?? Date.now();
+
+  // The product lock (S24): while the mode in force is not purchase mode,
+  // nothing is prepared for approval. Checked before anything is fetched or
+  // written, so a refused prepare leaves no cart behind at the store.
+  const mode = loadShoppingMode(deps.db);
+  if (mode !== "purchase") throw new Error(purchaseLockedMessage(mode));
+
+  const { storeId, adapter } = cartStoreFor(deps, input.items);
+  const cartCtx = cartContextFor(deps, storeId, adapter);
+  const raw = await withRetryCart(() => adapter.buildCart(input.items, cartCtx));
   const lineItems: MandateLine[] = raw.lineItems.map((li) => ({
     id: li.id,
     variantId: li.variantId,
@@ -298,7 +408,7 @@ export async function prepareCart(deps: PurchaseDeps, input: PrepareInput): Prom
   };
 }
 
-function money(m: Money): string {
+export function money(m: Money): string {
   return `${m.value.toFixed(2)} ${m.currency}`;
 }
 
@@ -327,7 +437,7 @@ function consoleBanner(
   ];
 }
 
-function resolveRoute(handoffUrl: string | null, mode: string, name: string, domain?: string): PurchaseRoute {
+export function resolveRoute(handoffUrl: string | null, mode: string, name: string, domain?: string): PurchaseRoute {
   if (handoffUrl) {
     return {
       rung: 1,
@@ -507,6 +617,15 @@ export async function confirmPurchase(
   principal: string,
 ): Promise<ConfirmResult> {
   const now = deps.now?.() ?? Date.now();
+
+  // The product lock (S24), checked BEFORE the consume so a refusal here spends
+  // nothing: an approval prepared under purchase mode survives a mode change
+  // intact rather than being burnt by a call that could never execute it.
+  const mode = loadShoppingMode(deps.db);
+  if (mode !== "purchase") {
+    audit(deps.db, "confirm_refused", `${fingerprint(approvalId)} mode=${mode}`, now);
+    return { ok: false, reason: purchaseLockedMessage(mode) };
+  }
 
   /*
    * Consumption is ONE atomic statement. A read-then-write would leave a race

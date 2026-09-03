@@ -4,6 +4,7 @@
     { "path": "packages/core" },
     { "path": "packages/adapters" },
     { "path": "packages/vault" },
+    { "path": "packages/session" },
     { "path": "packages/commerce" },
     { "path": "packages/mcp" },
     { "path": "packages/control" },

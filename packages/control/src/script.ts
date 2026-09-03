@@ -181,12 +181,55 @@ if (approvalsEl) {
     '</div>';
   }
 
+  /*
+   * Shopping mode (S24). Every option is drawn, including the one this build
+   * locks: a greyed, disabled card with the reason under it says "not yet"
+   * in a way a missing card never could. The one in force is marked on.
+   */
+  function modeCard(opt, current) {
+    const on = opt.id === current;
+    const locked = !opt.available;
+    return '<button type="button" class="modeopt' + (on ? " on" : "") + (locked ? " locked" : "") + '"' +
+      ' data-mode="' + esc(opt.id) + '"' + (locked ? ' disabled aria-disabled="true"' : "") +
+      ' aria-pressed="' + (on ? "true" : "false") + '">' +
+      '<span class="head"><b>' + esc(opt.label) + '</b>' +
+        (on ? '<span class="pill on">on</span>' : locked ? '<span class="pill off">locked</span>' : '<span class="pill neutral">off</span>') +
+      '</span>' +
+      '<p>' + esc(opt.description) + '</p>' +
+      (locked && opt.locked_reason ? '<span class="why">' + esc(opt.locked_reason) + '</span>' : "") +
+    '</button>';
+  }
+
+  function basket(b) {
+    const sim = b.mode === "simulated";
+    return '<div class="orow" data-basket="' + esc(b.id) + '">' +
+      '<div class="line">' +
+        '<span class="store">' + esc(b.store_id) + '</span>' +
+        '<span class="oid">' + esc(new Date(b.created_at).toLocaleString()) + '</span>' +
+        (sim ? '<span class="pill sim">demo basket</span>' : '<span class="pill ok">in your basket</span>') +
+        '<span class="amt">' + b.total_value.toFixed(2) + " " + esc(b.total_currency) + '</span>' +
+      '</div>' +
+      '<p class="said">' + b.summary.map(esc).join(" &middot; ") + '</p>' +
+      (b.cart_url
+        ? '<div class="line" style="margin-top:8px"><a href="' + esc(b.cart_url) +
+          '" target="_blank" rel="noreferrer">open your basket and check out &rarr;</a></div>'
+        : sim
+          ? '<p class="said">Simulated store: nothing was added anywhere.</p>'
+          : '<p class="said">Open your basket on the store\'s own site to review it.</p>') +
+    '</div>';
+  }
+
   async function refresh() {
     const res = await api("/api/approvals");
     const data = await res.json();
     approvalsEl.innerHTML = data.approvals.length
       ? data.approvals.map(card).join("")
-      : '<div class="empty">Nothing waiting. Ask your agent to prepare a cart.</div>';
+      : '<div class="empty">Nothing waiting. In basket mode nothing ever will: your agent adds to your basket and you check out yourself.</div>';
+
+    const baskets = await (await api("/api/baskets")).json();
+    $("#baskets").innerHTML = baskets.baskets.length
+      ? '<div class="orders">' + baskets.baskets.map(basket).join("") + '</div>'
+      : '<div class="empty">Nothing yet. Ask your agent to find something and add it to your basket.</div>';
 
     const orders = await (await api("/api/orders")).json();
     $("#orders").innerHTML = orders.orders.length
@@ -194,6 +237,8 @@ if (approvalsEl) {
       : '<div class="empty">No orders yet.</div>';
 
     const state = await (await api("/api/state")).json();
+    const sm = state.shopping_mode;
+    $("#mode").innerHTML = sm.options.map((o) => modeCard(o, sm.mode)).join("");
     const g = state.guardrails;
     const alarms = state.redaction_alarms;
     $("#guardrails").innerHTML =
@@ -285,6 +330,19 @@ if (approvalsEl) {
     }
   });
 
+  $("#mode").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-mode]");
+    if (!btn || btn.disabled) return;
+    const res = await api("/api/settings/mode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: btn.dataset.mode }),
+    });
+    const out = await res.json();
+    if (out.error) console.error("[basketed] " + out.error);
+    refresh();
+  });
+
   $("#orders").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-outcome]");
     if (!btn) return;
@@ -308,9 +366,12 @@ if (approvalsEl) {
 const storesEl = $("#stores");
 if (storesEl) {
   function pill(c) {
-    if (c.chrome_login_logged_in) return '<span class="pill wait">signed in — finishing…</span>';
-    if (c.chrome_login_waiting) return '<span class="pill off">signing in…</span>';
+    if (c.login_state === "signed_in" || c.login_state === "sealing") return '<span class="pill wait">signed in — finishing…</span>';
+    if (c.login_state === "needs_human") return '<span class="pill wait">needs you</span>';
+    if (c.login_state === "opening" || c.login_state === "waiting" || c.login_state === "autofilling") return '<span class="pill off">signing in…</span>';
     if (c.broken) return '<span class="pill bad">reconnect needed</span>';
+    if (c.connected && c.session_state === "expired") return '<span class="pill bad">expired — sign in again</span>';
+    if (c.connected && c.session_state === "needs_human") return '<span class="pill wait">needs you</span>';
     if (c.connected) return '<span class="pill on">connected' + (c.username ? " as " + esc(c.username) : "") + '</span>';
     // A store with no account to sign in to is not "not connected" -- it is
     // finished. Saying otherwise reads as a step the reader still has to take.
@@ -332,7 +393,7 @@ if (storesEl) {
       return;
     }
     const byId = new Map(data.connections.map((c) => [c.store_id, c]));
-    storesEl.querySelectorAll("[data-store]").forEach((card) => {
+    storesEl.querySelectorAll("article[data-store]").forEach((card) => {
       const c = byId.get(card.dataset.store);
       if (!c) return;
       const status = card.querySelector("[data-status]");
@@ -364,9 +425,10 @@ if (storesEl) {
   function applyFilter() {
     const q = ($("[data-find]").value || "").trim().toLowerCase();
     let shown = 0;
-    storesEl.querySelectorAll("[data-store]").forEach((card) => {
-      const matchesTab = activeTab === "all" || card.querySelector("[data-status] .pill.on, [data-status] .pill.bad");
-      const matchesText = !q || card.dataset.name.indexOf(q) !== -1 || card.dataset.store.toLowerCase().indexOf(q) !== -1;
+    storesEl.querySelectorAll("article[data-store]").forEach((card) => {
+      const matchesTab = activeTab === "all" || card.querySelector("[data-status] .pill.on, [data-status] .pill.bad, [data-status] .pill.wait");
+      const ids = (card.dataset.ids || card.dataset.store).toLowerCase();
+      const matchesText = !q || card.dataset.name.indexOf(q) !== -1 || ids.indexOf(q) !== -1;
       const show = Boolean(matchesTab) && matchesText;
       card.hidden = !show;
       if (show) shown += 1;
@@ -585,111 +647,248 @@ if (cancelWait) {
 }
 
 /*
- * The fallback for a browser with no extension in it: a window Basketed does
- * drive, on its own persistent profile. Sign in once there and it stays
- * signed in. Same capture route, same vault, same disclosure -- only the
- * window differs.
+ * The sign-in window (S23): a browser profile Basketed keeps for the store,
+ * opened visibly so the human can get past whatever the store asks. This
+ * page polls the server for the window's state and says, in words, what is
+ * happening in it -- it never reads the window itself.
  */
 if (connectPage) {
   const storeId = connectPage.dataset.store;
-  const chromeWaitRow = $("[data-chrome-login-waiting]");
-  const chromeMsg = $("[data-chrome-msg]");
-  const captureBtn = $("[data-chrome-capture]");
-  const startBtn = $("[data-chrome-start]");
+  const loginIdle = $("[data-login-idle]");
+  const loginWaiting = $("[data-login-waiting]");
+  const loginStatus = $("[data-login-status]");
+  const loginMsg = $("[data-login-msg]");
+  const startBtn = $("[data-login-start]");
+  const finishBtn = $("[data-login-finish]");
+  const cancelBtn = $("[data-login-cancel]");
+  const storeName = document.querySelector("h1") ? document.querySelector("h1").textContent.replace(/^Connect\s+/, "") : "the store";
   let watch = null;
-  let capturing = false;
 
   function stopWatch() { if (watch) { clearInterval(watch); watch = null; } }
+  function showWaitingLogin(on) {
+    if (loginIdle) loginIdle.hidden = on;
+    if (loginWaiting) loginWaiting.hidden = !on;
+  }
+  function humanWord(kind) {
+    if (kind === "otp") return "a one-time code";
+    if (kind === "captcha") return "a captcha";
+    if (kind === "cloudflare") return "a browser check";
+    if (kind === "access_denied") return "an access check";
+    return "something only you can answer";
+  }
+  function describe(out) {
+    switch (out.state) {
+      case "opening": return "Opening a Basketed window...";
+      case "waiting": return "A Basketed window is open. Sign in there - this page notices when you are done.";
+      case "autofilling": return "Filling in the stored sign-in details on " + storeName + "'s own form...";
+      case "needs_human": return storeName + " is asking for " + humanWord(out.human) + ". Answer it in the open window.";
+      case "signed_in":
+      case "sealing": return "Signed in. Finishing...";
+      case "connected": return "Connected. Reading this page again...";
+      case "failed": return out.error || "That did not work.";
+      case "cancelled": return out.error || "The sign-in window was closed.";
+      default: return "";
+    }
+  }
 
-  function watchForLogin() {
+  function watchLogin() {
     stopWatch();
     watch = setInterval(async () => {
-      if (capturing) return;
       try {
-        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login");
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/login");
         if (!res.ok) return;
         const out = await res.json();
-        if (out.state === "idle") { stopWatch(); return; }
-        if (out.logged_in) { stopWatch(); await runCapture(); }
+        if (loginStatus) loginStatus.textContent = describe(out);
+        if (out.state === "connected") {
+          stopWatch();
+          setTimeout(() => location.reload(), 900);
+          return;
+        }
+        if (out.state === "failed" || out.state === "cancelled" || out.state === "idle") {
+          stopWatch();
+          showWaitingLogin(false);
+          if (loginMsg && out.state !== "idle") loginMsg.textContent = describe(out);
+        }
       } catch (err) {
         console.error("[basketed] sign-in status failed: " + err.message);
       }
     }, 1500);
   }
 
-  async function runCapture() {
-    if (capturing) return;
-    capturing = true;
-    if (captureBtn) captureBtn.disabled = true;
-    if (chromeMsg) chromeMsg.textContent = "Signed in. Finishing...";
-    try {
-      const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login/capture", { method: "POST" });
-      const out = await res.json();
-      if (!res.ok) {
-        if (chromeMsg) chromeMsg.textContent = out.error || ("Refused (" + res.status + ").");
-        watchForLogin();
-        return;
-      }
-      stopWatch();
-      if (chromeMsg) chromeMsg.textContent = "Connected. Reading this page again...";
-      setTimeout(() => location.reload(), 900);
-    } catch (err) {
-      console.error("[basketed] capture failed: " + err.message);
-      if (chromeMsg) chromeMsg.textContent = "Could not reach the server.";
-    } finally {
-      capturing = false;
-      if (captureBtn) captureBtn.disabled = false;
-    }
-  }
-
   if (startBtn) {
     startBtn.addEventListener("click", async () => {
       startBtn.disabled = true;
-      if (chromeWaitRow) chromeWaitRow.hidden = false;
-      if (chromeMsg) chromeMsg.textContent = "Opening a Basketed window...";
+      if (loginMsg) loginMsg.textContent = "";
+      showWaitingLogin(true);
+      if (loginStatus) loginStatus.textContent = "Opening a Basketed window...";
       try {
-        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login", { method: "POST" });
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/login", { method: "POST" });
         const out = await res.json();
         if (!res.ok) {
-          if (chromeMsg) chromeMsg.textContent = out.error || ("Refused (" + res.status + ").");
+          showWaitingLogin(false);
+          if (loginMsg) loginMsg.textContent = out.error || ("Refused (" + res.status + ").");
           return;
         }
-        if (out.logged_in) {
-          if (chromeMsg) chromeMsg.textContent = "That profile is already signed in. Finishing...";
-          await runCapture();
-        } else {
-          if (chromeMsg) chromeMsg.textContent = "A Basketed window is open. Sign in there - this page notices when you are done.";
-          watchForLogin();
-        }
+        watchLogin();
       } catch (err) {
         console.error("[basketed] could not open the window: " + err.message);
-        if (chromeMsg) chromeMsg.textContent = "Could not reach the server.";
+        showWaitingLogin(false);
+        if (loginMsg) loginMsg.textContent = "Could not reach the server.";
       } finally {
         startBtn.disabled = false;
       }
     });
   }
 
-  if (captureBtn) captureBtn.addEventListener("click", () => void runCapture());
+  if (finishBtn) {
+    finishBtn.addEventListener("click", async () => {
+      finishBtn.disabled = true;
+      if (loginStatus) loginStatus.textContent = "Sealing what the window holds...";
+      try {
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/login/finish", { method: "POST" });
+        const out = await res.json();
+        if (!res.ok) {
+          if (loginStatus) loginStatus.textContent = out.error || ("Refused (" + res.status + ").");
+          return;
+        }
+        stopWatch();
+        if (loginStatus) loginStatus.textContent = "Connected. Reading this page again...";
+        setTimeout(() => location.reload(), 900);
+      } catch (err) {
+        console.error("[basketed] finish failed: " + err.message);
+        if (loginStatus) loginStatus.textContent = "Could not reach the server.";
+      } finally {
+        finishBtn.disabled = false;
+      }
+    });
+  }
 
-  const cancelBtn = $("[data-chrome-cancel]");
   if (cancelBtn) {
     cancelBtn.addEventListener("click", async () => {
       cancelBtn.disabled = true;
       stopWatch();
       try {
-        await api("/api/connections/" + encodeURIComponent(storeId) + "/chrome-login", { method: "DELETE" });
+        await api("/api/connections/" + encodeURIComponent(storeId) + "/login", { method: "DELETE" });
       } catch (err) {
         console.error("[basketed] cancel failed: " + err.message);
       } finally {
         cancelBtn.disabled = false;
-        if (chromeWaitRow) chromeWaitRow.hidden = true;
+        showWaitingLogin(false);
       }
     });
   }
 
   // A window left open by an earlier visit is still live on the server.
-  if (chromeWaitRow && !chromeWaitRow.hidden) watchForLogin();
+  if (loginWaiting && !loginWaiting.hidden) watchLogin();
+
+  /* The headless check, on demand. */
+  const healthBtn = $("[data-health-check]");
+  const healthMsg = $("[data-health-msg]");
+  const sessionPillEl = $("[data-session-pill]");
+  if (healthBtn) {
+    healthBtn.addEventListener("click", async () => {
+      healthBtn.disabled = true;
+      if (healthMsg) healthMsg.textContent = "Asking " + storeName + " without a window...";
+      try {
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/health", { method: "POST" });
+        const out = await res.json();
+        if (!res.ok) { if (healthMsg) healthMsg.textContent = out.error || ("Refused (" + res.status + ")."); return; }
+        const s = out.session_state;
+        if (sessionPillEl) {
+          sessionPillEl.innerHTML =
+            s === "live" ? '<span class="pill on">connected</span>' :
+            s === "expired" ? '<span class="pill bad">session expired</span>' :
+            s === "needs_human" ? '<span class="pill wait">needs you</span>' :
+            s === "checking" ? '<span class="pill off">checking…</span>' :
+            '<span class="pill off">unknown</span>';
+        }
+        if (healthMsg) {
+          healthMsg.textContent =
+            s === "live" ? "Still signed in." :
+            s === "expired" ? "Signed out at " + storeName + ". Press Sign in again." :
+            s === "needs_human" ? storeName + " wants something only you can give. Press Sign in again and answer it once." :
+            s === "checking" ? "A sign-in window is open for this - finish there." :
+            (out.reason || "Could not tell.");
+        }
+        if (s === "checking") { showWaitingLogin(true); watchLogin(); }
+      } catch (err) {
+        console.error("[basketed] health check failed: " + err.message);
+        if (healthMsg) healthMsg.textContent = "Could not reach the server.";
+      } finally {
+        healthBtn.disabled = false;
+      }
+    });
+  }
+
+  /* The optional stored email and password. Sent once, never read back. */
+  const credEmail = $("[data-cred-email]");
+  const credPassword = $("[data-cred-password]");
+  const credSave = $("[data-cred-save]");
+  const credForget = $("[data-cred-forget]");
+  const credMsg = $("[data-cred-msg]");
+  if (credSave) {
+    credSave.addEventListener("click", async () => {
+      const email = credEmail ? credEmail.value.trim() : "";
+      const password = credPassword ? credPassword.value : "";
+      if (!email || !password) { if (credMsg) credMsg.textContent = "Both the email and the password are needed."; return; }
+      credSave.disabled = true;
+      try {
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/credentials", {
+          method: "POST",
+          body: JSON.stringify({ email, password }),
+        });
+        const out = await res.json();
+        if (!res.ok) { if (credMsg) credMsg.textContent = out.error || ("Refused (" + res.status + ")."); return; }
+        if (credPassword) credPassword.value = "";
+        if (credEmail) credEmail.disabled = true;
+        if (credPassword) credPassword.disabled = true;
+        credSave.hidden = true;
+        if (credForget) credForget.hidden = false;
+        if (credMsg) credMsg.textContent = "Stored. Remove them to change them.";
+      } catch (err) {
+        console.error("[basketed] could not store sign-in details: " + err.message);
+        if (credMsg) credMsg.textContent = "Could not reach the server.";
+      } finally {
+        credSave.disabled = false;
+      }
+    });
+  }
+  if (credForget) {
+    credForget.addEventListener("click", async () => {
+      credForget.disabled = true;
+      try {
+        await api("/api/connections/" + encodeURIComponent(storeId) + "/credentials", { method: "DELETE" });
+        if (credEmail) { credEmail.disabled = false; credEmail.value = ""; }
+        if (credPassword) { credPassword.disabled = false; credPassword.value = ""; }
+        credForget.hidden = true;
+        if (credSave) credSave.hidden = false;
+        if (credMsg) credMsg.textContent = "Removed.";
+      } catch (err) {
+        console.error("[basketed] could not remove sign-in details: " + err.message);
+      } finally {
+        credForget.disabled = false;
+      }
+    });
+  }
+
+  const profileForget = $("[data-profile-forget]");
+  const profileMsg = $("[data-profile-msg]");
+  if (profileForget) {
+    profileForget.addEventListener("click", async () => {
+      profileForget.disabled = true;
+      try {
+        const res = await api("/api/connections/" + encodeURIComponent(storeId) + "/profile", { method: "DELETE" });
+        const out = await res.json();
+        if (profileMsg) profileMsg.textContent = out.removed ? "Profile deleted. Reading this page again..." : "There was no profile to delete.";
+        if (out.removed) setTimeout(() => location.reload(), 900);
+      } catch (err) {
+        console.error("[basketed] could not forget the profile: " + err.message);
+        if (profileMsg) profileMsg.textContent = "Could not reach the server.";
+      } finally {
+        profileForget.disabled = false;
+      }
+    });
+  }
 }
 
 

@@ -2,7 +2,16 @@ import { CLIENTS, PRIMARY_CLIENTS, pathFor, snippetFor, type SnippetInput } from
 import { panelBase } from "./base.js";
 import { STYLE } from "./style.js";
 import { SCRIPT } from "./script.js";
-import { authPolicyFor, methodLabel, type ConnectMethod, type StoreAuthPolicy } from "./connections.js";
+import {
+  authPolicyFor,
+  groupByBrand,
+  methodLabel,
+  type BrandGroup,
+  type ConnectMethod,
+  type StoreAuthPolicy,
+  type StoreRow,
+} from "./connections.js";
+import type { LoginState, SessionHealth } from "@basketed/session";
 
 /**
  * The panel's pages: Install, Connect stores, Approvals — originally just the
@@ -396,14 +405,6 @@ ${h2("What it will not do")}
 
 /* ------------------------------------------------------------ connections */
 
-export interface StoreRow {
-  id: string;
-  name: string;
-  mode: string;
-  country?: string;
-  currency?: string;
-}
-
 export interface ConnectionsInput {
   stores: StoreRow[];
   token: string;
@@ -436,138 +437,88 @@ function firstSentence(text: string): string {
 }
 
 /**
- * What the mode actually means, in the reader's words.
+ * The mode chips (S23): one per registry row the brand has.
  *
  * `native` and `simulated` are the registry's vocabulary and stay the
- * registry's vocabulary — they are the values adapters register under and the
- * values `/api` reports. They are just poor labels for a human: "simulated"
- * reads as *sandboxed*, as though a switch somewhere would make it live, and
- * "native" says nothing at all about where the numbers came from. The card
- * says which of the two you are looking at, in the terms a shopper would use.
+ * registry's vocabulary. On the card they read as what a shopper would call
+ * them — Live is the retailer's own data, Sample is the bundled demo copy the
+ * offline drill runs on — with the id under each so the two are still
+ * addressable by name.
  */
-function modeLabel(mode: string): string {
-  return mode === "native" ? "live data" : "sample data";
+function modeChips(group: BrandGroup | null, fallback: StoreRow): string {
+  const chip = (cls: string, label: string, s: StoreRow) =>
+    `<span class="mode ${cls}" title="${esc(s.id)}">${label}<span class="mid">${esc(s.id)}</span></span>`;
+  if (!group) return `<span class="modes">${chip(fallback.mode === "native" ? "live" : "sample", fallback.mode === "native" ? "Live" : "Sample", fallback)}</span>`;
+  const chips = [
+    group.live ? chip("live", "Live", group.live) : "",
+    group.sample ? chip("sample", "Sample", group.sample) : "",
+    ...group.others.map((s) => chip("other", esc(s.mode), s)),
+  ].filter(Boolean);
+  return `<span class="modes">${chips.join("")}</span>`;
 }
 
 /**
- * Brands carried by more than one source (S18).
- *
- * Amazon, Tesco and IKEA each appear twice in the registry, and the reason is
- * real: one row is the retailer's own live data, the other is a fixture set
- * the offline drill depends on. They are genuinely different stores with
- * different capabilities, so they cannot be collapsed into one row without
- * claiming a union of capabilities neither one has — the exact overclaim
- * `StoreRegistry.register` throws on.
- *
- * What they CAN stop doing is appearing twice with no explanation. This pairs
- * them up so each card can name its twin, and so the sort can seat them next
- * to each other. Keyed on the display name, which is what a reader matches
- * on; the ids differ by design.
- */
-function twinsByBrand(stores: StoreRow[]): Map<string, StoreRow> {
-  const byBrand = new Map<string, StoreRow[]>();
-  for (const s of stores) {
-    const key = s.name.trim().toLowerCase();
-    byBrand.set(key, [...(byBrand.get(key) ?? []), s]);
-  }
-  const twin = new Map<string, StoreRow>();
-  for (const group of byBrand.values()) {
-    if (group.length !== 2) continue;
-    const live = group.find((s) => s.mode === "native");
-    const sample = group.find((s) => s.mode !== "native");
-    if (!live || !sample) continue;
-    twin.set(live.id, sample);
-    twin.set(sample.id, live);
-  }
-  return twin;
-}
-
-/**
- * The store list, as connectable things.
- *
- * Rendered server-side with `data-` attributes the script filters on, so the
- * tabs and the search box need no client-side state that could drift from the
- * server. Only the connected/not badge is filled in from /api/connections,
- * because that is the one thing which changes without a page load.
- *
- * One card per store, always — the Connected filter and the disconnect button
- * both key off a single `[data-store]` element, and a card standing for two
- * stores could not answer "is this connected?" with one badge.
- */
-/**
- * The control that starts a connection (S20).
- *
- * A real anchor with `target="_blank"`, not a button that calls
- * `window.open` — because the click is then the browser's own navigation, in
- * the browser the panel is already running in. That is what makes the tab
- * appear in the user's actual window, with their actual logins, instead of a
- * second Chrome: no automation is involved in opening it at all. It also
- * means no popup blocker ever eats it, which a scripted open after an
- * `await` reliably would.
- *
- * The `data-` attributes carry an identity and a destination, and nothing
- * more. They used to carry the cookie policy too — which domains to open,
- * which names mean "signed in" — but a page is the wrong place to state that:
- * the extension now asks the panel it is pinned to instead, so no markup here
- * can widen what gets read.
+ * The control that hands a sign-in to the browser the panel is already
+ * running in (S20). Kept as the alternative path: a real anchor with
+ * `target="_blank"`, so the click is the browser's own navigation and no
+ * popup blocker eats it. The Basketed extension in that browser finishes it.
  */
 function connectAnchor(store: StoreRow, policy: StoreAuthPolicy, label: string, cls: string): string {
-  const login = policy.chromeLogin;
+  const login = policy.login;
   if (!login) return "";
-  return `<a class="${cls}" href="${esc(login.url)}" target="_blank" rel="noopener noreferrer"
+  // A bearer store's token lives in the page its frontend embeds it in
+  // (Tesco: the trolley), so that is the tab the extension has to read.
+  const open = login.bearer?.triggerUrl ?? login.accountUrl;
+  return `<a class="${cls}" href="${esc(open)}" target="_blank" rel="noopener noreferrer"
      data-connect-open data-store="${esc(store.id)}" data-name="${esc(store.name)}"
      data-login-url="${esc(login.loginUrl)}">${esc(label)}</a>`;
 }
 
+/**
+ * The store list: one card per brand (S23).
+ *
+ * Rendered server-side with `data-` attributes the script filters on, so the
+ * tabs and the search box need no client-side state that could drift from the
+ * server. Only the status pill is filled in from /api/connections, because
+ * that is the one thing which changes without a page load.
+ *
+ * `data-store` is the primary row -- the one Connect signs into and the one
+ * the pill reports on. `data-ids` carries every row, so a search for the
+ * sample twin's id still finds the card.
+ */
 export function renderConnections(input: ConnectionsInput): string {
-  const twin = twinsByBrand(input.stores);
+  const groups = groupByBrand(input.stores);
   const base = panelBase(input.token);
 
-  const card = (s: StoreRow) => {
+  const card = (g: BrandGroup) => {
+    const s = g.primary;
     const policy = authPolicyFor(s);
     const connectable = policy.methods.length > 0;
-    const other = twin.get(s.id);
-    const live = s.mode === "native";
-    return `<article class="appcard" data-store="${esc(s.id)}" data-name="${esc(s.name.toLowerCase())}" data-connectable="${connectable}">
+    return `<article class="appcard" data-store="${esc(s.id)}"${g.live ? ` data-live-store="${esc(g.live.id)}"` : ""}${
+      g.sample ? ` data-sample-store="${esc(g.sample.id)}"` : ""
+    } data-ids="${esc(g.ids.join(" "))}" data-name="${esc(g.name.toLowerCase())}" data-connectable="${connectable}">
   <div class="head">
-    <span class="tile" aria-hidden="true">${esc(monogram(s.name))}</span>
+    <span class="tile" aria-hidden="true">${esc(monogram(g.name))}</span>
     <div style="min-width:0">
-      <div class="name"><a href="${base}/connections/${encodeURIComponent(s.id)}">${esc(s.name)}</a></div>
-      <div class="where">${esc(s.id)}${s.country ? ` · ${esc(s.country)}` : ""}</div>
+      <div class="name"><a href="${base}/connections/${encodeURIComponent(s.id)}">${esc(g.name)}</a></div>
+      <div class="where">${s.country ? `${esc(s.country)}${s.currency ? ` · ${esc(s.currency)}` : ""}` : esc(s.id)}</div>
     </div>
-    <span class="pill ${live ? "ok" : "sim"}" style="margin-left:auto">${esc(modeLabel(s.mode))}</span>
+    ${modeChips(g, s)}
   </div>
   <p class="reach">${esc(firstSentence(policy.reach))}</p>
-  ${
-    other
-      ? `<p class="twin">${
-          live
-            ? `Also listed as <a href="${base}/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>, the demo copy the offline drill runs on. This is the live one.`
-            : `The real ${esc(s.name)} is <a href="${base}/connections/${encodeURIComponent(other.id)}">${esc(other.id)}</a>. This row is demo data, kept so the demo works with the wifi off.`
-        }</p>`
-      : ""
-  }
   <div class="foot">
     <span data-status><span class="pill off">checking</span></span>
     <span class="right">${
       connectable
         ? `<button class="btn sm danger" type="button" data-disconnect hidden>Disconnect</button>
-           ${connectAnchor(s, policy, "Connect", "btn sm pri")}`
+           <a class="btn sm pri" href="${base}/connections/${encodeURIComponent(s.id)}" data-connect-go>Connect</a>`
         : `<span class="none">no account needed</span>`
     }</span>
   </div>
 </article>`;
   };
 
-  // Twins adjacent, real source first, so the pair reads as a pair.
-  const ordered = [...input.stores].sort((a, b) => {
-    const byName = a.name.localeCompare(b.name);
-    if (byName !== 0) return byName;
-    if (a.mode === b.mode) return a.id.localeCompare(b.id);
-    return a.mode === "native" ? -1 : 1;
-  });
-
-  const n = input.stores.length;
+  const n = groups.length;
 
   return shell(
     "Connect stores",
@@ -575,25 +526,27 @@ export function renderConnections(input: ConnectionsInput): string {
     `
 <h1>Connect stores</h1>
 <p class="lede">
-  Connect opens the store's own site in a browser tab and you sign in there. <strong>Basketed never
-  asks you for a password</strong> &mdash; there is no field on this page that takes one. What comes
-  back is sealed with AES-256-GCM under a key on this machine and handed to nothing but the request
-  interceptor, and <strong>no agent can read it back</strong>.
+  Connect signs you in <strong>once</strong>, on the store's own page, in a browser window Basketed
+  keeps for that store &mdash; and that window stays signed in from then on. What comes back is sealed
+  with AES-256-GCM under a key on this machine and handed to nothing but the request interceptor, and
+  <strong>no agent can read it back</strong>.
 </p>
 
 <div class="sage" style="margin-top:22px">
   <span class="eyebrow">how connecting works</span>
   <p>
     None of these retailers publish a consumer OAuth flow, so nobody can offer a real
-    <strong>Sign in with</strong> button for them. The next best thing is the real thing: a tab opens
-    on the retailer's own page, at their own URL. Already signed in there? It finishes on its own.
-    Not signed in? Sign in on their page and it finishes the moment you are through. Stores marked
+    <strong>Sign in with</strong> button for them. The next best thing is the real thing: a window
+    opens on the retailer's own page, at their own URL, and you sign in there &mdash; codes, captchas
+    and all. Basketed notices when you are through, seals the session, and keeps the profile so it
+    never asks again. A brand with both a <em>Live</em> and a <em>Sample</em> row is one store here:
+    the sample copy exists so the demo works with the wifi off. Stores marked
     <em>no account needed</em> work signed-out and have nothing to connect.
   </p>
 </div>
 
-${h2("Stores", twin.size ? `${twin.size / 2} carried by two sources` : "")}
-<div class="appgrid" id="stores">${ordered.map(card).join("")}</div>
+${h2("Stores", "")}
+<div class="appgrid" id="stores">${groups.map(card).join("")}</div>
 <div class="empty" id="nostores" hidden>Nothing matches that.</div>
 `,
     input.token,
@@ -613,108 +566,193 @@ ${h2("Stores", twin.size ? `${twin.size / 2} carried by two sources` : "")}
 
 export interface ConnectInput {
   store: StoreRow;
+  /** The brand this store's page stands for; null when the registry has only this row. */
+  group: BrandGroup | null;
   token: string;
   /** Set when a credential is already held, so the page can say so. */
   connected: { method: string; username: string | null; broken: boolean } | null;
-  /** True if a Chrome login window is already open for this store (S15). */
-  chromeWaiting: boolean;
-  /** Which browser the login will open in, so the card can say so up front (S18). */
-  chrome: { attached: boolean; where: string };
+  /** Where the sign-in window is, if one is open (S23). */
+  loginState: LoginState;
+  /** What the last headless check concluded (S23). */
+  session: SessionHealth;
+  /** True when an email and password are stored for the automatic re-sign-in. */
+  hasLoginCredentials: boolean;
+}
+
+const LOGIN_ACTIVE: ReadonlySet<LoginState> = new Set(["opening", "waiting", "autofilling", "needs_human", "signed_in", "sealing"]);
+
+function sessionPill(input: ConnectInput): string {
+  const held = input.connected;
+  if (held?.broken) return `<span class="pill bad">reconnect needed</span>`;
+  if (!held) return `<span class="pill off">not connected</span>`;
+  switch (input.session.session_state) {
+    case "live":
+      return `<span class="pill on">connected</span>`;
+    case "expired":
+      return `<span class="pill bad">session expired</span>`;
+    case "needs_human":
+      return `<span class="pill wait">needs you</span>`;
+    case "checking":
+      return `<span class="pill off">checking&hellip;</span>`;
+    default:
+      return `<span class="pill on">connected</span>`;
+  }
+}
+
+function whenChecked(at: number | null): string {
+  if (!at) return "not checked yet";
+  const mins = Math.max(0, Math.round((Date.now() - at) / 60_000));
+  if (mins < 1) return "checked just now";
+  if (mins < 60) return `checked ${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `checked ${hours} h ago`;
+  return `checked ${Math.round(hours / 24)} days ago`;
 }
 
 /**
- * The login page for one store.
+ * The page for one store (S23).
  *
- * A real form at a real URL rather than a dialog: it survives a refresh, it can
- * be linked, and it keeps the secret out of any page that also renders state
- * fetched from the API.
+ * No `<form>` anywhere on it -- the panel's CSP says `form-action 'none'`,
+ * and every write goes through `fetch` with the panel token. The one place
+ * a password can be typed is the optional "keep me signed in" block, and
+ * what that block says, in full, is where those bytes go.
  */
 export function renderConnect(input: ConnectInput): string {
   const policy = authPolicyFor(input.store);
-  const login = policy.chromeLogin;
+  const login = policy.login;
   const store = esc(input.store.name);
   const held = input.connected;
-
-  /*
-   * Which browser the tab will open in, said before the click rather than
-   * after the surprise. Attached is the good case and reads like it: their
-   * own browser, their own logins, usually no sign-in at all.
-   */
-  const browserNote = input.chrome.attached
-    ? `Opens a <strong>new tab in the browser you already have running</strong> &mdash; with the accounts
-       you are already signed into. Basketed closes only that tab afterwards, never your browser.`
-    : `Opens Chrome on a profile Basketed keeps in <span class="num">~/.basketed/chrome-profile</span>.
-       Not a blank throwaway: <strong>you sign in once</strong> and it stays signed in next time. To use
-       the browser you already have open instead, start Chrome with
-       <span class="num">--remote-debugging-port=9222</span> and press Connect again &mdash; Basketed
-       finds it by itself.`;
+  const active = LOGIN_ACTIVE.has(input.loginState);
+  const human = input.loginState === "needs_human";
 
   const connectBlock = login
     ? `
-<div class="two" data-connect-page data-store="${esc(input.store.id)}">
+<div class="two" data-connect-page data-store="${esc(input.store.id)}" data-login-state="${esc(input.loginState)}">
   <div class="card">
     <span class="eyebrow">sign in at ${store}</span>
     <p class="small" style="margin:8px 0 0">
-      Connect opens ${store} in <strong>a new tab of this browser</strong> &mdash; the one you are
-      reading this in, with the accounts you are already signed into. Nothing is launched and nothing
-      is automated: it is a link. If you are already signed in at ${store}, the connection finishes on
-      its own; if you are not, sign in on their page and it finishes the moment you are through.
-      Basketed never asks you for a password and has no field to type one into.
+      A window opens on ${store}'s own page, in a browser profile Basketed keeps just for ${store}.
+      Sign in there the way you always do &mdash; if ${store} asks for a code or a check, answer it in
+      that window. Basketed notices when you are through, seals the session, closes the window, and
+      <strong>keeps that profile signed in</strong> so you are not asked again.
     </p>
-    <div class="row" style="margin-top:20px" data-connect-idle>
-      ${connectAnchor(input.store, policy, held ? `Reconnect ${input.store.name}` : `Connect ${input.store.name}`, "btn pri")}
-      <span class="small" data-connect-msg></span>
+    <div class="row" style="margin-top:20px" data-login-idle${active ? " hidden" : ""}>
+      <button class="btn pri" type="button" data-login-start>${held ? `Sign in again at ${store}` : `Sign in at ${store}`}</button>
+      <span class="small" data-login-msg></span>
     </div>
-    <div class="row" style="margin-top:20px" data-connect-waiting hidden>
-      <span class="small" data-connect-status>Waiting for ${store} in the other tab&hellip;</span>
-      <a class="btn sm" href="${esc(login.loginUrl)}" target="_blank" rel="noopener noreferrer" data-connect-signin hidden>Sign in at ${store}</a>
-      <button class="btn sm danger" type="button" data-connect-cancel>Stop waiting</button>
+    <div class="row" style="margin-top:20px" data-login-waiting${active ? "" : " hidden"}>
+      <span class="small" data-login-status>${
+        human
+          ? `${store} is asking you for something in the open window. Finish it there.`
+          : "A Basketed window is open. Sign in there &mdash; this page notices when you are done."
+      }</span>
+      <button class="btn sm pri" type="button" data-login-finish>Finish now</button>
+      <button class="btn sm danger" type="button" data-login-cancel>Cancel</button>
     </div>
 
-    <div class="claim" style="margin-top:18px" data-ext-missing hidden>
-      <span class="eyebrow">to finish it automatically</span>
-      <p>
-        Chrome does not let an outside program read this browser's session &mdash;
-        <a href="https://developer.chrome.com/blog/remote-debugging-port" target="_blank" rel="noopener noreferrer">since
-        Chrome 136</a> that is blocked on purpose, and it is a good rule. The way in is from the
-        inside: load <span class="num">packages/extension</span> once at
-        <span class="num">chrome://extensions</span> &rarr; Developer mode &rarr; Load unpacked, and
-        the connection completes by itself in this browser. It answers one address only, pinned to
-        <span class="num">http://127.0.0.1:8787</span> &mdash; if this panel is on another port, paste
-        this page's origin into the extension's options once. Without it, use the window below instead.
-      </p>
-      <div class="row" style="margin-top:12px">
-        <button class="btn sm" type="button" data-chrome-start>Sign in in a Basketed window</button>
+    ${
+      held
+        ? `<div class="claim" style="margin-top:18px" data-session>
+      <span class="eyebrow">the session</span>
+      <div class="row" style="margin-top:8px">
+        <span data-session-pill>${sessionPill(input)}</span>
+        <span class="small" data-session-when>${esc(whenChecked(input.session.last_verified_at))}</span>
+        <button class="btn sm" type="button" data-health-check>Check now</button>
+        <span class="small" data-health-msg></span>
       </div>
-    </div>
-    <div class="row" style="margin-top:16px" data-chrome-login-waiting hidden>
-      <button class="btn sm pri" type="button" data-chrome-capture>Finish now</button>
-      <button class="btn sm danger" type="button" data-chrome-cancel>Cancel</button>
-      <span class="small" data-chrome-msg>A Basketed window is open. Sign in there &mdash; this page notices when you are done.</span>
-    </div>
-    <div hidden data-chrome-login-idle></div>
+      <p class="small" style="margin:10px 0 0">
+        Every few hours Basketed opens this profile without a window and asks ${store} whether it is
+        still signed in. Live means the pill above is a fact, not a memory. If it ever says
+        <em>needs you</em>, ${store} wants a code or a check that only you can give &mdash; press
+        Sign in again and answer it once.
+      </p>
+    </div>`
+        : ""
+    }
+
+    <details class="claim" style="margin-top:18px" data-credentials${input.hasLoginCredentials ? " open" : ""}>
+      <summary class="eyebrow" style="cursor:pointer">keep me signed in automatically (optional)</summary>
+      <p class="small" style="margin:8px 0 0">
+        Leave your ${store} email and password here and, when a session goes stale, Basketed signs in
+        again by itself. They are typed into <strong>one place only: ${store}'s own sign-in form</strong>,
+        on ${store}'s own address, inside the profile above &mdash; the address is checked before a
+        keystroke. If ${store} then asks for a code or a captcha, Basketed stops and says
+        <em>needs you</em>; it never guesses one. Stored sealed like every other credential, never
+        shown again, and never read by any agent.${
+          login.loginForm ? "" : ` <strong>${store}'s form is not one this build can fill in yet</strong>, so this is off for now.`
+        }
+      </p>
+      ${
+        login.loginForm
+          ? `<div class="row" style="margin-top:12px; flex-wrap:wrap">
+        <input class="field" type="email" autocomplete="off" placeholder="email" aria-label="${store} email" data-cred-email${
+          input.hasLoginCredentials ? " disabled" : ""
+        }>
+        <input class="field" type="password" autocomplete="new-password" placeholder="password" aria-label="${store} password" data-cred-password${
+          input.hasLoginCredentials ? " disabled" : ""
+        }>
+        <button class="btn sm pri" type="button" data-cred-save${input.hasLoginCredentials ? " hidden" : ""}>Save</button>
+        <button class="btn sm danger" type="button" data-cred-forget${input.hasLoginCredentials ? "" : " hidden"}>Remove</button>
+        <span class="small" data-cred-msg>${input.hasLoginCredentials ? "Stored. Remove them to change them." : ""}</span>
+      </div>`
+          : ""
+      }
+    </details>
+
+    <details class="claim" style="margin-top:18px" data-ext-path>
+      <summary class="eyebrow" style="cursor:pointer">use the browser you are reading this in instead</summary>
+      <p class="small" style="margin:8px 0 0">
+        With the Basketed extension loaded in this browser (<span class="num">packages/extension</span>
+        at <span class="num">chrome://extensions</span> &rarr; Load unpacked, pinned to this panel's
+        origin once), Connect can be a plain link: ${store} opens in a new tab here, with the accounts
+        you already have, and the extension hands the session back. Nothing is launched here; the
+        session it captured is then seeded into the profile above, which keeps it signed in from
+        then on the same way.
+      </p>
+      <div class="row" style="margin-top:12px" data-connect-idle>
+        ${connectAnchor(input.store, policy, `Open ${input.store.name} in this browser`, "btn sm")}
+        <span class="small" data-connect-msg></span>
+      </div>
+      <div class="row" style="margin-top:12px" data-connect-waiting hidden>
+        <span class="small" data-connect-status>Waiting for ${store} in the other tab&hellip;</span>
+        <a class="btn sm" href="${esc(login.loginUrl)}" target="_blank" rel="noopener noreferrer" data-connect-signin hidden>Sign in at ${store}</a>
+        <button class="btn sm danger" type="button" data-connect-cancel>Stop waiting</button>
+      </div>
+      <p class="small" data-ext-missing hidden style="margin:10px 0 0">
+        The tab is open, but Chrome does not let an outside program read this browser's session &mdash;
+        <a href="https://developer.chrome.com/blog/remote-debugging-port" target="_blank" rel="noopener noreferrer">since
+        Chrome 136</a> that is blocked on purpose. Load the extension, or use the Basketed window above.
+      </p>
+    </details>
   </div>
 
   <div class="stack">
     <div class="sage">
       <span class="eyebrow">where the session goes</span>
       <p>
-        The Basketed extension reads the session <strong>in this browser</strong>, where Chrome
-        allows it, and hands it straight to this page. It talks to
-        <span class="num">127.0.0.1</span> and nothing else, and it will not answer a local page that
-        cannot prove it holds this panel's token. What arrives is sealed with AES-256-GCM under a key
-        on this machine and handed to nothing but the request interceptor &mdash;
-        <strong>no agent can read it back</strong>.
+        The profile lives in <span class="num">~/.basketed/profiles</span>, readable by this user
+        only, the same as a browser profile. The session it produces is sealed with AES-256-GCM under
+        a key on this machine and handed to nothing but the request interceptor &mdash;
+        <strong>no agent can read it back</strong>. Disconnect forgets the sealed copy; Forget profile
+        deletes the browser profile too.
       </p>
+      ${
+        input.session.profile
+          ? `<div class="row" style="margin-top:12px">
+        <button class="btn sm danger" type="button" data-profile-forget>Forget profile</button>
+        <span class="small" data-profile-msg></span>
+      </div>`
+          : ""
+      }
     </div>
     <div class="risk">
       <span class="eyebrow">at your own risk</span>
       <p>
-        You sign in on ${store}'s own page, the same as always &mdash; nothing about the login itself
-        is automated. What IS automation is Basketed reading the session back afterwards, and that is
-        real automated access to a site whose Terms of Service does not permit it, including for most
-        of these retailers when the account owner is the one running it. Heavy use can get an account
-        flagged.
+        You sign in on ${store}'s own page, the same as always. What IS automation is the browser
+        profile Basketed drives afterwards: it presents itself as an ordinary Chromium, reads the
+        session back, and re-signs-in with what you chose to leave here. That is real automated
+        access to a site whose Terms of Service does not permit it, including for most of these
+        retailers when the account owner is the one running it. Heavy use can get an account flagged.
       </p>
     </div>
   </div>
@@ -733,14 +771,8 @@ export function renderConnect(input: ConnectInput): string {
 <p class="small" style="margin:0 0 14px"><a href="${panelBase(input.token)}/connections">&larr; All stores</a></p>
 <div class="row" style="margin-bottom:14px">
   <span class="tile" aria-hidden="true">${esc(monogram(input.store.name))}</span>
-  <span class="pill ${input.store.mode === "native" ? "ok" : "sim"}">${esc(modeLabel(input.store.mode))}</span>
-  ${
-    held
-      ? `<span class="pill ${held.broken ? "bad" : "on"}">${held.broken ? "reconnect needed" : "connected"}</span>`
-      : login
-        ? `<span class="pill off">not connected</span>`
-        : `<span class="pill ok">ready</span>`
-  }
+  ${modeChips(input.group, input.store)}
+  ${login ? sessionPill(input) : `<span class="pill ok">ready</span>`}
 </div>
 <h1>Connect ${store}</h1>
 <p class="lede" style="max-width:78ch">${esc(policy.reach)}</p>
@@ -753,8 +785,8 @@ ${
     Held${held.username ? ` as <strong>${esc(held.username)}</strong>` : ""}
     as a <span class="num">${esc(methodLabel(held.method as ConnectMethod))}</span>.${
       held.broken
-        ? " <strong>The stored bytes no longer decrypt with the current key</strong> &mdash; connect again to replace them."
-        : " Connecting again replaces it."
+        ? " <strong>The stored bytes no longer decrypt with the current key</strong> &mdash; sign in again to replace them."
+        : " Signing in again replaces it."
     }
   </p>
   <div class="row" style="margin-top:14px">
@@ -779,14 +811,20 @@ export function renderApprovals(token: string): string {
     "Approvals",
     "approvals",
     `
-<h1>Every purchase stops here.</h1>
+<h1>Your agent fills the basket.<br>You check out.</h1>
 <p class="lede">
-  Type the exact total to authorise it — so what you confirm is the number, not the position of a
-  button. Nothing on this page is filled in by the agent that asked: every field below is a figure
-  Basketed computed, or a name it normalised.
+  In <strong>basket mode</strong> the agent puts what it found into your own basket at the store, in the
+  account you connected, and hands you the link. Nothing is bought by Basketed. Purchase mode &mdash; where
+  you approve an exact total here and get handed to checkout &mdash; is locked in this build.
 </p>
 
-${h2("Waiting for you", "refreshes every 5s")}
+${h2("Shopping mode", "one is on; the other is locked in this build")}
+<div id="mode" class="modes"><div class="empty">Loading…</div></div>
+
+${h2("In your baskets", "added by your agent, waiting for you at the store")}
+<div id="baskets"><div class="empty">Loading…</div></div>
+
+${h2("Waiting for you", "purchase mode only")}
 <div id="approvals"><div class="empty">Loading…</div></div>
 
 ${h2("Orders")}

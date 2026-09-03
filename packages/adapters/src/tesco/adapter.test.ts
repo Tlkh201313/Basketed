@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TescoAdapter } from "./adapter.js";
 import type { AdapterCtx } from "../types.js";
 
@@ -22,7 +22,7 @@ function jsonResponse(body: unknown, status = 200): Response {
  * real shape (Tesco's product `id` and its TPNB are unrelated numbers). A
  * mock where they happened to match would not have caught the bug.
  */
-function fakeTescoHttp(opts: { basketAuthed?: boolean } = {}): typeof fetch {
+function fakeTescoHttp(opts: { basketAuthed?: boolean; staleUntilReauth?: { renewed: boolean; refusals: number } } = {}): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
     const body = init?.body ? (JSON.parse(String(init.body)) as unknown) : undefined;
@@ -65,6 +65,10 @@ function fakeTescoHttp(opts: { basketAuthed?: boolean } = {}): typeof fetch {
 
       if (first.operationName === "GetBasket") {
         if (opts.basketAuthed === false) return jsonResponse({}, 401);
+        if (opts.staleUntilReauth && !opts.staleUntilReauth.renewed) {
+          opts.staleUntilReauth.refusals++;
+          return jsonResponse([{ errors: [{ message: "Unauthorized", extensions: { code: "UNAUTHENTICATED" } }], status: 200 }]);
+        }
         return jsonResponse([{ data: { basket: { id: "order_abc123", items: [] } }, status: 200 }]);
       }
 
@@ -140,6 +144,34 @@ describe("real Tesco adapter (S16)", () => {
     const http = fakeTescoHttp({ basketAuthed: false });
     const [product] = await adapter.search({ query: "coffee" }, ctxWith(http));
     await expect(adapter.buildCart([{ id: product!.id, quantity: 1 }], ctxWith(http))).rejects.toThrow(/401|refused/i);
+  });
+
+  it("a stale session reported inside a 200 asks for one re-auth and retries once", async () => {
+    const adapter = new TescoAdapter();
+    const stale = { renewed: false, refusals: 0 };
+    const http = fakeTescoHttp({ staleUntilReauth: stale });
+    const [product] = await adapter.search({ query: "coffee" }, ctxWith(http));
+    const reauth = vi.fn(async () => {
+      stale.renewed = true;
+      return true;
+    });
+    const cart = await adapter.buildCart([{ id: product!.id, quantity: 1 }], { ...ctxWith(http), reauth });
+    expect(cart.cartId).toBe("order_abc123");
+    expect(reauth).toHaveBeenCalledTimes(1);
+    expect(stale.refusals).toBe(1);
+  });
+
+  it("a stale session with no session manager, or one that cannot renew, is a real failure", async () => {
+    const adapter = new TescoAdapter();
+    const stale = { renewed: false, refusals: 0 };
+    const http = fakeTescoHttp({ staleUntilReauth: stale });
+    const [product] = await adapter.search({ query: "coffee" }, ctxWith(http));
+    await expect(adapter.buildCart([{ id: product!.id, quantity: 1 }], ctxWith(http))).rejects.toThrow(/refused/i);
+    const reauth = vi.fn(async () => false);
+    await expect(adapter.buildCart([{ id: product!.id, quantity: 1 }], { ...ctxWith(http), reauth })).rejects.toThrow(
+      /Reconnect Tesco/,
+    );
+    expect(reauth).toHaveBeenCalledTimes(1);
   });
 
   it("detail() refuses an id it never minted", async () => {
